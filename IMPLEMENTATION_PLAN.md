@@ -1,104 +1,123 @@
 # Implementation Plan
 
-## Phase 1: Core Package Setup
-1. **@mandrake/types**
-   - [ ] Define workspace configuration types
-   - [ ] Define session types
-   - [ ] Define tool configuration types
-   - [ ] Add zod validation schemas
-   - [ ] Add type tests
+## Phase 1: Integration Research & Prototyping
 
-2. **@mandrake/core**
-   - [ ] Implement WorkspaceManager
-   - [ ] Implement SessionManager
-   - [ ] Add configuration management
-   - [ ] Add event system for updates
-   - [ ] Write unit tests
+1. **LangChain Exploration**
+   - [ ] Research LangChain's built-in session/conversation concepts
+   - [ ] Explore memory management patterns
+   - [ ] Investigate chain composition patterns
+   - [ ] Test different model provider integrations
+   - [ ] Document key patterns and types we'll need to support
 
-3. **@mandrake/storage**
-   - [ ] Set up Prisma schema
-   - [ ] Create migrations
-   - [ ] Implement workspace repository
-   - [ ] Implement session repository
-   - [ ] Add repository tests
+2. **MCP Integration Research**
+   - [ ] Study MCP server connection lifecycle
+   - [ ] Understand context refresh mechanisms
+   - [ ] Test tool registration and discovery
+   - [ ] Explore state management requirements
+   - [ ] Document integration patterns
 
-## Phase 2: AI Integration
+3. **Integration Prototype**
+   - [ ] Build minimal working example combining both
+   - [ ] Test memory persistence across sessions
+   - [ ] Validate tool context management
+   - [ ] Identify core type requirements
+   - [ ] Document learnings and challenges
+
+## Phase 2: Core Type Definition
+
+1. **Type Design (informed by Phase 1)**
+   - [ ] Draft workspace types based on LangChain patterns
+   - [ ] Design session types incorporating MCP requirements
+   - [ ] Define tool configuration types matching MCP servers
+   - [ ] Create unified memory management types
+   - [ ] Document type decisions and rationale
+
+2. **@mandrake/types Package**
+   - [ ] Implement core type definitions
+   - [ ] Add validation schemas
+   - [ ] Write type tests
+   - [ ] Create usage examples
+   - [ ] Document type constraints
+
+## Phase 3: Initial Implementation
+
 1. **@mandrake/langchain**
-   - [ ] Configure model providers
-   - [ ] Set up chain templates
-   - [ ] Implement memory management
-   - [ ] Add retrieval utilities
-   - [ ] Create chain tests
+   - [ ] Implement core chain management
+   - [ ] Add session handling
+   - [ ] Set up memory integration
+   - [ ] Add provider configuration
+   - [ ] Write integration tests
 
 2. **@mandrake/mcp**
-   - [ ] Implement server connection manager
+   - [ ] Implement server management
    - [ ] Add tool registration
-   - [ ] Set up context refresh system
-   - [ ] Add server health checks
+   - [ ] Set up context management
+   - [ ] Add health monitoring
    - [ ] Write integration tests
 
-## Phase 3: Web Application
-1. **State Management**
-   - [ ] Set up Zustand stores
-   - [ ] Add workspace state
-   - [ ] Add session state
-   - [ ] Configure persistence
-   - [ ] Add store tests
+3. **@mandrake/core**
+   - [ ] Implement workspace management (using patterns from Phase 1)
+   - [ ] Add session handling (based on LangChain patterns)
+   - [ ] Create tool management (based on MCP patterns)
+   - [ ] Set up configuration system
+   - [ ] Write unit tests
 
-2. **Workspace Features**
-   - [ ] Create workspace form
-   - [ ] Add workspace listing
-   - [ ] Implement workspace editing
-   - [ ] Add workspace deletion
+## Phase 4: Storage Layer
+
+1. **Schema Design**
+   - [ ] Design workspace storage (informed by live prototypes)
+   - [ ] Plan session persistence (based on LangChain needs)
+   - [ ] Define tool state storage (based on MCP requirements)
+   - [ ] Create migration strategy
+   - [ ] Document schema decisions
+
+2. **@mandrake/storage**
+   - [ ] Implement repository pattern
+   - [ ] Add migrations
+   - [ ] Create data access layer
+   - [ ] Set up caching strategy
+   - [ ] Write integration tests
+
+## Phase 5: Web Application
+1. **Core Features**
+   - [ ] Implement workspace management UI
+   - [ ] Add session interface
+   - [ ] Create provider configuration
+   - [ ] Add MCP server management
    - [ ] Write component tests
 
-3. **Provider Management**
-   - [ ] Add provider configuration
-   - [ ] Create key management
-   - [ ] Add usage tracking
-   - [ ] Implement provider testing
-   - [ ] Add configuration tests
+2. **State Management**
+   - [ ] Set up stores
+   - [ ] Add persistence
+   - [ ] Configure real-time updates
+   - [ ] Implement error handling
+   - [ ] Write store tests
 
-4. **MCP Integration**
-   - [ ] Create server configuration UI
-   - [ ] Add tool management
-   - [ ] Implement server monitoring
-   - [ ] Add connection testing
-   - [ ] Write integration tests
+## Phase 6: Polish & Production
+1. **Testing**
+   - [ ] Add E2E tests
+   - [ ] Create integration test suite
+   - [ ] Set up performance testing
+   - [ ] Add stress testing
+   - [ ] Document test coverage
 
-## Phase 4: Testing and Documentation
-1. **Testing Infrastructure**
-   - [ ] Set up E2E tests
-   - [ ] Add API route tests
-   - [ ] Create test fixtures
-   - [ ] Add performance tests
-   - [ ] Configure CI pipeline
-
-2. **Documentation**
-   - [ ] Add API documentation
+2. **Documentation & Deployment**
+   - [ ] Write technical documentation
    - [ ] Create user guides
-   - [ ] Write developer docs
-   - [ ] Add example configurations
-   - [ ] Document testing strategy
+   - [ ] Set up deployment pipeline
+   - [ ] Add monitoring
+   - [ ] Create operation guides
 
-## Phase 5: Deployment and Operations
-1. **Deployment**
-   - [ ] Configure production build
-   - [ ] Set up monitoring
-   - [ ] Add logging
-   - [ ] Configure backups
-   - [ ] Document operations
+## Research Guidelines
+- Build small prototypes to test assumptions
+- Document integration patterns as they're discovered
+- Update type definitions based on practical usage
+- Test cross-package interactions early
+- Validate assumptions with real usage scenarios
 
-2. **Security**
-   - [ ] Add authentication
-   - [ ] Set up authorization
-   - [ ] Configure rate limiting
-   - [ ] Add audit logging
-   - [ ] Security documentation
-
-## Development Guidelines
-- All features start with type definitions
-- Test coverage required for all packages
-- Documentation updates with each feature
-- Performance testing for critical paths
-- Security review for each phase
+## Development Notes
+- Phases may overlap as we learn more
+- Early phases focus on learning and prototyping
+- Type definitions will evolve with understanding
+- Storage schema should follow proven patterns
+- UI can start early with mock data

@@ -62,6 +62,7 @@ npm run dev
 ## Development
 
 The project uses:
+
 - TypeScript for type safety
 - Next.js 14+ for the web application
 - Turbopack for fast development
