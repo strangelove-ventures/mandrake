@@ -14,7 +14,6 @@
   "dependencies": {
     "@mandrake/types": "^0.0.1",
     "@mandrake/core": "^0.0.1",
-    "@modelcontextprotocol/typescript-sdk": "^0.1.0",
     "eventsource-parser": "^1.1.1",
     "ws": "^8.16.0",
     "zod": "^3.22.4"
