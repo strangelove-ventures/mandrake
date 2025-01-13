@@ -1,0 +1,23 @@
+{
+  "name": "@mandrake/storage",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist coverage .turbo",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "@mandrake/types": "^0.0.1",
+    "@prisma/client": "^5.10.2",
+    "prisma": "^5.10.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "prisma": "^5.10.2"
+  }
+}
