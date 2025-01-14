@@ -9,7 +9,7 @@ import { DockerTransport } from './transport';
  * Manages a single MCP server instance running in a Docker container
  */
 export class MCPServer extends TypedEmitter<ServerEvents> {
-  private state: ServerState;
+  public state: ServerState;
   private healthCheckTimer?: NodeJS.Timeout;
   private reconnectTimer?: NodeJS.Timeout;
   private reconnectAttempts = 0;
@@ -39,13 +39,15 @@ export class MCPServer extends TypedEmitter<ServerEvents> {
     try {
       const containerInfo = await this.container.inspect();
       const wasHealthy = this.state.health.healthy;
-      
-      // Check container is running
-      let healthy = containerInfo.State.Running && 
-        !containerInfo.State.Restarting &&
-        !containerInfo.State.Paused;
 
-      // Check MCP connection
+      // Check container is running AND not stopping/stopped
+      let healthy = containerInfo.State.Running &&
+        !containerInfo.State.Restarting &&
+        !containerInfo.State.Paused &&
+        containerInfo.State.Status !== 'stopping' &&
+        containerInfo.State.Status !== 'stopped';
+
+      // Only check MCP connection if container is running
       if (healthy && this.state.client) {
         try {
           await this.state.client.ping();
@@ -120,16 +122,13 @@ export class MCPServer extends TypedEmitter<ServerEvents> {
     try {
       this.setState({ status: 'starting' });
 
-      console.log('Starting container...');
       await this.container.start();
 
-      console.log('Creating transport...');
       const transport = new DockerTransport(
         this.container,
         this.config.execCommand // Pass just what's needed for exec
       );
 
-      console.log('Creating client...');
       const client = new Client(
         { name: `mandrake-client-${this.config.name}`, version: '0.1.0' },
         { capabilities: { tools: true } }

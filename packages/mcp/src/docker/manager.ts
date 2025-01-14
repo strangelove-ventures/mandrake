@@ -38,7 +38,6 @@ export class MCPServerManager {
     };
 
     // Create container
-    console.log('Creating container...');
     return this.docker.createContainer({
       Image: config.image,
       Entrypoint: config.entrypoint,

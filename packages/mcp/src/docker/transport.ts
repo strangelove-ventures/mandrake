@@ -47,13 +47,6 @@ export class DockerTransport implements Transport {
       const streamType = chunk[0];
       const payload = chunk.slice(8);
 
-      console.log('Raw chunk:', {
-        streamType,
-        payloadLength: payload.length,
-        payloadHex: payload.toString('hex').slice(0, 32) + '...',
-        payloadStr: payload.toString().slice(0, 100) + '...'
-      });
-
       if (streamType === 1) { // stdout
         // Accumulate data in buffer
         this.messageBuffer += payload.toString();
@@ -68,7 +61,6 @@ export class DockerTransport implements Transport {
           if (!line) continue; // Skip empty lines
           try {
             const message = JSON.parse(line);
-            console.log('Parsed JSON-RPC message:', message);
             this.onmessage?.(message);
           } catch (err) {
             console.error('Failed to parse message:', {
@@ -77,8 +69,6 @@ export class DockerTransport implements Transport {
             });
           }
         }
-      } else if (streamType === 2) { // stderr
-        console.log('Container stderr:', payload.toString().trim());
       }
     });
 
@@ -97,7 +87,6 @@ export class DockerTransport implements Transport {
       throw new Error('Transport closed');
     }
 
-    console.log('Sending message:', data);
     const payload = JSON.stringify(data) + '\n';  // Add newline for stdio protocol
 
     return new Promise((resolve, reject) => {

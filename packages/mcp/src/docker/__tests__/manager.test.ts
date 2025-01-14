@@ -32,17 +32,17 @@ describe('MCPServerManager', () => {
       let server;
       try {
         // Start the server
-        console.log('Starting server...');
         server = await manager.startServer({
           name: 'filesystem',
           image: 'mandrake-test/mcp-filesystem:latest',
           command: ['/data'],
-          execCommand: ['/app/dist/index.js', '/data'], // Add this
+          execCommand: ['/app/dist/index.js', '/data'],
           volumes: [{
             source: testDir,
             target: '/data'
           }]
         });
+
         // Wait for server to be ready with timeout
         const maxWaitTime = 10000;
         const startTime = Date.now();
@@ -50,10 +50,8 @@ describe('MCPServerManager', () => {
 
         while (Date.now() - startTime < maxWaitTime && !isReady) {
           try {
-            const tools = await server.callTool('tools/list', {});  // Changed this
-            if (tools && tools.tools) {
-              isReady = true;
-            }
+            await server.callTool('ping', {});
+            isReady = true;
           } catch (err) {
             console.log('Waiting for server to be ready...');
             await new Promise(resolve => setTimeout(resolve, 1000));
@@ -62,8 +60,9 @@ describe('MCPServerManager', () => {
 
         expect(isReady).toBe(true);
 
-        // Get tools list
-        const tools = await server.callTool('tools/list', {});
+        // Get tools list using the client protocol method
+        const tools = await server.state.client!.listTools();
+
         expect(tools.tools).toContainEqual(
           expect.objectContaining({
             name: 'read_file',
@@ -76,14 +75,10 @@ describe('MCPServerManager', () => {
         expect(server.getState().status).toBe('stopped');
 
       } catch (err) {
-        console.error('Test failed:', {
-          error: err,
-          serverState: server?.getState(),
-          containerInfo: server ? await server.getState().container.inspect().catch(() => null) : null
-        });
+        console.error('Test failed:', { error: err });
         throw err;
       }
-    }, 60000);  // 60s timeout for the full test
+    }, 60000);
 
     it('should handle container cleanup on failure', async () => {
       try {
@@ -141,7 +136,6 @@ describe('MCPServerManager', () => {
       } catch (err) {
         console.error('Health check test failed:', {
           error: err,
-          serverState: server?.getState(),
           healthChanges
         });
         throw err;
