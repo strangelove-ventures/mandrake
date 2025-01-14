@@ -16,7 +16,7 @@ export class MCPServer extends TypedEmitter<ServerEvents> {
 
   constructor(
     private config: ServerConfig,
-    private container: Docker.Container
+    public container: Docker.Container
   ) {
     super();
     this.state = {
@@ -135,10 +135,8 @@ export class MCPServer extends TypedEmitter<ServerEvents> {
       );
 
       // Connect transport & client
-      console.log('Connecting...');
       await transport.start();
       await client.connect(transport);
-      console.log('Client connected successfully');
 
       this.state.transport = transport;
       this.state.client = client;
@@ -164,6 +162,19 @@ export class MCPServer extends TypedEmitter<ServerEvents> {
   async stop(): Promise<void> {
     this.setState({ status: 'stopping' });
     this.stopHealthCheck();
+
+    this.state.health = {
+      healthy: false,
+      lastCheck: new Date(),
+      lastError: new Error('Server stopped')
+    };
+    this.emit('healthChange', this.state.health);
+
+    // Clear any pending reconnect
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = undefined;
+    }
 
     try {
       // Close MCP connection

@@ -53,7 +53,6 @@ describe('MCPServerManager', () => {
             await server.callTool('ping', {});
             isReady = true;
           } catch (err) {
-            console.log('Waiting for server to be ready...');
             await new Promise(resolve => setTimeout(resolve, 1000));
           }
         }

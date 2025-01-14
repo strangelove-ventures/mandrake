@@ -26,7 +26,6 @@ export class MCPServerManager {
     });
 
     if (images.length === 0) {
-      console.log(`Pulling image ${config.image}...`);
       await this.docker.pull(config.image);
     }
 
@@ -118,11 +117,21 @@ export class MCPServerManager {
    * Cleanup all managed servers and containers
    */
   async cleanup(): Promise<void> {
-    // Stop all running servers
-    await Promise.all(Array.from(this.servers.values()).map(s => s.stop()));
+    // Stop all running servers with forced cleanup
+    const serverStops = Array.from(this.servers.values()).map(async s => {
+      try {
+        await s.stop();
+        await s.container.remove({ force: true });
+      } catch (err) {
+        if (!(err instanceof Error && (err as any).statusCode === 304 && (err as any).reason === 'container already stopped')) {
+          console.error('Error stopping server:', err);
+        }
+      }
+    });
+    await Promise.all(serverStops);
     this.servers.clear();
 
-    // Find and remove any orphaned containers
+    // Find and force remove any remaining containers
     const containers = await this.docker.listContainers({
       all: true,
       filters: {
@@ -133,9 +142,6 @@ export class MCPServerManager {
     await Promise.all(containers.map(async c => {
       const container = this.docker.getContainer(c.Id);
       try {
-        if (c.State === 'running') {
-          await container.stop();
-        }
         await container.remove({ force: true });
       } catch (err) {
         console.error('Error cleaning up container:', c.Id, err);
