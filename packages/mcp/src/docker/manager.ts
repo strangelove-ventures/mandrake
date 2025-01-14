@@ -1,195 +1,152 @@
 import Docker from 'dockerode';
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import type { StdioServerParameters } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { ServerConfig } from './types';
+import { MCPServer } from './server';
 
-export interface ServerConfig {
-  name: string;
-  image: string;
-  volumes?: {
-    source: string;
-    target: string;
-  }[];
-  env?: Record<string, string>;
-}
-
-class DockerTransport extends StdioClientTransport {
-  constructor(private container: Docker.Container) {
-    super({
-      command: 'docker',
-      args: ['exec', '-i', container.id, '/app/dist/index.js', '/data'],
-      stderr: 'pipe'  // Change to pipe so we can see stderr output
-    } as StdioServerParameters);
-  }
-}
-
-interface MCPServerConnection {
-  container: Docker.Container;
-  client: Client;
-  transport: DockerTransport;
-  config: ServerConfig;
-}
-
+/**
+ * Manages multiple MCP server instances running in Docker containers.
+ * Handles container lifecycle, cleanup, and server tracking.
+ */
 export class MCPServerManager {
   private static LABEL_PREFIX = 'mandrake.mcp';
   private docker: Docker;
-  private servers: Map<string, MCPServerConnection>;
+  private servers: Map<string, MCPServer>;
 
   constructor() {
     this.docker = new Docker();
     this.servers = new Map();
   }
 
-  async startServer(config: ServerConfig): Promise<string> {
-    // Check if image exists locally first
+  /**
+   * Creates a new Docker container for an MCP server
+   */
+  private async createContainer(config: ServerConfig): Promise<Docker.Container> {
+    // Check/pull image
     const images = await this.docker.listImages({
       filters: { reference: [config.image] }
     });
 
     if (images.length === 0) {
-      await this.docker.pull(config.image).catch(err => {
-        console.error(`Failed to pull image ${config.image}:`, err);
-        throw err;
-      });
+      console.log(`Pulling image ${config.image}...`);
+      await this.docker.pull(config.image);
     }
 
+    // Base labels for tracking
     const labels = {
-      [`${MCPServerManager.LABEL_PREFIX}.type`]: config.name,
-      [`${MCPServerManager.LABEL_PREFIX}.managed`]: 'true'
+      [`${MCPServerManager.LABEL_PREFIX}.managed`]: 'true',
+      [`${MCPServerManager.LABEL_PREFIX}.name`]: config.name,
+      ...config.labels
     };
 
-    // Create container with labels instead of fixed name
-    const container = await this.docker.createContainer({
+    // Create container
+    console.log('Creating container...');
+    return this.docker.createContainer({
       Image: config.image,
-      Labels: labels,
+      Entrypoint: config.entrypoint,
+      Cmd: config.command,
       Env: config.env ? Object.entries(config.env).map(([k, v]) => `${k}=${v}`) : [],
+      Labels: labels,
+      AttachStdin: true,
+      AttachStdout: true,
+      AttachStderr: true,
+      OpenStdin: true,
+      StdinOnce: false,
+      Tty: false,
       HostConfig: {
-        Binds: config.volumes?.map(v => `${v.source}:${v.target}`) || [],
-        AutoRemove: false, // Ensure we can inspect logs after exit
-        LogConfig: {
-          Type: 'json-file',
-          Config: {
-            'max-size': '10m'
-          }
-        }
+        Privileged: config.privileged,
+        AutoRemove: false,
+        Binds: config.volumes?.map(v => `${v.source}:${v.target}:${v.mode || 'rw'}`),
+        ...config.hostConfig,
+      }
+    });
+  }
+
+  /**
+   * Starts a new MCP server with the given configuration
+   */
+  async startServer(config: ServerConfig): Promise<MCPServer> {
+    const container = await this.createContainer(config);
+    const server = new MCPServer(config, container);
+
+    try {
+      await server.start();
+      this.servers.set(container.id, server);
+      return server;
+    } catch (err) {
+      // Cleanup on failure
+      await container.remove({ force: true }).catch(console.error);
+      throw err;
+    }
+  }
+
+  /**
+   * Stops and removes the server with the given ID
+   */
+  async stopServer(id: string): Promise<void> {
+    const server = this.servers.get(id);
+    if (!server) return;
+
+    await server.stop();
+    this.servers.delete(id);
+  }
+
+  /**
+   * Stops and removes the server with the given ID,
+   * including its container
+   */
+  async removeServer(id: string): Promise<void> {
+    const server = this.servers.get(id);
+    if (!server) return;
+
+    await server.remove();
+    this.servers.delete(id);
+  }
+
+  /**
+   * Gets a server by ID
+   */
+  getServer(id: string): MCPServer | undefined {
+    return this.servers.get(id);
+  }
+
+  /**
+   * Lists all managed servers
+   */
+  async listServers(): Promise<MCPServer[]> {
+    return Array.from(this.servers.values());
+  }
+
+  /**
+   * Cleanup all managed servers and containers
+   */
+  async cleanup(): Promise<void> {
+    // Stop all running servers
+    await Promise.all(Array.from(this.servers.values()).map(s => s.stop()));
+    this.servers.clear();
+
+    // Find and remove any orphaned containers
+    const containers = await this.docker.listContainers({
+      all: true,
+      filters: {
+        label: [`${MCPServerManager.LABEL_PREFIX}.managed=true`]
       }
     });
 
-    // Start container and set up debug logging
-    await container.start();
-    
-    // Create transport with debugging
-    const transport = new DockerTransport(container);
-    
-    // Set up transport event handlers
-    transport.onerror = (error: Error) => {
-      console.error(`Transport error for ${config.name}:${container.id}:`, error);
-    };
-
-    transport.onclose = () => {
-      console.log(`Transport closed for ${config.name}:${container.id}`);
-    };
-
-    // Set up stderr logging if available
-    transport.stderr?.on('data', (chunk) => {
-      console.error(`[${config.name}:${container.id}] stderr: ${chunk.toString()}`);
-    });
-
-    const client = new Client(
-      { name: `mandrake-client-${config.name}`, version: '0.1.0' },
-      { capabilities: { tools: true } }
-    );
-
-    try {
-      await transport.start();  // Explicitly start the transport
-      await client.connect(transport);
-    } catch (err) {
-      // If connection fails, get container logs for debugging
-      const logs = await container.logs({
-        stdout: true,
-        stderr: true,
-        timestamps: true,
-        tail: 50
-      });
-      console.error(`Failed to connect to ${config.name}:${container.id}. Container logs:`, logs.toString());
-      throw err;
-    }
-
-    this.servers.set(container.id, {
-      container,
-      client,
-      transport,
-      config
-    });
-
-    return container.id;
+    await Promise.all(containers.map(async c => {
+      const container = this.docker.getContainer(c.Id);
+      try {
+        if (c.State === 'running') {
+          await container.stop();
+        }
+        await container.remove({ force: true });
+      } catch (err) {
+        console.error('Error cleaning up container:', c.Id, err);
+      }
+    }));
   }
 
-  async stopServer(containerId: string): Promise<void> {
-    const connection = this.servers.get(containerId);
-    if (!connection) return;
-
-    try {
-      await connection.client.close();
-      await connection.transport.close();
-      await connection.container.stop();
-      await connection.container.remove();
-    } catch (err) {
-      console.error(`Error stopping server ${containerId}:`, err);
-    }
-    
-    this.servers.delete(containerId);
-  }
-
-  async listServers(): Promise<string[]> {
-    return Array.from(this.servers.keys());
-  }
-
-  // Client communication methods
-  async listServerTools(containerId: string) {
-    const conn = this.servers.get(containerId);
-    if (!conn) throw new Error(`Server ${containerId} not found`);
-    return conn.client.listTools();
-  }
-
-  async callServerTool(containerId: string, tool: string, args: any) {
-    const conn = this.servers.get(containerId);
-    if (!conn) throw new Error(`Server ${containerId} not found`);
-    return conn.client.callTool({ 
-      name: tool, 
-      arguments: args 
-    });
-  }
-
-  // Helper to check server health
-  async isServerHealthy(containerId: string): Promise<boolean> {
-    const conn = this.servers.get(containerId);
-    if (!conn) return false;
-
-    try {
-      await conn.client.ping();
-      return true;
-    } catch (err) {
-      return false;
-    }
-  }
-
-  // Helper to inspect container state
-  async getContainerState(containerId: string) {
-    const connection = this.servers.get(containerId);
-    if (!connection) throw new Error(`Server ${containerId} not found`);
-    
-    const state = await connection.container.inspect();
-    return {
-      running: state.State.Running,
-      exitCode: state.State.ExitCode,
-      startedAt: state.State.StartedAt,
-      finishedAt: state.State.FinishedAt,
-      error: state.State.Error
-    };
-  }
-
-  // Helper to get managed containers by label
+  /**
+   * Gets all managed container IDs by label
+   */
   async listManagedContainers(): Promise<Docker.ContainerInfo[]> {
     return this.docker.listContainers({
       all: true,
@@ -197,17 +154,5 @@ export class MCPServerManager {
         label: [`${MCPServerManager.LABEL_PREFIX}.managed=true`]
       }
     });
-  }
-
-  async cleanupOrphanedContainers(): Promise<void> {
-    const containers = await this.listManagedContainers();
-
-    await Promise.all(containers.map(async (container) => {
-      const cont = this.docker.getContainer(container.Id);
-      if (container.State === 'running') {
-        await cont.stop();
-      }
-      await cont.remove({ force: true });
-    }));
   }
 }
