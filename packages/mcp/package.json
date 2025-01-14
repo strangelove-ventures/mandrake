@@ -8,17 +8,20 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist coverage .turbo",
-    "test": "jest",
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
     "lint": "eslint src/**/*.ts"
   },
   "dependencies": {
-    "@mandrake/types": "^0.0.1",
     "@mandrake/core": "^0.0.1",
+    "@mandrake/types": "^0.0.1",
+    "@modelcontextprotocol/sdk": "^1.1.1",
+    "dockerode": "^4.0.3",
     "eventsource-parser": "^1.1.1",
     "ws": "^8.16.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/dockerode": "^3.3.34",
     "@types/ws": "^8.5.10"
   }
 }
