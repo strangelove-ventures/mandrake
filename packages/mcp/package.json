@@ -17,6 +17,7 @@
     "@modelcontextprotocol/sdk": "^1.1.1",
     "dockerode": "^4.0.3",
     "eventsource-parser": "^1.1.1",
+    "tiny-typed-emitter": "^2.1.0",
     "ws": "^8.16.0",
     "zod": "^3.22.4"
   },

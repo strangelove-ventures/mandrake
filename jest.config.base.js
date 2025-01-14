@@ -1,13 +1,20 @@
+/** @type {import('jest').Config} */
 export default {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
-  transform: {
-    '^.+\\.tsx?$': ['ts-jest', { useESM: true }]
-  },
-  moduleNameMapper: {
-    '^@mandrake/(.*)$': '<rootDir>/../$1/src'
-  },
   extensionsToTreatAsEsm: ['.ts'],
+  moduleNameMapper: {
+    '^@mandrake/(.*)$': '<rootDir>/../$1/src',
+    '^(\\.{1,2}/.*)\\.js$': '$1'
+  },
+  transform: {
+    '^.+\\.tsx?$': [
+      'ts-jest',
+      {
+        useESM: true,
+      },
+    ],
+  },
   testMatch: [
     '<rootDir>/src/**/*.test.ts',
     '<rootDir>/src/**/*.spec.ts'

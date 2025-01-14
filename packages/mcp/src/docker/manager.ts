@@ -18,7 +18,7 @@ class DockerTransport extends StdioClientTransport {
     super({
       command: 'docker',
       args: ['exec', '-i', container.id, '/app/dist/index.js', '/data'],
-      stderr: 'inherit'
+      stderr: 'pipe'  // Change to pipe so we can see stderr output
     } as StdioServerParameters);
   }
 }
@@ -78,22 +78,21 @@ export class MCPServerManager {
     // Start container and set up debug logging
     await container.start();
     
-    // Add container log monitoring
-    const logStream = await container.logs({
-      follow: true,
-      stdout: true,
-      stderr: true,
-      timestamps: true
-    });
-
-    logStream.on('data', (chunk) => {
-      console.log(`[${config.name}:${container.id}] ${chunk.toString()}`);
-    });
-
     // Create transport with debugging
     const transport = new DockerTransport(container);
-    transport.on('error', (err) => {
-      console.error(`Transport error for ${config.name}:${container.id}:`, err);
+    
+    // Set up transport event handlers
+    transport.onerror = (error: Error) => {
+      console.error(`Transport error for ${config.name}:${container.id}:`, error);
+    };
+
+    transport.onclose = () => {
+      console.log(`Transport closed for ${config.name}:${container.id}`);
+    };
+
+    // Set up stderr logging if available
+    transport.stderr?.on('data', (chunk) => {
+      console.error(`[${config.name}:${container.id}] stderr: ${chunk.toString()}`);
     });
 
     const client = new Client(
@@ -101,12 +100,8 @@ export class MCPServerManager {
       { capabilities: { tools: true } }
     );
 
-    // Add connection state logging
-    client.on('close', () => {
-      console.log(`MCP connection closed for ${config.name}:${container.id}`);
-    });
-
     try {
+      await transport.start();  // Explicitly start the transport
       await client.connect(transport);
     } catch (err) {
       // If connection fails, get container logs for debugging
