@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { MandrakeChat } from '@/lib/mandrake-chat';
-import { prisma } from '@/lib/db';
+import { prisma } from '@/mandrake/storage';
 
 export async function POST(req: NextRequest) {
   try {
