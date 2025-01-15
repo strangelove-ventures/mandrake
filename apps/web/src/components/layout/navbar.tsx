@@ -11,6 +11,7 @@ import {
 import Link from "next/link"
 
 const navLinks = [
+  { href: "/chat", label: "Chat" },
   { href: "/workspaces", label: "Workspaces" },
   { href: "/mcp", label: "MCP Configuration" },
   { href: "/providers", label: "LLM Providers" },
