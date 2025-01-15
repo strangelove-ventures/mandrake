@@ -1,10 +1,7 @@
 import { NextResponse } from 'next/server';
-import { mcpService } from '@/lib/mcp';
 import { prisma } from '@mandrake/storage';
-import { formatToolsOpenAI } from '@mandrake/mcp';
-import { Tool } from '@mandrake/types';
 import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
+import { HumanMessage } from "@langchain/core/messages";
 import { buildMessageHistory } from '@/lib/chat';
 
 export async function POST(req: Request) {
