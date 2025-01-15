@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 export async function POST(req: Request) {
   const encoder = new TextEncoder();
@@ -58,25 +59,28 @@ export async function POST(req: Request) {
             apiKey: process.env.GOOGLE_API_KEY!,
             modelName: "gemini-pro",
             maxOutputTokens: 2048,
-            // Add safety settings to be more permissive
-            safetySettings: [
-              {
-                category: "HARM_CATEGORY_HARASSMENT",
-                threshold: "BLOCK_NONE",
-              },
-              {
-                category: "HARM_CATEGORY_HATE_SPEECH",
-                threshold: "BLOCK_NONE",
-              },
-              {
-                category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                threshold: "BLOCK_NONE",
-              },
-              {
-                category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                threshold: "BLOCK_NONE",
-              },
-            ],
+            streaming: true,
+            // Add generation config
+            modelKwargs: {
+              safetySettings: [
+                {
+                  category: "HARM_CATEGORY_HARASSMENT",
+                  threshold: "BLOCK_ONLY_HIGH",
+                },
+                {
+                  category: "HARM_CATEGORY_HATE_SPEECH",
+                  threshold: "BLOCK_ONLY_HIGH",
+                },
+                {
+                  category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                  threshold: "BLOCK_ONLY_HIGH",
+                },
+                {
+                  category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+                  threshold: "BLOCK_ONLY_HIGH",
+                },
+              ],
+            },
           });
 
           // Format message history
@@ -86,39 +90,62 @@ export async function POST(req: Request) {
               : new AIMessage(msg.content)
           );
 
+          let fullResponse = '';
+
           try {
-            // Get non-streaming response first to validate
-            const response = await chatModel.call([
+            const stream = await chatModel.stream([
               ...messageHistory,
               new HumanMessage(message)
             ]);
 
-            // If we get here, the response is safe, so let's stream it
-            controller.enqueue(encoder.encode(JSON.stringify({
-              type: 'chunk',
-              content: response.content
-            }) + '\n'));
+            for await (const chunk of stream) {
+              if (chunk.content) {
+                // Send each chunk immediately
+                controller.enqueue(encoder.encode(JSON.stringify({
+                  type: 'chunk',
+                  content: chunk.content
+                }) + '\n'));
+                
+                // Build full response for database
+                fullResponse += chunk.content;
+              }
+            }
 
-            // Save the AI response
+            // After streaming is complete, save to database
             const aiMessage = await prisma.message.create({
               data: {
                 role: 'assistant',
-                content: response.content,
+                content: fullResponse || "I apologize, but I encountered an error generating the response.",
                 conversationId: conversation.id
               }
             });
 
-            // Send final message with the saved AI message
+            // Send final message with the saved AI message ID
             controller.enqueue(encoder.encode(JSON.stringify({
               type: 'done',
               aiMessage
             }) + '\n'));
 
           } catch (error: any) {
-            // Handle safety filter blocks
-            if (error.message?.includes('SAFETY')) {
-              const errorMessage = "I apologize, but I cannot provide a response to that request. Please try rephrasing your question.";
-              
+            console.error('Streaming error:', error);
+            
+            // If we have a partial response, save it
+            if (fullResponse) {
+              const aiMessage = await prisma.message.create({
+                data: {
+                  role: 'assistant',
+                  content: fullResponse,
+                  conversationId: conversation.id
+                }
+              });
+
+              controller.enqueue(encoder.encode(JSON.stringify({
+                type: 'done',
+                aiMessage
+              }) + '\n'));
+            } else {
+              // If no response at all, send an error message
+              const errorMessage = "I apologize, but I wasn't able to complete that response. Please try rephrasing your question.";
               const aiMessage = await prisma.message.create({
                 data: {
                   role: 'assistant',
@@ -136,8 +163,6 @@ export async function POST(req: Request) {
                 type: 'done',
                 aiMessage
               }) + '\n'));
-            } else {
-              throw error;
             }
           }
 

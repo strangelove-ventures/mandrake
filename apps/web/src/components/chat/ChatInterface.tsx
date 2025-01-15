@@ -6,12 +6,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Loader2, MessageSquarePlus } from 'lucide-react';
+import MessageContent from './MessageContent';
 
 type Message = {
   id: string;
   role: string;
   content: string;
   createdAt: string;
+  isStreaming?: boolean;
 };
 
 type Conversation = {
@@ -75,7 +77,6 @@ const ChatInterface = () => {
     setInput('');
 
     try {
-      // Create a new streaming connection
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -91,7 +92,6 @@ const ChatInterface = () => {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let streamedContent = '';
 
       while (true) {
         const { value, done } = await reader.read();
@@ -105,45 +105,47 @@ const ChatInterface = () => {
 
           switch (data.type) {
             case 'init':
-              // Set conversation ID and add user message
               setCurrentConversationId(data.conversationId);
               setMessages(prev => [...prev, data.userMessage]);
-              // Add empty assistant message
-              setMessages(prev => [...prev, { 
-                id: 'temp',
+              setMessages(prev => [...prev, {
+                id: 'streaming',
                 role: 'assistant',
                 content: '',
-                createdAt: new Date().toISOString()
+                createdAt: new Date().toISOString(),
+                isStreaming: true
               }]);
               break;
 
             case 'chunk':
-              // Update the streaming message content
-              streamedContent += data.content;
               setMessages(prev => {
-                const updated = [...prev];
-                const lastMessage = updated[updated.length - 1];
-                if (lastMessage.role === 'assistant') {
-                  lastMessage.content = streamedContent;
+                const lastMessage = prev[prev.length - 1];
+                if (lastMessage.isStreaming) {
+                  return [
+                    ...prev.slice(0, -1),
+                    { ...lastMessage, content: lastMessage.content + data.content }
+                  ];
                 }
-                return updated;
+                return prev;
               });
               break;
 
             case 'done':
-              // Replace the temporary message with the saved one
-              setMessages(prev => {
-                const updated = [...prev];
-                updated[updated.length - 1] = data.aiMessage;
-                return updated;
-              });
-              await fetchConversations(); // Refresh conversation list
+              setMessages(prev => [
+                ...prev.slice(0, -1),
+                { ...data.aiMessage, isStreaming: false }
+              ]);
+              await fetchConversations();
               break;
           }
         }
       }
     } catch (error) {
       console.error('Error in chat stream:', error);
+      setMessages(prev => 
+        prev[prev.length - 1]?.isStreaming 
+          ? prev.slice(0, -1)
+          : prev
+      );
     } finally {
       setIsLoading(false);
     }
@@ -216,7 +218,10 @@ const ChatInterface = () => {
                   <Badge className="mb-1">
                     {message.role === 'user' ? 'You' : 'Assistant'}
                   </Badge>
-                  <p className="whitespace-pre-wrap">{message.content}</p>
+                  <MessageContent content={message.content} />
+                  {message.isStreaming && (
+                    <span className="inline-block w-1.5 h-4 bg-current animate-pulse ml-1">|</span>
+                  )}
                 </div>
               </div>
             ))}
