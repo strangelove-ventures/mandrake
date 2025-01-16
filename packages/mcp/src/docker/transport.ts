@@ -27,21 +27,6 @@ export class DockerTransport implements Transport {
     private execCommand?: string[]
   ) {}
 
-  private async createExec() {
-    const exec = await this.container.exec({
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      Tty: false,
-      Cmd: this.execCommand
-    });
-
-    return await exec.start({
-      stdin: true,
-      hijack: true
-    });
-  }
-
   /**
    * Process a single line from the stream
    */
@@ -91,46 +76,51 @@ export class DockerTransport implements Transport {
     }
 
     try {
-      this.stream = await this.createExec();
+      const exec = await this.container.exec({
+        AttachStderr: true,
+        AttachStdout: true,
+        AttachStdin: true,
+        Tty: false,
+        Cmd: this.execCommand,
+      });
+
+      this.stream = await exec.start({
+        hijack: true,
+        stdin: true
+      });
+
+      // Set up data handling
+      this.stream.on('data', (chunk: Buffer) => {
+        const streamType = chunk[0];
+        const payload = chunk.slice(8);
+        if (streamType === 1) {
+          this.messageBuffer += payload.toString();
+          const lines = this.messageBuffer.split('\n');
+          this.messageBuffer = lines.pop() || '';
+          for (const line of lines) {
+            this.handleMessage(line);
+          }
+        }
+      });
+
+      this.stream.on('end', () => {
+        this._closed = true;
+        this.onclose?.();
+      });
+
+      this.stream.on('error', (err) => {
+        this.onerror?.(new McpError(
+          ErrorCode.InternalError,
+          `Stream error: ${err.message}`
+        ));
+      });
+
     } catch (err) {
       throw new McpError(
         ErrorCode.InternalError,
         `Failed to create exec: ${(err as Error).message}`
       );
     }
-
-    this.stream.on('data', (chunk: Buffer) => {
-      const streamType = chunk[0];
-      const payload = chunk.slice(8);
-
-      // Only process stdout messages
-      if (streamType === 1) {
-        // Accumulate data in buffer
-        this.messageBuffer += payload.toString();
-        
-        // Process any complete messages
-        const lines = this.messageBuffer.split('\n');
-        // Keep the last partial line in the buffer
-        this.messageBuffer = lines.pop() || '';
-
-        // Process complete lines
-        for (const line of lines) {
-          this.handleMessage(line);
-        }
-      }
-    });
-
-    this.stream.on('end', () => {
-      this._closed = true;
-      this.onclose?.();
-    });
-
-    this.stream.on('error', (err) => {
-      this.onerror?.(new McpError(
-        ErrorCode.InternalError,
-        `Stream error: ${err.message}`
-      ));
-    });
   }
 
   async send(message: JSONRPCMessage): Promise<void> {
@@ -170,11 +160,22 @@ export class DockerTransport implements Transport {
   async close(): Promise<void> {
     if (this._closed) return;
     this._closed = true;
-    
+
+    // Force end stream with timeout
     if (this.stream) {
-      (this.stream as any).end?.();
+      try {
+        await Promise.race([
+          new Promise(resolve => {
+            this.stream?.end();
+            this.stream?.on('close', resolve);
+          }),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Stream close timeout')), 1000))
+        ]);
+      } catch (err) {
+        console.warn('Stream close timeout, forcing cleanup');
+      }
     }
-    
     this.onclose?.();
   }
 }

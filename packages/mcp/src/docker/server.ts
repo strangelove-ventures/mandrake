@@ -2,6 +2,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { MCPServer, ServerConfig, Tool, ToolResult } from '@mandrake/types';
 import Docker from 'dockerode';
 import { DockerTransport } from './transport';
+import { DockerMCPService } from './service';
 
 export class DockerMCPServer implements MCPServer {
   private client?: Client;
@@ -10,6 +11,7 @@ export class DockerMCPServer implements MCPServer {
   constructor(
     private config: ServerConfig,
     private container: Docker.Container,
+    private service: DockerMCPService
   ) {}
 
   getId(): string {
@@ -20,34 +22,55 @@ export class DockerMCPServer implements MCPServer {
     return this.config.name;
   }
 
+  private async waitForReady(maxAttempts = 30, delay = 500): Promise<void> {
+    for (let i = 0; i < maxAttempts; i++) {
+      try {
+        await this.client?.ping();
+        return;
+      } catch (err) {
+        if (i === maxAttempts - 1) throw err;
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    throw new Error('Server not ready after max attempts');
+  }
+
+
   async start(): Promise<void> {
     try {
-      const info = await this.container.inspect();
-      console.log('Container inspection:', {
-        id: info.Id,
-        running: info.State.Running
-      });
-      if (!info.State.Running) {
-        console.log('Starting container');
-        await this.container.start();
+      // Start container if needed
+      try {
+        const info = await this.container.inspect();
+        if (!info.State.Running) {
+          await this.container.start();
+        }
+      } catch (err: any) {
+        if (err?.statusCode === 404) {
+          this.container = await this.service.createContainer(this.config);
+          await this.container.start();
+        } else {
+          throw err;
+        }
       }
 
       // Initialize transport and client
-      console.log('Initializing transport and client');
       this.transport = new DockerTransport(this.container, this.config.execCommand);
-      this.client = new Client({
-        name: 'mandrake',
-        version: '1.0.0',
-      },
+      this.client = new Client(
+        {
+          name: 'mandrake',
+          version: '1.0.0',
+        },
         {
           capabilities: {
             tools: {},
           }
-        });
+        }
+      );
 
-      console.log('Connecting client');
+      // Connect and wait for ready
       await this.client.connect(this.transport);
-      console.log('Server started successfully');
+      await this.waitForReady();
+
     } catch (err) {
       console.error('Error during server start:', err);
       throw err;
@@ -55,33 +78,34 @@ export class DockerMCPServer implements MCPServer {
   }
 
   async stop(): Promise<void> {
+    // First try graceful stop with timeout
     try {
-      // First close MCP client/transport
-      await this.client?.close();
-      this.client = undefined;
-      this.transport = undefined;
+      await Promise.race([
+        this.container.stop(),
+        new Promise(r => setTimeout(r, 3000))
+      ]);
+    } catch { } // Ignore timeout
 
-      try {
-        console.log('Inspecting container before stop');
-        await this.container.inspect();
-        console.log('Container exists, stopping and removing');
-        await this.container.stop();
-        await this.container.remove({ force: true });
-        console.log('Container stopped and removed successfully');
-      } catch (err: any) {
-        console.log('Container operation error:', {
-          statusCode: err?.statusCode,
-          message: err?.message
-        });
-        if (err?.statusCode !== 404 && err?.statusCode !== 409) {
-          throw err;
-        }
+    // Force kill if still running
+    try {
+      const info = await this.container.inspect();
+      if (info.State.Running) {
+        await this.container.kill();
       }
-    } catch (err) {
-      console.error('Error during server stop:', err);
-      throw err;
+    } catch (err: any) {
+      if (err?.statusCode !== 404) {
+        throw err;
+      }
     }
 
+    // Finally remove
+    try {
+      await this.container.remove({ force: true });
+    } catch (err: any) {
+      if (err?.statusCode !== 404 && err?.statusCode !== 409) {
+        throw err;
+      }
+    }
   }
 
 
@@ -108,12 +132,14 @@ export class DockerMCPServer implements MCPServer {
   }
 
   async getInfo(): Promise<Docker.ContainerInspectInfo> {
-    return this.container.inspect();
+    try {
+      return await this.container.inspect();
+    } catch (err: any) {
+      // Return a default state for removed containers
+      if (err?.statusCode === 404) {
+        return { State: { Running: false } } as Docker.ContainerInspectInfo;
+      }
+      throw err;
+    }
   }
-}
-
-function isContainerNotFoundError(err: any): boolean {
-  return err?.statusCode === 404 ||
-    err?.reason === 'no such container' ||
-    err?.message?.includes('no such container');
 }

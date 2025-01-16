@@ -15,7 +15,7 @@ export class DockerMCPService implements MCPService {
   /**
    * Creates a new Docker container
    */
-  private async createContainer(config: ServerConfig): Promise<Docker.Container> {
+  async createContainer(config: ServerConfig): Promise<Docker.Container> {
     // Check/pull image
     const images = await this.docker.listImages({
       filters: { reference: [config.image] }
@@ -57,22 +57,23 @@ export class DockerMCPService implements MCPService {
   }
 
   async initialize(configs: ServerConfig[]): Promise<void> {
-    const promises = configs.map(async (config) => {
+    // Clean start
+    await this.cleanup();
+
+    // Start each server sequentially - more stable than parallel
+    for (const config of configs) {
       try {
         const container = await this.createContainer(config);
-        const server = new DockerMCPServer(config, container);
+        const server = new DockerMCPServer(config, container, this);
         await server.start();
         this.servers.set(config.id, server);
       } catch (err) {
-        // Attempt cleanup on failure
         await this.cleanup();
         throw err;
       }
-    });
-    await Promise.all(promises);
-
+    }
   }
-
+  
   getServer(id: string): MCPServer | undefined {
     return this.servers.get(id);
   }
