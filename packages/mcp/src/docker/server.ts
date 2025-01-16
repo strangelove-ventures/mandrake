@@ -21,28 +21,37 @@ export class DockerMCPServer implements MCPServer {
   }
 
   async start(): Promise<void> {
-    // Start container if not running
-    const info = await this.container.inspect();
-    if (!info.State.Running) {
-      await this.container.start();
-    }
+    try {
+      const info = await this.container.inspect();
+      console.log('Container inspection:', {
+        id: info.Id,
+        running: info.State.Running
+      });
+      if (!info.State.Running) {
+        console.log('Starting container');
+        await this.container.start();
+      }
 
-    // Initialize transport and client
-    this.transport = new DockerTransport(this.container, this.config.execCommand);
-    this.client = new Client(
-      {
+      // Initialize transport and client
+      console.log('Initializing transport and client');
+      this.transport = new DockerTransport(this.container, this.config.execCommand);
+      this.client = new Client({
         name: 'mandrake',
         version: '1.0.0',
-      }, 
-      { 
-        capabilities: {
-          tools: {},
-        }
-      }
-    );
+      },
+        {
+          capabilities: {
+            tools: {},
+          }
+        });
 
-    // Connect client
-    await this.client.connect(this.transport);
+      console.log('Connecting client');
+      await this.client.connect(this.transport);
+      console.log('Server started successfully');
+    } catch (err) {
+      console.error('Error during server start:', err);
+      throw err;
+    }
   }
 
   async stop(): Promise<void> {
@@ -53,13 +62,17 @@ export class DockerMCPServer implements MCPServer {
       this.transport = undefined;
 
       try {
-        // Check if container exists first
+        console.log('Inspecting container before stop');
         await this.container.inspect();
-        // Only try to stop and remove if it exists
+        console.log('Container exists, stopping and removing');
         await this.container.stop();
         await this.container.remove({ force: true });
+        console.log('Container stopped and removed successfully');
       } catch (err: any) {
-        // Ignore 404s - container already gone is fine
+        console.log('Container operation error:', {
+          statusCode: err?.statusCode,
+          message: err?.message
+        });
         if (err?.statusCode !== 404 && err?.statusCode !== 409) {
           throw err;
         }

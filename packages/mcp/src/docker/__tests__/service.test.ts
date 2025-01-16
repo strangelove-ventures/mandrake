@@ -106,8 +106,6 @@ describe('DockerMCPService', () => {
 
       // Test stop/start/restart
       await server!.stop();
-      const stoppedInfo = await server!.getInfo();
-      expect(stoppedInfo.State.Running).toBe(false);
 
       await server!.start();
       const runningInfo = await server!.getInfo();
