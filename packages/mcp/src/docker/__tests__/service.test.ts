@@ -104,17 +104,21 @@ describe('DockerMCPService', () => {
       const server = service.getServer(testConfig.id);
       expect(server).toBeDefined();
 
-      // Test stop/start/restart
+      // Test stop/start cycle
       await server!.stop();
-
       await server!.start();
+
       const runningInfo = await server!.getInfo();
       expect(runningInfo.State.Running).toBe(true);
 
-      await server!.restart();
+      // Test second stop/start cycle
+      await server!.stop();
+      await server!.start();
+
       const restartedInfo = await server!.getInfo();
       expect(restartedInfo.State.Running).toBe(true);
     }, 30000);
+
 
     it('should cleanup all servers on service cleanup', async () => {
       // Initialize multiple servers

@@ -15,9 +15,6 @@ export interface MCPServer {
   
   /** Stop the server */
   stop(): Promise<void>;
-  
-  /** Restart the server */
-  restart(): Promise<void>;
 
   /** List available tools */
   listTools(): Promise<Tool[]>;
