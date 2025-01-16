@@ -1,14 +1,10 @@
 import { MCPService, ServerConfig, MCPServer } from '@mandrake/types';
 import Docker from 'dockerode';
 import { DockerMCPServer } from './server';
+import { handleDockerError, prepareContainerConfig, IGNORE_CODES } from './docker-utils';
 
 export class DockerMCPService implements MCPService {
-  private static readonly LABEL_PREFIX = 'mandrake.mcp';
-  private static readonly LABELS = {
-    MANAGED: `${DockerMCPService.LABEL_PREFIX}.managed`,
-    NAME: `${DockerMCPService.LABEL_PREFIX}.name`,
-  };
-
+  private static readonly MANAGED_LABEL = 'mandrake.mcp.managed=true';
   private docker: Docker;
   private servers: Map<string, DockerMCPServer>;
 
@@ -16,6 +12,7 @@ export class DockerMCPService implements MCPService {
     this.docker = new Docker();
     this.servers = new Map();
   }
+
   async initialize(configs: ServerConfig[]): Promise<void> {
     await this.cleanup();
 
@@ -32,99 +29,55 @@ export class DockerMCPService implements MCPService {
     }
   }
 
-
-  private prepareContainerConfig(config: ServerConfig): Docker.ContainerCreateOptions {
-    const labels = {
-      [DockerMCPService.LABELS.MANAGED]: 'true',
-      [DockerMCPService.LABELS.NAME]: config.name,
-      ...config.labels
-    };
-
-    return {
-      Image: config.image,
-      Entrypoint: config.entrypoint,
-      Cmd: config.command,
-      Env: config.env ? Object.entries(config.env).map(([k, v]) => `${k}=${v}`) : [],
-      Labels: labels,
-      AttachStdin: true,
-      AttachStdout: true,
-      AttachStderr: true,
-      OpenStdin: true,
-      StdinOnce: false,
-      Tty: false,
-      HostConfig: {
-        Privileged: config.privileged,
-        AutoRemove: false,
-        Binds: config.volumes?.map(v => `${v.source}:${v.target}:${v.mode || 'rw'}`),
-        ...config.hostConfig,
-      }
-    };
-  }
-
-  /**
-   * Creates a new Docker container
-   */
   async createContainer(config: ServerConfig): Promise<Docker.Container> {
-    // Check/pull image if needed
-    const images = await this.docker.listImages({
-      filters: { reference: [config.image] }
-    });
+    try {
+      const images = await this.docker.listImages({
+        filters: { reference: [config.image] }
+      });
 
-    if (images.length === 0) {
-      await this.docker.pull(config.image);
+      if (images.length === 0) {
+        await this.docker.pull(config.image);
+      }
+
+      return await this.docker.createContainer(prepareContainerConfig(config));
+    } catch (err) {
+      // Don't ignore any Docker errors during container creation
+      throw err;
     }
-
-    // Create with prepared config
-    const containerConfig = this.prepareContainerConfig(config);
-    return await this.docker.createContainer(containerConfig);
-  }
-  
-  getServer(id: string): MCPServer | undefined {
-    return this.servers.get(id);
-  }
-
-  getServers(): Map<string, MCPServer> {
-    return this.servers;
   }
 
   async cleanup(): Promise<void> {
-    // Stop all known servers
-    await Promise.all(
-      Array.from(this.servers.values()).map(server =>
-        server.stop().catch(err =>
-          console.error('Error stopping server:', err))
-      )
-    );
-    this.servers.clear();
-
-    // Remove any containers with our label
     try {
+      // Stop all known servers
+      await Promise.all(
+        Array.from(this.servers.values())
+          .map(server => server.stop().catch(err => handleDockerError(err)))
+      );
+      this.servers.clear();
+
+      // Cleanup orphaned containers
       const containers = await this.docker.listContainers({
         all: true,
-        filters: {
-          label: [`${DockerMCPService.LABELS.MANAGED}=true`]
-        }
+        filters: { label: [DockerMCPService.MANAGED_LABEL] }
       });
 
       await Promise.all(
         containers.map(c =>
           this.docker.getContainer(c.Id)
             .remove({ force: true })
-            .catch(err => this.handleDockerError(err))
-        )
+            .catch(err => handleDockerError(err)))
       );
     } catch (err) {
-      console.error('Error cleaning containers:', err);
+      console.error('Cleanup error:', err);
+      // Don't throw cleanup errors
     }
   }
 
-  private isDockerError(err: any, codes: number[]): boolean {
-    return err?.statusCode && codes.includes(err.statusCode);
+  getServer(id: string): MCPServer | undefined {
+    return this.servers.get(id);
   }
 
-  private handleDockerError(err: any, ignoreCodes: number[] = [404, 409]): void {
-    if (!this.isDockerError(err, ignoreCodes)) {
-      throw err;
-    }
+  getServers(): Map<string, MCPServer> {
+    return this.servers;
   }
 }
