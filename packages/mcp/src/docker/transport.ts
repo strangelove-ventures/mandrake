@@ -25,14 +25,68 @@ export class DockerTransport implements Transport {
   constructor(
     private container: Docker.Container,
     private execCommand?: string[]
-  ) {}
+  ) { }
+
+  // Single message validation method used for both send/receive
+  private validateAndParseMessage(data: string): JSONRPCMessage {
+    try {
+      const parsed = JSON.parse(data);
+      const message = JSONRPCMessageSchema.parse(parsed);
+
+      // Version check in one place
+      if ('jsonrpc' in message && message.jsonrpc !== JSONRPC_VERSION) {
+        throw new McpError(
+          ErrorCode.InvalidRequest,
+          `Unsupported JSON-RPC version: ${message.jsonrpc}`
+        );
+      }
+
+      return message;
+    } catch (err) {
+      if (err instanceof SyntaxError) {
+        throw new McpError(ErrorCode.ParseError, 'Failed to parse JSON message');
+      }
+      if (err instanceof McpError) {
+        throw err;
+      }
+      throw new McpError(ErrorCode.InvalidRequest, 'Invalid message format');
+    }
+  }
+
+  // Simpler stream setup with consistent error handling
+  private setupStream(stream: NodeJS.ReadWriteStream): void {
+    const handleData = (chunk: Buffer) => {
+      // Skip non-stdout messages
+      if (chunk[0] !== 1) return;
+
+      this.messageBuffer += chunk.slice(8).toString();
+      const messages = this.messageBuffer.split('\n');
+      this.messageBuffer = messages.pop() || '';
+
+      for (const msg of messages) {
+        if (!msg) continue;
+        try {
+          const parsed = this.validateAndParseMessage(msg);
+          this.onmessage?.(parsed);
+        } catch (err) {
+          this.onerror?.(err as Error);
+        }
+      }
+    };
+
+    stream.on('data', handleData);
+    stream.on('end', () => {
+      this._closed = true;
+      this.onclose?.();
+    });
+    stream.on('error', (err) => {
+      this.onerror?.(new McpError(ErrorCode.InternalError, err.message));
+    });
+  }
 
   async start(): Promise<void> {
     if (this._closed) {
-      throw new McpError(
-        ErrorCode.ConnectionClosed,
-        'Transport closed'
-      );
+      throw new McpError(ErrorCode.ConnectionClosed, 'Transport closed');
     }
 
     try {
@@ -50,7 +104,6 @@ export class DockerTransport implements Transport {
       });
 
       this.setupStream(this.stream);
-
     } catch (err) {
       throw new McpError(
         ErrorCode.InternalError,
@@ -61,33 +114,26 @@ export class DockerTransport implements Transport {
 
   async send(message: JSONRPCMessage): Promise<void> {
     if (this._closed || !this.stream) {
-      throw new McpError(
-        ErrorCode.ConnectionClosed,
-        'Transport closed'
-      );
+      throw new McpError(ErrorCode.ConnectionClosed, 'Transport closed');
     }
 
     try {
-      this.validateMessage(message);
-      const payload = this.formatMessage(message);
+      // Use same validation as receive path
+      this.validateAndParseMessage(JSON.stringify(message));
+      const payload = JSON.stringify(message) + '\n';
 
       await new Promise<void>((resolve, reject) => {
         this.stream!.write(Buffer.from(payload), (err) => {
           if (err) {
-            reject(new McpError(
-              ErrorCode.InternalError,
-              `Failed to write to stream: ${err.message}`
-            ));
+            reject(new McpError(ErrorCode.InternalError, err.message));
           } else {
             resolve();
           }
         });
       });
     } catch (err) {
-      throw new McpError(
-        ErrorCode.InvalidRequest,
-        `Invalid message format: ${(err as Error).message}`
-      );
+      if (err instanceof McpError) throw err;
+      throw new McpError(ErrorCode.InvalidRequest, 'Invalid message format');
     }
   }
 
@@ -96,85 +142,9 @@ export class DockerTransport implements Transport {
     this._closed = true;
 
     if (this.stream) {
-      this.stream.end();  // Force end
-      // this.stream.destroy();  // Ensure cleanup
+      this.stream.end();
     }
 
     this.onclose?.();
-  }
-
-
-  private setupStream(stream: NodeJS.ReadWriteStream) {
-    stream.on('data', (chunk: Buffer) => {
-      const streamType = chunk[0];
-      const payload = chunk.slice(8);
-      if (streamType === 1) {
-        this.messageBuffer += payload.toString();
-        const lines = this.messageBuffer.split('\n');
-        this.messageBuffer = lines.pop() || '';
-        for (const line of lines) {
-          this.handleMessage(line);
-        }
-      }
-    });
-
-    stream.on('end', () => {
-      this._closed = true;
-      this.onclose?.();
-    });
-
-    stream.on('error', (err) => {
-      this.onerror?.(new McpError(
-        ErrorCode.InternalError,
-        `Stream error: ${err.message}`
-      ));
-    });
-  }
-
-  private validateMessage(message: JSONRPCMessage): void {
-    JSONRPCMessageSchema.parse(message);
-    if ('jsonrpc' in message && message.jsonrpc !== JSONRPC_VERSION) {
-      throw new McpError(
-        ErrorCode.InvalidRequest,
-        `Unsupported JSON-RPC version: ${message.jsonrpc}`
-      );
-    }
-  }
-
-  private formatMessage(message: JSONRPCMessage): string {
-    return JSON.stringify(message) + '\n';
-  }
-
-
-  private handleMessage(line: string): void {
-    if (!line) return;
-
-    try {
-      const parsed = JSON.parse(line);
-      const message = JSONRPCMessageSchema.parse(parsed);
-
-      if ('jsonrpc' in message && message.jsonrpc !== JSONRPC_VERSION) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `Unsupported JSON-RPC version: ${message.jsonrpc}`
-        );
-      }
-
-      this.onmessage?.(message);
-    } catch (err) {
-      if (err instanceof SyntaxError) {
-        this.onerror?.(new McpError(
-          ErrorCode.ParseError,
-          'Failed to parse JSON message'
-        ));
-      } else if (err instanceof McpError) {
-        this.onerror?.(err);
-      } else {
-        this.onerror?.(new McpError(
-          ErrorCode.InvalidRequest,
-          'Invalid message format'
-        ));
-      }
-    }
   }
 }
