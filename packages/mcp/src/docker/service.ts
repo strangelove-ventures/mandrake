@@ -1,7 +1,7 @@
 import { MCPService, ServerConfig, MCPServer } from '@mandrake/types';
 import Docker from 'dockerode';
 import { DockerMCPServer } from './server';
-import { handleDockerError, prepareContainerConfig, IGNORE_CODES } from './docker-utils';
+import { handleDockerError, prepareContainerConfig, retryDockerOperation } from './docker-utils';
 
 export class DockerMCPService implements MCPService {
   private static readonly MANAGED_LABEL = 'mandrake.mcp.managed=true';
@@ -22,7 +22,7 @@ export class DockerMCPService implements MCPService {
         const server = new DockerMCPServer(config, container, this);
         await server.start();
         this.servers.set(config.id, server);
-      } catch (err) {
+      } catch (err: any) {
         await this.cleanup();
         throw err;
       }
@@ -48,28 +48,45 @@ export class DockerMCPService implements MCPService {
 
   async cleanup(): Promise<void> {
     try {
-      // Stop all known servers
-      await Promise.all(
-        Array.from(this.servers.values())
-          .map(server => server.stop().catch(err => handleDockerError(err)))
-      );
+      // First stop all containers before removing
+      for (const server of this.servers.values()) {
+        try {
+          const container = await server.getInfo();
+          if (container.State.Running) {
+            await server.stop();
+          }
+        } catch (err) {
+          // Ignore 404 errors
+          if ((err as any)?.statusCode !== 404) {
+            console.error('Error stopping container:', err);
+          }
+        }
+      }
+
       this.servers.clear();
 
-      // Cleanup orphaned containers
+      // Then look for any orphaned containers
       const containers = await this.docker.listContainers({
         all: true,
         filters: { label: [DockerMCPService.MANAGED_LABEL] }
       });
 
-      await Promise.all(
-        containers.map(c =>
-          this.docker.getContainer(c.Id)
-            .remove({ force: true })
-            .catch(err => handleDockerError(err)))
-      );
+      for (const c of containers) {
+        try {
+          const container = this.docker.getContainer(c.Id);
+          // Force stop first
+          await container.stop().catch(() => { });
+          // Then remove
+          await container.remove({ force: true });
+        } catch (err: any) {
+          // Only log non-404 errors
+          if (err?.statusCode !== 404) {
+            console.error('Error cleaning up container:', err);
+          }
+        }
+      }
     } catch (err) {
       console.error('Cleanup error:', err);
-      // Don't throw cleanup errors
     }
   }
 

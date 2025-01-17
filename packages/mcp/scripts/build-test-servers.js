@@ -2,20 +2,46 @@
 import { promisify } from 'util';
 import { exec } from 'child_process';
 import * as fs from 'fs/promises';
-import * as path from 'path'
+import * as path from 'path';
+import { SERVER_CONFIG } from './server-configs.js';
 
 const execAsync = promisify(exec);
 
-async function buildServer(serverPath, name) {
+async function buildServer(repoPath, name) {
     const tag = `mandrake-test/mcp-${name}:latest`;
-    const dockerfilePath = path.join(serverPath, 'Dockerfile');
+    const serverPath = path.join(repoPath, 'src', name);
+    const dockerfile = path.join(serverPath, 'Dockerfile');
 
-    console.log(`Building ${name}...`);
+    process.stdout.write(`Building ${name}... `);
     try {
-        await execAsync(`docker build -t ${tag} -f ${dockerfilePath} ${serverPath}`);
-        console.log(`Built ${tag} successfully`);
+        let buildCmd = `docker build -t ${tag} -f ${dockerfile}`;
+
+        const config = SERVER_CONFIG[name];
+
+        // Use either specified context path or repo root
+        const context = config?.contextPath ?
+            path.join(repoPath, config.contextPath) :
+            repoPath;
+
+        // Add any file copy mounts
+        if (config?.copyFiles) {
+            for (const [src, dest] of Object.entries(config.copyFiles)) {
+                const source = path.join(serverPath, src);
+                buildCmd += ` --mount=type=bind,source=${source},target=${dest}`;
+            }
+        }
+
+        buildCmd += ` ${context}`;
+
+        await execAsync(buildCmd);
+        process.stdout.write('✓\n');
+        return true;
     } catch (err) {
-        console.error(`Failed to build ${name}:`, err);
+        process.stdout.write('✗\n');
+        if (process.env.DEBUG) {
+            console.error(err);
+        }
+        return false;
     }
 }
 
@@ -27,19 +53,26 @@ async function buildAllServers(repoPath) {
         .filter(entry => entry.isDirectory())
         .map(entry => entry.name);
 
-    console.log('Found servers:', servers);
+    console.log(`Found ${servers.length} servers to build\n`);
+
+    let success = 0;
+    let failed = 0;
 
     for (const server of servers) {
-        await buildServer(path.join(srcPath, server), server);
+        const didBuild = await buildServer(repoPath, server);
+        didBuild ? success++ : failed++;
     }
+
+    console.log(`\nBuild complete: ${success} succeeded, ${failed} failed`);
 }
 
-// Get path from command line
 const repoPath = process.argv[2];
 if (!repoPath) {
     console.error('Please provide path to servers repo');
     process.exit(1);
 }
 
-buildAllServers(repoPath)
-    .catch(console.error);
+buildAllServers(repoPath).catch(err => {
+    console.error('Build failed:', err);
+    process.exit(1);
+});

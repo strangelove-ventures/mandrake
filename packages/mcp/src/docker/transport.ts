@@ -80,6 +80,7 @@ export class DockerTransport implements Transport {
       this.onclose?.();
     });
     stream.on('error', (err) => {
+      console.error('Stream error:', err);
       this.onerror?.(new McpError(ErrorCode.InternalError, err.message));
     });
   }
@@ -90,6 +91,7 @@ export class DockerTransport implements Transport {
     }
 
     try {
+      console.log('Creating exec session...');
       const exec = await this.container.exec({
         AttachStderr: true,
         AttachStdout: true,
@@ -98,11 +100,13 @@ export class DockerTransport implements Transport {
         Cmd: this.execCommand,
       });
 
+      console.log('Starting exec session...');
       this.stream = await exec.start({
         hijack: true,
         stdin: true
       });
 
+      console.log('Setting up stream...');
       this.setupStream(this.stream);
     } catch (err) {
       throw new McpError(

@@ -28,14 +28,14 @@ describe('DockerMCPService', () => {
   describe('filesystem server', () => {
     const testConfig: ServerConfig = {
       id: 'fs1',
-      name: 'filesystem',
+      name: `filesystem-service-test-${Date.now()}`,
       image: 'mandrake-test/mcp-filesystem:latest',
       command: ['/data'],
       execCommand: ['/app/dist/index.js', '/data'],
       volumes: [{
         source: testDir,
         target: '/data'
-      }]
+      }],
     };
 
     it('should initialize filesystem server and list its tools', async () => {

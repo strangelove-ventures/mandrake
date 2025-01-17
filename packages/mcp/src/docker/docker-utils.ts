@@ -42,3 +42,52 @@ export function prepareContainerConfig(config: ServerConfig): Docker.ContainerCr
         }
     };
 }
+
+export enum DockerErrorCode {
+    NotFound = 404,
+    Conflict = 409,
+    ServerError = 500
+}
+
+export function isContainerNotFoundError(err: any): boolean {
+    return err?.statusCode === DockerErrorCode.NotFound;
+}
+
+export function isContainerConflictError(err: any): boolean {
+    return err?.statusCode === DockerErrorCode.Conflict;
+}
+
+export function isContainerInRemovalError(err: any): boolean {
+    return err?.statusCode === DockerErrorCode.ServerError &&
+        err.message?.includes('Removal In Progress');
+}
+
+// Retry helper for common Docker operations
+export async function retryDockerOperation<T>(
+    operation: () => Promise<T>,
+    maxAttempts: number = 3
+): Promise<T> {
+    let lastError: any;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        try {
+            return await operation();
+        } catch (err) {
+            lastError = err;
+
+            // If it's not a retriable error, throw immediately
+            if (!isContainerNotFoundError(err) &&
+                !isContainerConflictError(err) &&
+                !isContainerInRemovalError(err)) {
+                throw err;
+            }
+
+            // Last attempt, throw the error
+            if (attempt === maxAttempts - 1) {
+                throw lastError;
+            }
+        }
+    }
+
+    throw lastError;
+}
