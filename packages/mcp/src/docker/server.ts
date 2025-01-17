@@ -1,22 +1,25 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { MCPServer, ServerConfig, Tool, ToolResult } from '@mandrake/types';
+import { MCPServer, ServerConfig, Tool, ToolResult, Logger } from '@mandrake/types';
 import Docker from 'dockerode';
 import { DockerTransport } from './transport';
 import { DockerMCPService } from './service';
 import { retryDockerOperation, isContainerNotFoundError, isContainerConflictError } from './docker-utils';
-
-// These would move to a shared config file
 import { SERVER_CONFIG } from './config';
+import { logger as mcpLogger } from '../logger';
+
 
 export class DockerMCPServer implements MCPServer {
   private client?: Client;
   private transport?: DockerTransport;
+  private serverLogger: Logger;
+
 
   constructor(
     private config: ServerConfig,
     private container: Docker.Container,
-    private service: DockerMCPService
-  ) { }
+    private service: DockerMCPService,
+    serviceLogger: Logger
+  ) { this.serverLogger = serviceLogger.child({service: this.config.id}); }
 
   getId(): string {
     return this.config.id;
@@ -112,15 +115,18 @@ export class DockerMCPServer implements MCPServer {
   }
 
   private async waitForContainerReady(): Promise<void> {
-    console.log(`[${this.config.id}] Waiting for container ready...`);
+    this.serverLogger.info('Waiting for container ready...', { id: this.config.id });
     let retries = 3;
     while (retries > 0) {
       try {
         const info = await this.container.inspect();
-        console.log(`[${this.config.id}] Container state:`, {
-          running: info.State.Running,
-          status: info.State.Status,
-          health: info.State.Health?.Status
+        this.serverLogger.debug('Container state', {
+          id: this.config.id,
+          state: {
+            running: info.State.Running,
+            status: info.State.Status,
+            health: info.State.Health?.Status
+          }
         });
 
         if (!info.State.Running) {
@@ -130,8 +136,10 @@ export class DockerMCPServer implements MCPServer {
             stderr: true,
             tail: 50
           });
-          console.log(`[${this.config.id}] Container logs:`, logs.toString());
-        }
+          this.serverLogger.debug('Container logs', {
+            id: this.config.id,
+            logs: logs.toString()
+          });        }
 
         // Check both running state and health check if available
         if (info.State.Running &&
@@ -155,7 +163,10 @@ export class DockerMCPServer implements MCPServer {
           return;
         }
       } catch (err: any) {
-        console.error(`[${this.config.id}] Container ready check failed:`, err);
+        this.serverLogger.error('Container ready check failed', {
+          id: this.config.id,
+          error: err
+        });
 
         // Add logs here to see what's happening when we get errors
         try {
@@ -164,9 +175,15 @@ export class DockerMCPServer implements MCPServer {
             stderr: true,
             tail: 50
           });
-          console.log(`[${this.config.id}] Container logs during failure:`, logs.toString());
+          this.serverLogger.debug('Container logs during failure', {
+            id: this.config.id,
+            logs: logs.toString()
+          });
         } catch (logErr) {
-          console.error(`[${this.config.id}] Failed to get logs:`, logErr);
+          this.serverLogger.error('Failed to get logs', {
+            id: this.config.id,
+            error: logErr
+          });
         }
 
         if (retries === 1) throw err;
@@ -180,22 +197,25 @@ export class DockerMCPServer implements MCPServer {
   }
 
   private async ensureClient(): Promise<void> {
-    console.log(`[${this.config.id}] Ensuring client...`);
+    this.serverLogger.info('Ensuring client', { id: this.config.id });
     await retryDockerOperation(async () => {
       try {
-        console.log(`[${this.config.id}] Creating transport...`);
-        this.transport = new DockerTransport(this.container, this.config.execCommand);
-        console.log(`[${this.config.id}] Creating client...`);
+        this.serverLogger.debug('Creating transport', { id: this.config.id });
+        this.transport = new DockerTransport(this.container, this.serverLogger, this.config.execCommand);
+        this.serverLogger.debug('Creating client', { id: this.config.id });
   
         this.client = new Client(
           SERVER_CONFIG.client.info,
           SERVER_CONFIG.client.options
         );
-        console.log(`[${this.config.id}] Connecting client...`);
+        this.serverLogger.debug('Connecting client', { id: this.config.id });
         await this.client.connect(this.transport);
-        console.log(`[${this.config.id}] Client connected successfully`);
+        this.serverLogger.info('Client connected successfully', { id: this.config.id });
       } catch (err) {
-        console.error(`[${this.config.id}] Client connection failed:`, err);
+        this.serverLogger.error('Client connection failed', {
+          id: this.config.id,
+          error: err
+        });
         // Add logs here to debug what the container is doing
         try {
           const logs = await this.container.logs({
@@ -203,9 +223,15 @@ export class DockerMCPServer implements MCPServer {
             stderr: true,
             tail: 50
           });
-          console.log(`[${this.config.id}] Container logs during client failure:`, logs.toString());
+          this.serverLogger.debug('Container logs during client failure', {
+            id: this.config.id,
+            logs: logs.toString()
+          });
         } catch (logErr) {
-          console.error(`[${this.config.id}] Failed to get logs:`, logErr);
+          this.serverLogger.error('Failed to get logs', {
+            id: this.config.id,
+            error: logErr
+          });
         }
         throw err;
       }

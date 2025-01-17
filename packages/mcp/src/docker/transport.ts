@@ -1,4 +1,5 @@
 import Docker from 'dockerode';
+import { Logger } from '@mandrake/types';
 import { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import { 
   McpError,
@@ -17,6 +18,7 @@ export class DockerTransport implements Transport {
   private stream?: NodeJS.ReadWriteStream;
   private _closed = false;
   private messageBuffer = '';
+  private transportLogger: Logger
 
   onclose?: () => void;
   onerror?: (error: Error) => void;
@@ -24,8 +26,9 @@ export class DockerTransport implements Transport {
 
   constructor(
     private container: Docker.Container,
+    serverLogger : Logger,
     private execCommand?: string[]
-  ) { }
+  ) { this.transportLogger = serverLogger.child({ service: 'transport' });  }
 
   // Single message validation method used for both send/receive
   private validateAndParseMessage(data: string): JSONRPCMessage {
@@ -80,7 +83,7 @@ export class DockerTransport implements Transport {
       this.onclose?.();
     });
     stream.on('error', (err) => {
-      console.error('Stream error:', err);
+      this.transportLogger.error('Stream error', { error: err });
       this.onerror?.(new McpError(ErrorCode.InternalError, err.message));
     });
   }
@@ -91,7 +94,7 @@ export class DockerTransport implements Transport {
     }
 
     try {
-      console.log('Creating exec session...');
+      this.transportLogger.debug('Creating exec session');
       const exec = await this.container.exec({
         AttachStderr: true,
         AttachStdout: true,
@@ -100,13 +103,13 @@ export class DockerTransport implements Transport {
         Cmd: this.execCommand,
       });
 
-      console.log('Starting exec session...');
+      this.transportLogger.debug('Starting exec session');
       this.stream = await exec.start({
         hijack: true,
         stdin: true
       });
 
-      console.log('Setting up stream...');
+      this.transportLogger.debug('Setting up stream');
       this.setupStream(this.stream);
     } catch (err) {
       throw new McpError(

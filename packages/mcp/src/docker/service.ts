@@ -1,14 +1,20 @@
-import { MCPService, ServerConfig, MCPServer } from '@mandrake/types';
+import { MCPService, ServerConfig, MCPServer, Logger } from '@mandrake/types';
 import Docker from 'dockerode';
 import { DockerMCPServer } from './server';
-import { handleDockerError, prepareContainerConfig, retryDockerOperation } from './docker-utils';
+import { prepareContainerConfig } from './docker-utils';
+import { logger as mcpLogger } from '../logger';
+
+const logger = mcpLogger.child({ service: 'docker' });
+
 
 export class DockerMCPService implements MCPService {
   private static readonly MANAGED_LABEL = 'mandrake.mcp.managed=true';
   private docker: Docker;
   private servers: Map<string, DockerMCPServer>;
+  private serviceLogger: Logger;
 
-  constructor() {
+  constructor(customLogger: Logger = logger) {
+    this.serviceLogger = customLogger;
     this.docker = new Docker();
     this.servers = new Map();
   }
@@ -19,7 +25,7 @@ export class DockerMCPService implements MCPService {
     for (const config of configs) {
       try {
         const container = await this.createContainer(config);
-        const server = new DockerMCPServer(config, container, this);
+        const server = new DockerMCPServer(config, container, this, this.serviceLogger);
         await server.start();
         this.servers.set(config.id, server);
       } catch (err: any) {
@@ -58,7 +64,7 @@ export class DockerMCPService implements MCPService {
         } catch (err) {
           // Ignore 404 errors
           if ((err as any)?.statusCode !== 404) {
-            console.error('Error stopping container:', err);
+            this.serviceLogger.error('Error stopping container', { error: err });
           }
         }
       }
@@ -81,12 +87,12 @@ export class DockerMCPService implements MCPService {
         } catch (err: any) {
           // Only log non-404 errors
           if (err?.statusCode !== 404) {
-            console.error('Error cleaning up container:', err);
+            this.serviceLogger.error('Error cleaning up container', { error: err });
           }
         }
       }
     } catch (err) {
-      console.error('Cleanup error:', err);
+      this.serviceLogger.error('Cleanup error', { error: err });
     }
   }
 
