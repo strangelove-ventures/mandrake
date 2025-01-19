@@ -15,6 +15,34 @@ mcp/src/docker/__tests__/
 └── test-utils.ts          # Test utilities
 ```
 
+## Getting Started
+
+1. Build the test images:
+
+```bash
+# From the mcp package directory
+npm run build:test-servers
+```
+
+This builds all required Docker images. If tests fail with container not found errors, try rebuilding the images first.
+
+1. Run tests:
+
+```bash
+# Test a single server
+TEST_SERVER=memory npm run test:server
+
+# Test all servers together
+npm run test:servers
+```
+
+Available servers for single testing:
+
+- memory
+- git
+- filesystem
+- fetch
+
 ## Server Configurations
 
 Each server configuration follows a standard structure defining:
@@ -49,30 +77,13 @@ export const myServerConfig: ServerTestConfig = {
 };
 ```
 
-## Running Tests
-
-### Single Server Test
-
-Run a specific server test:
-
-```bash
-TEST_SERVER=memory npm run test:server
-```
-
-### Multi-Server Test
-
-Test all servers together:
-
-```bash
-npm run test
-```
-
 ## Adding New Server Tests
 
 1. Create a new configuration file in `configurations/`
-2. Add server config to `configurations/index.ts`
-3. Implement required hooks and validation
-4. Server will automatically be included in multi-server tests
+2. Implement required hooks and validation
+3. Add server config to `configurations/index.ts`
+4. Run single server test while debugging
+5. Server will automatically be included in multi-server tests
 
 ## Test Architecture
 

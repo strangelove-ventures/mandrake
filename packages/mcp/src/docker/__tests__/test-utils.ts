@@ -19,3 +19,18 @@ export async function createTestDirectory(name: string): Promise<string> {
 export async function removeTestDirectory(path: string): Promise<void> {
     await fs.rm(path, { recursive: true, force: true });
 }
+
+export interface ServerTestHooks {
+    beforeAll?: () => Promise<void>;    // One-time setup
+    beforeEach?: () => Promise<void>;   // Per-test setup
+    afterEach?: () => Promise<void>;    // Per-test cleanup
+    afterAll?: () => Promise<void>;     // One-time cleanup
+    validate?: (service: DockerMCPService) => Promise<void>; // Basic validation
+}
+
+export interface ServerTestConfig {
+    id: string;
+    serverConfig: ServerConfig;
+    hooks: ServerTestHooks;
+    testDir?: string;
+}
