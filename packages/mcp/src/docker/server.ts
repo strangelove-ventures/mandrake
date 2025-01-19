@@ -1,210 +1,240 @@
-import { TypedEmitter } from 'tiny-typed-emitter';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { MCPServer, ServerConfig, Tool, ToolResult, Logger } from '@mandrake/types';
 import Docker from 'dockerode';
-
-import { ServerConfig, ServerState, ServerEvents } from './types';
 import { DockerTransport } from './transport';
+import { DockerMCPService } from './service';
+import { retryDockerOperation, isContainerNotFoundError, isContainerConflictError } from './docker-utils';
+import { SERVER_CONFIG } from './config';
+import { logger as mcpLogger } from '../logger';
 
-/**
- * Manages a single MCP server instance running in a Docker container
- */
-export class MCPServer extends TypedEmitter<ServerEvents> {
-  private state: ServerState;
-  private healthCheckTimer?: NodeJS.Timeout;
-  private reconnectTimer?: NodeJS.Timeout;
-  private reconnectAttempts = 0;
+
+export class DockerMCPServer implements MCPServer {
+  private client?: Client;
+  private transport?: DockerTransport;
+  private serverLogger: Logger;
+
 
   constructor(
     private config: ServerConfig,
-    private container: Docker.Container
-  ) {
-    super();
-    this.state = {
-      id: container.id,
-      status: 'creating',
-      health: {
-        healthy: false,
-        lastCheck: new Date()
-      },
-      container
-    };
+    private container: Docker.Container,
+    private service: DockerMCPService,
+    serviceLogger: Logger
+  ) { this.serverLogger = serviceLogger.child({service: this.config.id}); }
+
+  getId(): string {
+    return this.config.id;
   }
 
-  private setState(update: Partial<ServerState>) {
-    this.state = { ...this.state, ...update };
-    this.emit('stateChange', this.state);
-  }
-
-  private async checkHealth(): Promise<void> {
-    try {
-      const containerInfo = await this.container.inspect();
-      const wasHealthy = this.state.health.healthy;
-      
-      // Check container is running
-      let healthy = containerInfo.State.Running && 
-        !containerInfo.State.Restarting &&
-        !containerInfo.State.Paused;
-
-      // Check MCP connection
-      if (healthy && this.state.client) {
-        try {
-          await this.state.client.ping();
-        } catch (err) {
-          healthy = false;
-        }
-      }
-
-      this.state.health = {
-        healthy,
-        lastCheck: new Date(),
-        lastError: healthy ? undefined : new Error('Health check failed')
-      };
-
-      this.emit('healthChange', this.state.health);
-
-      // If we've become unhealthy and auto-restart is enabled
-      if (wasHealthy && !healthy && this.config.autoRestart) {
-        this.handleUnhealthy();
-      }
-    } catch (err) {
-      this.state.health = {
-        healthy: false,
-        lastCheck: new Date(),
-        lastError: err as Error
-      };
-      this.emit('healthChange', this.state.health);
-      this.emit('error', err as Error);
-    }
-  }
-
-  private async handleUnhealthy() {
-    if (this.reconnectTimer || this.state.status !== 'running') return;
-
-    this.reconnectAttempts++;
-    if (this.reconnectAttempts > (this.config.healthCheck?.maxRetries ?? 3)) {
-      this.setState({ status: 'error', error: new Error('Max reconnection attempts reached') });
-      return;
-    }
-
-    // Exponential backoff for reconnect
-    const delay = Math.min(1000 * Math.pow(2, this.reconnectAttempts - 1), 30000);
-    this.reconnectTimer = setTimeout(async () => {
-      try {
-        await this.restart();
-        this.reconnectAttempts = 0;
-      } catch (err) {
-        this.emit('error', err as Error);
-      } finally {
-        this.reconnectTimer = undefined;
-      }
-    }, delay);
-  }
-
-  startHealthCheck() {
-    if (this.healthCheckTimer || !this.config.healthCheck) return;
-    
-    this.healthCheckTimer = setInterval(
-      () => this.checkHealth(),
-      this.config.healthCheck.interval
-    );
-  }
-
-  stopHealthCheck() {
-    if (this.healthCheckTimer) {
-      clearInterval(this.healthCheckTimer);
-      this.healthCheckTimer = undefined;
-    }
+  getName(): string {
+    return this.config.name;
   }
 
   async start(): Promise<void> {
     try {
-      this.setState({ status: 'starting' });
-
-      console.log('Starting container...');
-      await this.container.start();
-
-      console.log('Creating transport...');
-      const transport = new DockerTransport(
-        this.container,
-        this.config.execCommand // Pass just what's needed for exec
-      );
-
-      console.log('Creating client...');
-      const client = new Client(
-        { name: `mandrake-client-${this.config.name}`, version: '0.1.0' },
-        { capabilities: { tools: true } }
-      );
-
-      // Connect transport & client
-      console.log('Connecting...');
-      await transport.start();
-      await client.connect(transport);
-      console.log('Client connected successfully');
-
-      this.state.transport = transport;
-      this.state.client = client;
-      this.setState({ status: 'running' });
-
-      // Start health checking if configured
-      if (this.config.healthCheck) {
-        this.startHealthCheck();
-      }
+      await this.ensureContainer();
+      await this.ensureClient();
+      await this.client!.ping();  // Connection check
     } catch (err) {
-      console.error('Start error:', {
-        error: err,
-        containerInfo: await this.container.inspect()
-      });
-      this.setState({ 
-        status: 'error',
-        error: err as Error
-      });
+      await this.cleanup();  // Ensure cleanup on any error
       throw err;
     }
   }
 
   async stop(): Promise<void> {
-    this.setState({ status: 'stopping' });
-    this.stopHealthCheck();
+    await this.cleanup();
+  }
 
+  // Removing restart since it's just a composition that could live at service level
+
+  async listTools(): Promise<Tool[]> {
+    if (!this.isReady()) {
+      throw new Error('Server not ready');
+    }
+    const result = await this.client!.listTools();
+    return result.tools;
+  }
+
+  async invokeTool(name: string, params: any): Promise<ToolResult> {
+    if (!this.isReady()) {
+      throw new Error('Server not ready');
+    }
+    const result = await this.client!.callTool({ name, arguments: params });
+    return { ...result, content: result.content || '' } as ToolResult;
+  }
+
+  async getInfo(): Promise<Docker.ContainerInspectInfo> {
     try {
-      // Close MCP connection
-      if (this.state.client) {
-        await this.state.client.close();
+      return await this.container.inspect();
+    } catch (err: any) {
+      if (err?.statusCode === 404) {
+        return { State: { Running: false } } as Docker.ContainerInspectInfo;
       }
-      if (this.state.transport) {
-        await this.state.transport.close();
-      }
-
-      // Stop container
-      await this.container.stop();
-      this.setState({ status: 'stopped' });
-    } catch (err) {
-      this.setState({ 
-        status: 'error',
-        error: err as Error
-      });
       throw err;
     }
   }
 
-  async restart(): Promise<void> {
-    await this.stop();
-    await this.start();
+  private isReady(): boolean {
+    return !!(this.client && this.transport);
   }
 
-  async remove(): Promise<void> {
-    await this.stop();
-    await this.container.remove();
-  }
-
-  getState(): ServerState {
-    return { ...this.state };
-  }
-
-  async callTool(name: string, args: any): Promise<any> {
-    if (!this.state.client || this.state.status !== 'running') {
-      throw new Error('Server not running');
+  private async cleanup(): Promise<void> {
+    if (this.client) {
+      await this.client.close().catch(() => { });
+      this.client = undefined;
+      this.transport = undefined;
     }
-    return this.state.client.callTool({ name, arguments: args });
+
+    await retryDockerOperation(async () => {
+      try {
+        await this.container.remove({ force: true });
+      } catch (err) {
+        if (!isContainerNotFoundError(err) && !isContainerConflictError(err)) {
+          throw err;
+        }
+      }
+    });
+  }
+  private async ensureContainer(): Promise<void> {
+    try {
+      const info = await this.container.inspect();
+      if (!info.State.Running) {
+        await this.container.start();
+        // Wait for container to be fully ready
+        await this.waitForContainerReady();
+      }
+    } catch (err: any) {
+      if (err?.statusCode === 404) {
+        this.container = await this.service.createContainer(this.config);
+        await this.container.start();
+        // Wait for container to be ready here too
+        await this.waitForContainerReady();
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  private async waitForContainerReady(): Promise<void> {
+    this.serverLogger.info('Waiting for container ready...', { id: this.config.id });
+    let retries = 3;
+    while (retries > 0) {
+      try {
+        const info = await this.container.inspect();
+        this.serverLogger.debug('Container state', {
+          id: this.config.id,
+          state: {
+            running: info.State.Running,
+            status: info.State.Status,
+            health: info.State.Health?.Status
+          }
+        });
+
+        if (!info.State.Running) {
+          // Add this to see why container exited
+          const logs = await this.container.logs({
+            stdout: true,
+            stderr: true,
+            tail: 50
+          });
+          this.serverLogger.debug('Container logs', {
+            id: this.config.id,
+            logs: logs.toString()
+          });        }
+
+        // Check both running state and health check if available
+        if (info.State.Running &&
+          (!info.State.Health || info.State.Health.Status === 'healthy')) {
+
+          // Try a test exec to verify container is ready
+          const exec = await this.container.exec({
+            AttachStderr: true,
+            AttachStdout: true,
+            Cmd: ['true'] // Simple command just to test exec
+          });
+
+          // Start exec just to verify it works
+          const stream = await exec.start({
+            hijack: true,
+          });
+
+          // Clean up test exec
+          stream.destroy();
+
+          return;
+        }
+      } catch (err: any) {
+        this.serverLogger.error('Container ready check failed', {
+          id: this.config.id,
+          error: err
+        });
+
+        // Add logs here to see what's happening when we get errors
+        try {
+          const logs = await this.container.logs({
+            stdout: true,
+            stderr: true,
+            tail: 50
+          });
+          this.serverLogger.debug('Container logs during failure', {
+            id: this.config.id,
+            logs: logs.toString()
+          });
+        } catch (logErr) {
+          this.serverLogger.error('Failed to get logs', {
+            id: this.config.id,
+            error: logErr
+          });
+        }
+
+        if (retries === 1) throw err;
+      }
+
+      retries--;
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+
+    throw new Error('Container failed to reach ready state');
+  }
+
+  private async ensureClient(): Promise<void> {
+    this.serverLogger.info('Ensuring client', { id: this.config.id });
+    await retryDockerOperation(async () => {
+      try {
+        this.serverLogger.debug('Creating transport', { id: this.config.id });
+        this.transport = new DockerTransport(this.container, this.serverLogger, this.config.execCommand);
+        this.serverLogger.debug('Creating client', { id: this.config.id });
+  
+        this.client = new Client(
+          SERVER_CONFIG.client.info,
+          SERVER_CONFIG.client.options
+        );
+        this.serverLogger.debug('Connecting client', { id: this.config.id });
+        await this.client.connect(this.transport);
+        this.serverLogger.info('Client connected successfully', { id: this.config.id });
+      } catch (err) {
+        this.serverLogger.error('Client connection failed', {
+          id: this.config.id,
+          error: err
+        });
+        // Add logs here to debug what the container is doing
+        try {
+          const logs = await this.container.logs({
+            stdout: true,
+            stderr: true,
+            tail: 50
+          });
+          this.serverLogger.debug('Container logs during client failure', {
+            id: this.config.id,
+            logs: logs.toString()
+          });
+        } catch (logErr) {
+          this.serverLogger.error('Failed to get logs', {
+            id: this.config.id,
+            error: logErr
+          });
+        }
+        throw err;
+      }
+    });
   }
 }
