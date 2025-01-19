@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist coverage .turbo",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test": "jest packages/mcp/src/docker/__tests__/multi-server.test.ts",
+    "test:server": "jest packages/mcp/src/docker/__tests__/single-server.test.ts",
     "build:test-servers": "node scripts/build-test-servers.js",
     "lint": "eslint src/**/*.ts"
   },
