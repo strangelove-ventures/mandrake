@@ -1,0 +1,12 @@
+services:
+  api:
+    container_name: mandrake-api
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: ${NODE_ENV}
+    ports:
+      - "3000:3000"
