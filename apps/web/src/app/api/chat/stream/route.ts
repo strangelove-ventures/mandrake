@@ -1,14 +1,20 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { prisma, ensureDefaultWorkspace } from '@mandrake/storage';
 import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { ChatOpenAI } from "@langchain/openai";
 
 export async function POST(req: Request) {
   const encoder = new TextEncoder();
 
   try {
-    const { message, conversationId } = await req.json();
+    // Debug: Log the request and body parsing
+    const body = await req.json();
+    console.log('Request body:', body);
+    const { message, conversationId } = body;
+    
+    // Ensure we have a default workspace
+    const workspace = await ensureDefaultWorkspace();
+    console.log('Using workspace:', workspace.id);
     
     // Find or create conversation
     let conversation = conversationId 
@@ -23,7 +29,10 @@ export async function POST(req: Request) {
           }
         })
       : await prisma.conversation.create({
-          data: {},
+          data: {
+            title: message.slice(0, 50),  // Use start of message as title
+            workspaceId: workspace.id
+          },
           include: { messages: true }
         });
 
@@ -34,6 +43,8 @@ export async function POST(req: Request) {
       );
     }
 
+    console.log('Using conversation:', conversation.id);
+
     // Save user message
     const userMessage = await prisma.message.create({
       data: {
@@ -43,9 +54,13 @@ export async function POST(req: Request) {
       }
     });
 
+    console.log('Created user message:', userMessage.id);
+
     // Initialize streaming response
     const stream = new ReadableStream({
       async start(controller) {
+        let streamError = null;
+        
         try {
           // Send initial state with user message and conversation ID
           controller.enqueue(encoder.encode(JSON.stringify({
@@ -55,32 +70,14 @@ export async function POST(req: Request) {
           }) + '\n'));
 
           // Initialize chat model with streaming
-          const chatModel = new ChatGoogleGenerativeAI({
-            apiKey: process.env.GOOGLE_API_KEY!,
-            modelName: "gemini-pro",
-            maxOutputTokens: 2048,
+          const chatModel = new ChatOpenAI({
+            openAIApiKey: process.env.DEEPSEEK_API_KEY,
+            modelName: "deepseek-chat",
+            maxTokens: 2048,
             streaming: true,
-            // Add generation config
-            modelKwargs: {
-              safetySettings: [
-                {
-                  category: "HARM_CATEGORY_HARASSMENT",
-                  threshold: "BLOCK_ONLY_HIGH",
-                },
-                {
-                  category: "HARM_CATEGORY_HATE_SPEECH",
-                  threshold: "BLOCK_ONLY_HIGH",
-                },
-                {
-                  category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                  threshold: "BLOCK_ONLY_HIGH",
-                },
-                {
-                  category: "HARM_CATEGORY_DANGEROUS_CONTENT",
-                  threshold: "BLOCK_ONLY_HIGH",
-                },
-              ],
-            },
+            configuration: {
+              baseURL: "https://api.deepseek.com/v1",
+            }
           });
 
           // Format message history
@@ -120,6 +117,8 @@ export async function POST(req: Request) {
               }
             });
 
+            console.log('Created AI message:', aiMessage.id);
+
             // Send final message with the saved AI message ID
             controller.enqueue(encoder.encode(JSON.stringify({
               type: 'done',
@@ -127,7 +126,8 @@ export async function POST(req: Request) {
             }) + '\n'));
 
           } catch (error: any) {
-            console.error('Streaming error:', error);
+            console.error('AI Stream error:', error);
+            streamError = error;
             
             // If we have a partial response, save it
             if (fullResponse) {
@@ -168,8 +168,13 @@ export async function POST(req: Request) {
 
           controller.close();
         } catch (error) {
-          console.error('Stream error:', error);
+          console.error('Stream creation error:', error);
+          streamError = error;
           controller.error(error);
+        }
+
+        if (streamError) {
+          throw streamError; // Re-throw for outer catch block
         }
       }
     });
@@ -182,10 +187,19 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Chat API error:', error);
-    return NextResponse.json(
-      { error: 'Internal server error', details: error },
-      { status: 500 }
-    );
+    // Safe error conversion for JSON response
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const errorDetails = error instanceof Error ? {
+      name: error.name,
+      message: error.message,
+      stack: error.stack
+    } : error;
+
+    console.error('Chat API error:', errorDetails);
+    
+    return NextResponse.json({ 
+      error: errorMessage,
+      details: errorDetails
+    }, { status: 500 });
   }
 }

@@ -6,7 +6,7 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
+    "build": "tsc --build",
     "clean": "rm -rf dist coverage .turbo",
     "test": "jest packages/mcp/src/docker/__tests__/multi-server.test.ts",
     "test:server": "jest packages/mcp/src/docker/__tests__/single-server.test.ts",

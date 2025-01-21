@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/db';
+import { prisma } from '@mandrake/storage';
 
 export async function GET(
   req: Request,
   { params }: { params: { conversationId: string } }
 ) {
+  const { conversationId } = await params;  
   try {
     const conversation = await prisma.conversation.findUnique({
-      where: { id: params.conversationId },
+      where: { id: conversationId },
       include: { messages: true }
     });
 
