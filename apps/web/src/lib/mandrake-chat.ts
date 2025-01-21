@@ -1,5 +1,5 @@
 import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, AIMessage, SystemMessage, AIMessageChunk } from "@langchain/core/messages";
+import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { mcpService, mcpInitialized } from './mcp';
 import { buildSystemPrompt } from './chat';
 import { StreamProcessor } from './chat-state';
