@@ -7,7 +7,7 @@
   "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc --build",
-    "clean": "rm -rf dist coverage .turbo",
+    "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo",
     "test": "jest packages/mcp/src/docker/__tests__/multi-server.test.ts",
     "test:server": "jest packages/mcp/src/docker/__tests__/single-server.test.ts",
     "build:test-servers": "node scripts/build-test-servers.js",

@@ -68,6 +68,7 @@ const ChatInterface = () => {
     setCurrentConversationId(null);
   };
 
+  // In ChatInterface.tsx, update the handleSubmit function:
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -77,6 +78,25 @@ const ChatInterface = () => {
     setInput('');
 
     try {
+      // First, add the user message
+      const userMessage = {
+        id: Date.now().toString(),
+        role: 'user',
+        content: userInput,
+        createdAt: new Date().toISOString()
+      };
+      setMessages(prev => [...prev, userMessage]);
+
+      // Then add empty assistant message for streaming
+      const streamingMessage = {
+        id: 'streaming',
+        role: 'assistant',
+        content: '',
+        createdAt: new Date().toISOString(),
+        isStreaming: true
+      };
+      setMessages(prev => [...prev, streamingMessage]);
+
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,46 +123,41 @@ const ChatInterface = () => {
         for (const line of lines) {
           const data = JSON.parse(line);
 
-          switch (data.type) {
-            case 'init':
-              setCurrentConversationId(data.conversationId);
-              setMessages(prev => [...prev, data.userMessage]);
-              setMessages(prev => [...prev, {
-                id: 'streaming',
-                role: 'assistant',
-                content: '',
-                createdAt: new Date().toISOString(),
-                isStreaming: true
-              }]);
-              break;
-
-            case 'chunk':
-              setMessages(prev => {
-                const lastMessage = prev[prev.length - 1];
-                if (lastMessage.isStreaming) {
-                  return [
-                    ...prev.slice(0, -1),
-                    { ...lastMessage, content: lastMessage.content + data.content }
-                  ];
-                }
-                return prev;
-              });
-              break;
-
-            case 'done':
-              setMessages(prev => [
-                ...prev.slice(0, -1),
-                { ...data.aiMessage, isStreaming: false }
-              ]);
-              await fetchConversations();
-              break;
+          if (data.type === 'chunk') {
+            setMessages(prev => {
+              const lastMessage = prev[prev.length - 1];
+              if (lastMessage.isStreaming) {
+                return [
+                  ...prev.slice(0, -1),
+                  { ...lastMessage, content: lastMessage.content + data.content }
+                ];
+              }
+              return prev;
+            });
           }
         }
       }
+
+      // Stream completed, finalize the message
+      setMessages(prev => {
+        const lastMessage = prev[prev.length - 1];
+        if (lastMessage.isStreaming) {
+          return [
+            ...prev.slice(0, -1),
+            { ...lastMessage, isStreaming: false }
+          ];
+        }
+        return prev;
+      });
+
+      // Refresh conversation list
+      await fetchConversations();
+
     } catch (error) {
       console.error('Error in chat stream:', error);
-      setMessages(prev => 
-        prev[prev.length - 1]?.isStreaming 
+      // Clean up streaming message on error
+      setMessages(prev =>
+        prev[prev.length - 1]?.isStreaming
           ? prev.slice(0, -1)
           : prev
       );
@@ -150,7 +165,7 @@ const ChatInterface = () => {
       setIsLoading(false);
     }
   };
-
+  
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('en-US', {
       month: 'short',

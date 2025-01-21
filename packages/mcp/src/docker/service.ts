@@ -2,16 +2,23 @@ import { MCPService, ServerConfig, MCPServer, Logger } from '@mandrake/types';
 import Docker from 'dockerode';
 import { DockerMCPServer } from './server';
 import { prepareContainerConfig } from './docker-utils';
+import { Tool } from '@mandrake/types';
 import { logger as mcpLogger } from '../logger';
 
 const logger = mcpLogger.child({ service: 'docker' });
 
+interface ToolMapping {
+  tool: Tool;
+  server: MCPServer;
+}
 
 export class DockerMCPService implements MCPService {
   private static readonly MANAGED_LABEL = 'mandrake.mcp.managed=true';
   private docker: Docker;
   private servers: Map<string, DockerMCPServer>;
   private serviceLogger: Logger;
+  private toolMappings: Map<string, ToolMapping> = new Map();
+
 
   constructor(customLogger: Logger = logger) {
     this.serviceLogger = customLogger;
@@ -19,7 +26,7 @@ export class DockerMCPService implements MCPService {
     this.servers = new Map();
   }
 
-  async initialize(configs: ServerConfig[]): Promise<void> {
+  async initialize(configs: ServerConfig[]) {
     await this.cleanup();
 
     for (const config of configs) {
@@ -28,11 +35,21 @@ export class DockerMCPService implements MCPService {
         const server = new DockerMCPServer(config, container, this, this.serviceLogger);
         await server.start();
         this.servers.set(config.id, server);
+
+        // Cache tool mappings
+        const tools = await server.listTools();
+        for (const tool of tools) {
+          this.toolMappings.set(tool.name, { tool, server });
+        }
       } catch (err: any) {
         await this.cleanup();
         throw err;
       }
     }
+  }
+
+  getToolServer(toolName: string): ToolMapping | undefined {
+    return this.toolMappings.get(toolName);
   }
 
   async createContainer(config: ServerConfig): Promise<Docker.Container> {

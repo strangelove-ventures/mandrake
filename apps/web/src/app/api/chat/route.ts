@@ -1,32 +1,11 @@
 import { NextResponse } from 'next/server';
+import { mcpService } from '@/lib/mcp';
 import { prisma } from '@mandrake/storage';
+import { formatToolsOpenAI } from '@mandrake/mcp';
 import { Tool } from '@mandrake/types';
-import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
+import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
-
-
-function buildSystemPrompt(tools: Tool[]) {
-  const toolSchemas = tools.map(tool => ({
-    name: tool.name,
-    description: tool.description || '',
-    parameters: tool.inputSchema
-  }));
-
-  return `In this environment you have access to a set of tools you can use to answer the user's question.
-
-You can invoke functions by writing a "
-
-String and scalar parameters should be specified as is, while lists and objects should use JSON format. Note that spaces for string values are not stripped. The output is not expected to be valid XML and is parsed with regular expressions.
-
-Here are the functions available in JSONSchema format:
-${JSON.stringify(toolSchemas, null, 2)}
-
-Remember:
-- Each tool serves a specific purpose and should be used appropriately
-- Tools can be chained together to solve more complex tasks
-- Handle errors gracefully and provide clear feedback about tool operations
-- When a tool returns an error, explain the issue and suggest alternatives`;
-}
+import { buildMessageHistory } from '@/lib/chat';
 
 export async function POST(req: Request) {
   try {
@@ -71,22 +50,18 @@ export async function POST(req: Request) {
     });
 
     // Initialize chat model
-    const chatModel = new ChatGoogleGenerativeAI({
-      apiKey: process.env.GOOGLE_API_KEY!,
-      modelName: "gemini-pro",
-      maxOutputTokens: 2048,
-    });
+        // Initialize chat model with streaming
+          const chatModel = new ChatOpenAI({
+            openAIApiKey: process.env.DEEPSEEK_API_KEY,
+            modelName: "deepseek-chat",
+            maxTokens: 2048,
+            streaming: true,
+            configuration: {
+              baseURL: "https://api.deepseek.com/v1",
+            }
+          });
 
-    // Format messages for LangChain
-    const messageHistory = [
-      // TODO: get the tools from the DockerMCPService and/or workspace configuration. 
-      new SystemMessage(buildSystemPrompt([])),
-      ...conversation.messages.map(msg => 
-      msg.role === 'user' 
-        ? new HumanMessage(msg.content)
-        : new AIMessage(msg.content)
-    )];
-    
+    const messageHistory = await buildMessageHistory(conversation.id, message);
     const currentMessage = new HumanMessage(message);
 
     // Get AI response
