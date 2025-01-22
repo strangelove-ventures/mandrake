@@ -206,4 +206,109 @@ export class MandrakeChat {
     if (!conversation) throw new Error('Conversation not found or could not be created');
     return conversation;
   }
+  async streamChat(message: string, conversationId?: string) {
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
+    const encoder = new TextEncoder();
+
+    (async () => {
+      try {
+        let fullResponse = '';
+        let accumulatedJson = '';
+
+        this.currentMessages = await this.buildMessages({ message, conversationId });
+        const iterator = await this.chatModel.stream(this.currentMessages);
+
+        for await (const chunk of iterator) {
+          if (chunk.content) {
+            accumulatedJson += chunk.content;
+
+            let isComplete = false;
+            try {
+              // Look for complete JSON objects
+              const parsed = JSON.parse(accumulatedJson);
+              if (parsed.content) {
+                isComplete = true;
+
+                // Handle the complete JSON object
+                const toolCall = parsed.content.find((item: any) => item.type === 'tool_use');
+                if (toolCall) {
+                  await writer.write(encoder.encode(JSON.stringify({
+                    type: 'tool_call',
+                    content: JSON.stringify({ content: [toolCall] })
+                  }) + '\n'));
+
+                  const result = await this.handleToolCall(toolCall);
+                  if (result.error) {
+                    await writer.write(encoder.encode(JSON.stringify({
+                      type: 'chunk',
+                      content: `Error executing tool ${toolCall.name}: ${result.message}`
+                    }) + '\n'));
+                  } else {
+                    // Add tool interaction to history
+                    this.currentMessages.push(
+                      new AIMessage(JSON.stringify({ content: [toolCall] })),
+                      new HumanMessage(JSON.stringify(result))
+                    );
+
+                    // Continue with tool result
+                    const continueStream = await this.chatModel.stream(this.currentMessages);
+                    for await (const newChunk of continueStream) {
+                      if (newChunk.content) {
+                        await writer.write(encoder.encode(JSON.stringify({
+                          type: 'chunk',
+                          content: newChunk.content
+                        }) + '\n'));
+                        fullResponse += newChunk.content;
+                      }
+                    }
+                  }
+                } else {
+                  // Regular content
+                  const textContent = parsed.content.find((item: any) => item.type === 'text')?.text;
+                  if (textContent) {
+                    await writer.write(encoder.encode(JSON.stringify({
+                      type: 'chunk',
+                      content: textContent
+                    }) + '\n'));
+                    fullResponse += textContent;
+                  }
+                }
+                // Reset after handling complete JSON
+                accumulatedJson = '';
+              }
+            } catch (e) {
+              // Only write to stream if we didn't find a complete JSON object
+              if (!isComplete) {
+                await writer.write(encoder.encode(JSON.stringify({
+                  type: 'chunk',
+                  content: chunk.content
+                }) + '\n'));
+                fullResponse += chunk.content;
+              }
+            }
+          }
+        }
+
+        if (conversationId && fullResponse) {
+          await prisma.message.create({
+            data: {
+              role: 'assistant',
+              content: fullResponse,
+              conversationId
+            }
+          });
+        }
+
+        await writer.close();
+      } catch (error) {
+        console.error("Streaming error:", error);
+        await writer.abort(error);
+      }
+    })().catch(error => {
+      console.error("Background streaming error:", error);
+    });
+
+    return stream.readable;
+  }
 }
