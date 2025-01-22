@@ -1,10 +1,10 @@
 import { ChatOpenAI } from "@langchain/openai";
-import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
+import { HumanMessage, AIMessage, SystemMessage, AIMessageChunk } from "@langchain/core/messages";
 import { RunnableSequence } from "@langchain/core/runnables";
-import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { mcpService, mcpInitialized } from './mcp';
 import { buildSystemPrompt } from './chat';
 import { prisma } from './db';
+import { IterableReadableStream } from "@langchain/core/utils/stream";
 
 interface ChatInput {
   message: string;
@@ -16,13 +16,18 @@ interface StreamChunk {
   content: string;
 }
 
+type StreamState = {
+  mode: 'streaming' | 'json_accumulation' | 'tool_execution';
+  accumulatedJson: string;
+  fullResponse: string;
+  currentMessages: any[];
+};
+
 export class MandrakeChat {
   private chatModel: ChatOpenAI;
   private chain: RunnableSequence;
-  private currentMessages: any[] = [];
 
   constructor() {
-    console.log("Initializing MandrakeChat...");
     this.chatModel = new ChatOpenAI({
       streaming: true,
       modelName: "deepseek-chat",
@@ -33,25 +38,19 @@ export class MandrakeChat {
         apiKey: process.env.DEEPSEEK_API_KEY,
       }
     });
-    console.log("ChatModel initialized");
 
     this.chain = RunnableSequence.from([
       async (input: ChatInput) => {
-        console.log("Chain step 1: Building messages for input:", input);
         const messages = await this.buildMessages(input);
-        console.log("Messages built:", messages.length, "messages");
         return messages;
       },
       this.chatModel
     ]);
-    console.log("Chain initialized");
   }
 
   private async buildMessages({ message, conversationId }: ChatInput) {
-    // Only log initialization status
     await mcpInitialized;
 
-    // Get available tools silently
     const servers = Array.from(mcpService.getServers().values());
     const tools = await Promise.all(
       servers.map(async server => {
@@ -64,7 +63,6 @@ export class MandrakeChat {
       })
     ).then(serverTools => serverTools.flat());
 
-    // Get conversation history silently
     const conversation = conversationId
       ? await prisma.conversation.findUnique({
         where: { id: conversationId },
@@ -86,7 +84,6 @@ export class MandrakeChat {
       throw new Error('Conversation not found or could not be created');
     }
 
-    // Build and return messages silently
     return [
       new SystemMessage(buildSystemPrompt(tools)),
       ...conversation.messages.map(msg =>
@@ -99,30 +96,53 @@ export class MandrakeChat {
   }
 
   private async handleToolCall(toolCall: any) {
-    console.log("=== Tool Call Debug ===");
-    console.log("Tool called:", toolCall.name);
-    console.log("Tool input:", toolCall.input);
-
     const mapping = mcpService.getToolServer(toolCall.name);
     if (!mapping) {
-      console.error("No server found for tool:", toolCall.name);
       throw new Error(`No server found for tool: ${toolCall.name}`);
     }
 
     try {
-      console.log("Executing tool with server:", mapping.server.getId());
       const result = await mapping.server.invokeTool(toolCall.name, toolCall.input);
-      console.log("Tool execution result:", result);
       return result;
     } catch (error) {
-      console.error("Tool execution failed:", error);
-      // Instead of throwing, return an error result that the model can handle
       return {
         error: true,
         message: (error as Error).message || 'Tool execution failed'
       };
     }
   }
+
+  private async handleToolCallAndContinue(
+    toolCall: any,
+    state: StreamState,
+    writer: WritableStreamDefaultWriter,
+    encoder: TextEncoder
+  ): Promise<IterableReadableStream<AIMessageChunk>> {
+    await writer.write(encoder.encode(JSON.stringify({
+      type: 'tool_call',
+      content: JSON.stringify({ content: [toolCall] })
+    }) + '\n'));
+
+    const result = await this.handleToolCall(toolCall);
+
+    if (result.error) {
+      await writer.write(encoder.encode(JSON.stringify({
+        type: 'chunk',
+        content: `Error executing tool ${toolCall.name}: ${result.message}`
+      }) + '\n'));
+      state.mode = 'streaming';
+      return this.chatModel.stream(state.currentMessages);
+    }
+
+    state.currentMessages.push(
+      new AIMessage(JSON.stringify({ content: [toolCall] })),
+      new HumanMessage(JSON.stringify(result))
+    );
+
+    state.mode = 'streaming';
+    return this.chatModel.stream(state.currentMessages);
+  }
+
   async streamChat(message: string, conversationId?: string) {
     const stream = new TransformStream();
     const writer = stream.writable.getWriter();
@@ -130,88 +150,81 @@ export class MandrakeChat {
 
     (async () => {
       try {
-        let fullResponse = '';
-        let accumulatedJson = '';
+        const state: StreamState = {
+          mode: 'streaming',
+          accumulatedJson: '',
+          fullResponse: '',
+          currentMessages: await this.buildMessages({ message, conversationId })
+        };
 
-        this.currentMessages = await this.buildMessages({ message, conversationId });
-        const iterator = await this.chatModel.stream(this.currentMessages);
+        let currentStream = await this.chatModel.stream(state.currentMessages);
+        let isDone = false;
 
-        for await (const chunk of iterator) {
-          if (chunk.content) {
-            accumulatedJson += chunk.content;
+        while (!isDone) {
+          for await (const chunk of currentStream) {
+            if (!chunk.content) continue;
 
-            let isComplete = false;
-            try {
-              // Look for complete JSON objects
-              const parsed = JSON.parse(accumulatedJson);
-              if (parsed.content) {
-                isComplete = true;
-
-                // Handle the complete JSON object
-                const toolCall = parsed.content.find((item: any) => item.type === 'tool_use');
-                if (toolCall) {
+            switch (state.mode) {
+              case 'streaming':
+                if (chunk.content.toString().trim().startsWith('{')) {
+                  state.mode = 'json_accumulation';
+                  state.accumulatedJson = chunk.content.toString();
+                } else {
                   await writer.write(encoder.encode(JSON.stringify({
-                    type: 'tool_call',
-                    content: JSON.stringify({ content: [toolCall] })
+                    type: 'chunk',
+                    content: chunk.content
                   }) + '\n'));
+                  state.fullResponse += chunk.content;
+                }
+                break;
 
-                  const result = await this.handleToolCall(toolCall);
-                  if (result.error) {
-                    await writer.write(encoder.encode(JSON.stringify({
-                      type: 'chunk',
-                      content: `Error executing tool ${toolCall.name}: ${result.message}`
-                    }) + '\n'));
-                  } else {
-                    // Add tool interaction to history
-                    this.currentMessages.push(
-                      new AIMessage(JSON.stringify({ content: [toolCall] })),
-                      new HumanMessage(JSON.stringify(result))
-                    );
-
-                    // Continue with tool result
-                    const continueStream = await this.chatModel.stream(this.currentMessages);
-                    for await (const newChunk of continueStream) {
-                      if (newChunk.content) {
+              case 'json_accumulation':
+                state.accumulatedJson += chunk.content;
+                try {
+                  const parsed = JSON.parse(state.accumulatedJson);
+                  if (parsed.content) {
+                    const toolCall = parsed.content.find((item: any) => item.type === 'tool_use');
+                    if (toolCall) {
+                      state.mode = 'tool_execution';
+                      currentStream = await this.handleToolCallAndContinue(toolCall, state, writer, encoder);
+                    } else {
+                      const textContent = parsed.content.find((item: any) => item.type === 'text')?.text;
+                      if (textContent) {
                         await writer.write(encoder.encode(JSON.stringify({
                           type: 'chunk',
-                          content: newChunk.content
+                          content: textContent
                         }) + '\n'));
-                        fullResponse += newChunk.content;
+                        state.fullResponse += textContent;
                       }
+                      state.mode = 'streaming';
                     }
+                    state.accumulatedJson = '';
                   }
-                } else {
-                  // Regular content
-                  const textContent = parsed.content.find((item: any) => item.type === 'text')?.text;
-                  if (textContent) {
-                    await writer.write(encoder.encode(JSON.stringify({
-                      type: 'chunk',
-                      content: textContent
-                    }) + '\n'));
-                    fullResponse += textContent;
-                  }
+                } catch {
+                  continue;
                 }
-                // Reset after handling complete JSON
-                accumulatedJson = '';
-              }
-            } catch (e) {
-              // Only write to stream if we didn't find a complete JSON object
-              if (!isComplete) {
-                await writer.write(encoder.encode(JSON.stringify({
-                  type: 'chunk',
-                  content: chunk.content
-                }) + '\n'));
-                fullResponse += chunk.content;
-              }
+                break;
+
+              case 'tool_execution':
+                state.accumulatedJson += chunk.content;
+                break;
             }
+          }
+
+          // Check if we should continue
+          if (state.mode === 'tool_execution') {
+            // We'll get a new stream from handleToolCallAndContinue
+            continue;
+          } else {
+            isDone = true;
           }
         }
 
-        if (conversationId && fullResponse) {
+        if (conversationId && state.fullResponse) {
           await prisma.message.create({
             data: {
               role: 'assistant',
-              content: fullResponse,
+              content: state.fullResponse,
               conversationId
             }
           });
