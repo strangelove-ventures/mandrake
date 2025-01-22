@@ -131,36 +131,34 @@ export class StreamProcessor {
   getFullResponse(): string {
     return this.fullResponse;
   }
-
+  
   async processStream(stream: AsyncGenerator<AIMessageChunk>) {
     this.stateMachine.transition({ type: 'START_STREAM' });
-
     let jsonBuffer = '';
 
     try {
       for await (const chunk of stream) {
         if (!chunk.content) continue;
-
         const content = chunk.content.toString();
 
-        // Accumulate JSON content
+        // Case 1: Processing JSON content
         if (this.isJsonStart(content) || jsonBuffer) {
           jsonBuffer += content;
 
           try {
             const parsed = JSON.parse(jsonBuffer);
-            jsonBuffer = ''; // Reset buffer after successful parse
+            jsonBuffer = ''; // Reset buffer
 
             if (Array.isArray(parsed.content)) {
               for (const item of parsed.content) {
                 if (item.type === 'text') {
+                  // Emit text without additional newline
                   this.fullResponse += item.text;
                   this.stateMachine.transition({
                     type: 'RECEIVE_CHUNK',
                     content: item.text
                   });
                 } else if (item.type === 'tool_use') {
-                  // Tool call found, transition and return it
                   this.stateMachine.transition({
                     type: 'TOOL_CALL',
                     name: item.name,
@@ -171,18 +169,22 @@ export class StreamProcessor {
               }
             }
           } catch (e) {
-            // Incomplete JSON, continue buffering
-            continue;
+            // Only continue buffering if it looks like incomplete JSON
+            const openBraces = (jsonBuffer.match(/{/g) || []).length;
+            const closeBraces = (jsonBuffer.match(/}/g) || []).length;
+            if (openBraces === closeBraces) {
+              // Not incomplete JSON, emit as regular text
+              this.fullResponse += jsonBuffer;
+              this.stateMachine.transition({
+                type: 'RECEIVE_CHUNK',
+                content: jsonBuffer
+              });
+              jsonBuffer = '';
+            }
           }
-        } else if (this.stateMachine.getCurrentState().type === 'processing_tool') {
-          // While processing tool, still show output
-          this.fullResponse += content;
-          this.stateMachine.transition({
-            type: 'RECEIVE_CHUNK',
-            content: content
-          });
-        } else {
-          // Normal text handling
+        }
+        // Case 2: Regular text content
+        else {
           this.fullResponse += content;
           this.stateMachine.transition({
             type: 'RECEIVE_CHUNK',
@@ -191,7 +193,6 @@ export class StreamProcessor {
         }
       }
 
-      // Stream complete
       this.stateMachine.transition({ type: 'COMPLETE' });
       return null;
     } catch (error) {
@@ -201,6 +202,12 @@ export class StreamProcessor {
       });
       throw error;
     }
+  }
+
+  private looksLikeIncompleteJson(str: string): boolean {
+    const openBraces = (str.match(/{/g) || []).length;
+    const closeBraces = (str.match(/}/g) || []).length;
+    return openBraces !== closeBraces;
   }
 
   private isJsonStart(content: string): boolean {
