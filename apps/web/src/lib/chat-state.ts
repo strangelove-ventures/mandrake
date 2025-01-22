@@ -15,14 +15,13 @@ interface ToolCallContent {
 type MessageContent = TextContent | ToolCallContent;
 export type ParsedResponse = { content: MessageContent[] };
 
-// State machine types
-export type ChatState = 
+// State machine types remain unchanged
+export type ChatState =
   | { type: 'idle' }
-  | { type: 'streaming', chunk: string }  // Changed from buffer to chunk
+  | { type: 'streaming', chunk: string }
   | { type: 'processing_tool', toolName: string, input: any }
   | { type: 'error', error: Error };
 
-// Events that can trigger state changes
 export type ChatEvent =
   | { type: 'START_STREAM' }
   | { type: 'RECEIVE_CHUNK', content: string }
@@ -31,7 +30,7 @@ export type ChatEvent =
   | { type: 'ERROR', error: Error }
   | { type: 'COMPLETE' };
 
-// State machine class
+// State machine class remains unchanged
 export class ChatStateMachine {
   private state: ChatState = { type: 'idle' };
   private listeners: ((state: ChatState) => void)[] = [];
@@ -54,7 +53,7 @@ export class ChatStateMachine {
 
   transition(event: ChatEvent): ChatState {
     console.log(`[ChatStateMachine] Current state: ${this.state.type}, Event: ${event.type}`);
-    
+
     switch (this.state.type) {
       case 'idle':
         if (event.type === 'START_STREAM') {
@@ -65,16 +64,16 @@ export class ChatStateMachine {
       case 'streaming':
         switch (event.type) {
           case 'RECEIVE_CHUNK':
-            this.setState({ 
-              type: 'streaming', 
-              chunk: event.content  // Just the new chunk
+            this.setState({
+              type: 'streaming',
+              chunk: event.content
             });
             break;
           case 'TOOL_CALL':
-            this.setState({ 
-              type: 'processing_tool', 
+            this.setState({
+              type: 'processing_tool',
               toolName: event.name,
-              input: event.input 
+              input: event.input
             });
             break;
           case 'COMPLETE':
@@ -115,11 +114,13 @@ export class ChatStateMachine {
   }
 }
 
-// Stream processing helper
+// Updated StreamProcessor with improved chunk handling
 export class StreamProcessor {
   private stateMachine: ChatStateMachine;
   private fullResponse: string = '';
-  
+  private jsonBuffer: string = '';
+  private textBuffer: string = '';  // New: separate buffer for text accumulation
+
   constructor() {
     this.stateMachine = new ChatStateMachine();
   }
@@ -134,135 +135,142 @@ export class StreamProcessor {
 
   async processStream(stream: AsyncGenerator<AIMessageChunk>) {
     this.stateMachine.transition({ type: 'START_STREAM' });
-    let jsonBuffer = '';
-    let lastWasText = false;
 
     try {
       for await (const chunk of stream) {
-        if (!chunk.content) continue;
-        const content = chunk.content.toString();
-
-        // Accumulate JSON if we're in the middle of a JSON object
-        if (jsonBuffer || content.trimStart().startsWith('{')) {
-          jsonBuffer += content;
-
-          // Try to extract complete JSON objects
-          while (true) {
-            try {
-              const endIndex = this.findJsonObjectEnd(jsonBuffer);
-              if (endIndex === -1) break;  // No complete JSON object yet
-
-              const jsonStr = jsonBuffer.slice(0, endIndex + 1);
-              jsonBuffer = jsonBuffer.slice(endIndex + 1);
-
-              const parsed = JSON.parse(jsonStr);
-
-              if (Array.isArray(parsed.content)) {
-                for (const item of parsed.content) {
-                  if (item.type === 'text') {
-                    // Add spacing between text blocks if needed
-                    if (lastWasText) {
-                      this.fullResponse += '\n';
-                      this.stateMachine.transition({
-                        type: 'RECEIVE_CHUNK',
-                        content: '\n'
-                      });
-                    }
-
-                    this.fullResponse += item.text;
-                    this.stateMachine.transition({
-                      type: 'RECEIVE_CHUNK',
-                      content: item.text
-                    });
-                    lastWasText = true;
-                  }
-                  else if (item.type === 'tool_use') {
-                    lastWasText = false;
-                    this.stateMachine.transition({
-                      type: 'TOOL_CALL',
-                      name: item.name,
-                      input: item.input
-                    });
-                    return item;
-                  }
-                }
-              }
-            } catch (e) {
-              break;  // No more complete JSON objects
-            }
-          }
-        }
-        // Handle non-JSON content
-        else {
-          if (lastWasText) {
-            this.fullResponse += '\n';
-            this.stateMachine.transition({
-              type: 'RECEIVE_CHUNK',
-              content: '\n'
-            });
-          }
-          this.fullResponse += content;
-          this.stateMachine.transition({
-            type: 'RECEIVE_CHUNK',
-            content: content
-          });
-          lastWasText = true;
+        const result = await this.processChunk(chunk);
+        if (result) {
+          // If we got a tool call, flush any pending text first
+          await this.flushTextBuffer();
+          return result;
         }
       }
 
-      // Handle any remaining buffer
-      if (jsonBuffer) {
-        console.log('Remaining buffer:', jsonBuffer);
-      }
-
+      // Flush any remaining text before completing
+      await this.flushTextBuffer();
       this.stateMachine.transition({ type: 'COMPLETE' });
       return null;
     } catch (error) {
-      this.stateMachine.transition({
-        type: 'ERROR',
-        error: error instanceof Error ? error : new Error(String(error))
-      });
+      this.handleError(error);
       throw error;
     }
   }
 
-  // Helper to find the end of a complete JSON object
-  private findJsonObjectEnd(str: string): number {
-    let braceCount = 0;
+  private async processChunk(chunk: AIMessageChunk) {
+    if (!chunk.content) return null;
+    const content = chunk.content.toString();
+
+    console.log('[StreamProcessor] Processing chunk:', content);
+
+    // Determine if this chunk is part of JSON content
+    if (this.isJsonContent(content) || this.jsonBuffer.length > 0) {
+      this.jsonBuffer += content;
+
+      if (this.isCompleteJson()) {
+        return await this.handleJsonContent();
+      }
+      return null;
+    } else {
+      // Accumulate text content
+      this.textBuffer += content;
+      await this.flushTextBuffer();
+      return null;
+    }
+  }
+
+  private async flushTextBuffer() {
+    if (this.textBuffer) {
+      await this.emitText(this.textBuffer);
+      this.textBuffer = '';
+    }
+  }
+
+  private async handleJsonContent(): Promise<ToolCallContent | null> {
+    try {
+      const parsed = JSON.parse(this.jsonBuffer);
+      const result = await this.processJsonContent(parsed);
+      this.jsonBuffer = ''; // Only reset after successful processing
+      return result;
+    } catch (e) {
+      if (this.isCompleteJson()) {
+        // If we have complete but invalid JSON, treat as text
+        await this.emitText(this.jsonBuffer);
+        this.jsonBuffer = '';
+      }
+      // If incomplete, keep accumulating
+      return null;
+    }
+  }
+
+  private async processJsonContent(parsed: any): Promise<ToolCallContent | null> {
+    if (!Array.isArray(parsed.content)) return null;
+
+    for (const item of parsed.content) {
+      if (item.type === 'text') {
+        // Only emit text if not followed by a tool call
+        const hasToolCall = parsed.content.some((i: { type: string; }) => i.type === 'tool_use');
+        if (!hasToolCall) {
+          await this.emitText(item.text);
+        }
+      } else if (item.type === 'tool_use') {
+        // Transition state for tool call
+        this.stateMachine.transition({
+          type: 'TOOL_CALL',
+          name: item.name,
+          input: item.input
+        });
+
+        return {
+          type: 'tool_use',
+          name: item.name,
+          input: item.input
+        };
+      }
+    }
+    return null;
+  }
+
+  private async emitText(text: string) {
+    this.fullResponse += text;
+    this.stateMachine.transition({
+      type: 'RECEIVE_CHUNK',
+      content: text
+    });
+  }
+
+  private isJsonContent(content: string): boolean {
+    return content.trimStart().startsWith('{');
+  }
+
+  private isCompleteJson(): boolean {
+    // Enhanced JSON completion check
+    let depth = 0;
     let inString = false;
     let escaped = false;
 
-    for (let i = 0; i < str.length; i++) {
-      const char = str[i];
-
-      if (inString) {
+    for (const char of this.jsonBuffer) {
+      if (!inString) {
+        if (char === '{') depth++;
+        if (char === '}') depth--;
+        if (char === '"') inString = true;
+      } else {
         if (char === '\\' && !escaped) {
           escaped = true;
           continue;
         }
-        if (char === '"' && !escaped) {
-          inString = false;
-        }
+        if (char === '"' && !escaped) inString = false;
         escaped = false;
-        continue;
-      }
-
-      if (char === '"') {
-        inString = true;
-      } else if (char === '{') {
-        braceCount++;
-      } else if (char === '}') {
-        braceCount--;
-        if (braceCount === 0) {
-          return i;
-        }
       }
     }
 
-    return -1;  // No complete JSON object found
+    return depth === 0 && !inString && this.jsonBuffer.trimStart().startsWith('{');
   }
-  
-  private isJsonStart(content: string): boolean {
-    return content.toString().trim().startsWith('{');
+
+  private handleError(error: unknown) {
+    console.error('[StreamProcessor] Stream error:', error);
+    this.stateMachine.transition({
+      type: 'ERROR',
+      error: error instanceof Error ? error : new Error(String(error))
+    });
   }
 }

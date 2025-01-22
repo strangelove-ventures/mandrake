@@ -8,13 +8,26 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Loader2, MessageSquarePlus } from 'lucide-react';
 import MessageContent from './MessageContent';
 
-type Message = {
-  id: string;
-  role: string;
+// First, add these new types at the top:
+interface ToolDetails {
+  name: string;
+  input: any;
+  result: any;
+}
+
+interface MessageContentItem {
+  type: 'text' | 'tool';
   content: string;
+  toolDetails?: ToolDetails;
+}
+
+interface Message {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string | MessageContentItem[];
   createdAt: string;
   isStreaming?: boolean;
-};
+}
 
 type Conversation = {
   id: string;
@@ -68,7 +81,6 @@ const ChatInterface = () => {
     setCurrentConversationId(null);
   };
 
-  // In ChatInterface.tsx, update the handleSubmit function:
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
@@ -77,25 +89,27 @@ const ChatInterface = () => {
     const userInput = input;
     setInput('');
 
+    const timestamp = Date.now();
+
     try {
-      // First, add the user message
-      const userMessage = {
-        id: Date.now().toString(),
+      // Add user message
+      const userMessage: Message = {
+        id: `user-${timestamp}`,
         role: 'user',
         content: userInput,
         createdAt: new Date().toISOString()
       };
-      setMessages(prev => [...prev, userMessage]);
 
-      // Then add empty assistant message for streaming
-      const streamingMessage = {
-        id: 'streaming',
+      // Initialize streaming message with unique ID
+      const streamingMessage: Message = {
+        id: `streaming-${timestamp}`,
         role: 'assistant',
-        content: '',
+        content: [],
         createdAt: new Date().toISOString(),
         isStreaming: true
       };
-      setMessages(prev => [...prev, streamingMessage]);
+
+      setMessages(prev => [...prev, userMessage, streamingMessage]);
 
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
@@ -112,6 +126,7 @@ const ChatInterface = () => {
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
+      let currentToolCall: ToolDetails | null = null;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -121,45 +136,134 @@ const ChatInterface = () => {
         const lines = chunk.split('\n').filter(Boolean);
 
         for (const line of lines) {
-          const data = JSON.parse(line);
+          try {
+            const data = JSON.parse(line);
 
-          if (data.type === 'chunk') {
             setMessages(prev => {
-              const lastMessage = prev[prev.length - 1];
-              if (lastMessage.isStreaming) {
-                return [
-                  ...prev.slice(0, -1),
-                  { ...lastMessage, content: lastMessage.content + data.content }
-                ];
+              // Find the specific streaming message by ID and flag
+              const streamingIndex = prev.findIndex(
+                msg => msg.id === `streaming-${timestamp}` && msg.isStreaming
+              );
+
+              if (streamingIndex === -1) return prev;
+
+              const lastMessage = prev[streamingIndex];
+
+              // Ensure content is an array
+              const currentContent = Array.isArray(lastMessage.content)
+                ? lastMessage.content
+                : [];
+
+              let newContent: MessageContentItem[] = [...currentContent];
+
+              switch (data.type) {
+                case 'chunk': {
+                  // Clean chunk data if needed
+                  const chunkText = typeof data.content === 'string'
+                    ? data.content
+                    : JSON.stringify(data.content);
+
+                  // Find or create text content
+                  const lastItem = newContent[newContent.length - 1];
+                  if (!lastItem || lastItem.type !== 'text') {
+                    newContent.push({
+                      type: 'text',
+                      content: chunkText
+                    });
+                  } else {
+                    // Update existing text content immutably
+                    newContent = [
+                      ...newContent.slice(0, -1),
+                      { ...lastItem, content: lastItem.content + chunkText }
+                    ];
+                  }
+                  break;
+                }
+
+                case 'tool_call': {
+                  currentToolCall = {
+                    name: data.content.name,
+                    input: data.content.input,
+                    result: null
+                  };
+
+                  newContent.push({
+                    type: 'tool',
+                    content: `Using tool: ${data.content.name}`,
+                    toolDetails: currentToolCall
+                  });
+                  break;
+                }
+
+                case 'tool_result': {
+                  if (currentToolCall) {
+                    // Find the last tool content and update its result
+                    const toolIndex = newContent.findIndex(
+                      item => item.type === 'tool' &&
+                        item.toolDetails?.name === currentToolCall?.name &&
+                        item.toolDetails && !item.toolDetails.result // Ensure we haven't already set a result
+                    );
+
+                    if (toolIndex !== -1) {
+                      newContent = [
+                        ...newContent.slice(0, toolIndex),
+                        {
+                          ...newContent[toolIndex],
+                          content: `Used tool: ${currentToolCall.name}`,
+                          toolDetails: {
+                            ...currentToolCall,
+                            result: data.content
+                          }
+                        },
+                        ...newContent.slice(toolIndex + 1)
+                      ];
+                    }
+
+                    currentToolCall = null;
+                  }
+                  break;
+                }
               }
-              return prev;
+
+              // Create updated messages array
+              const updatedMessages = [...prev];
+              updatedMessages[streamingIndex] = {
+                ...lastMessage,
+                content: newContent
+              };
+
+              return updatedMessages;
             });
+          } catch (error) {
+            console.error('Error processing stream chunk:', error, line);
           }
         }
       }
 
-      // Stream completed, finalize the message
+      // Finalize the message - remove streaming flag but keep the unique ID
       setMessages(prev => {
-        const lastMessage = prev[prev.length - 1];
-        if (lastMessage.isStreaming) {
-          return [
-            ...prev.slice(0, -1),
-            { ...lastMessage, isStreaming: false }
-          ];
-        }
-        return prev;
+        const streamingIndex = prev.findIndex(
+          msg => msg.id === `streaming-${timestamp}` && msg.isStreaming
+        );
+
+        if (streamingIndex === -1) return prev;
+
+        const updatedMessages = [...prev];
+        updatedMessages[streamingIndex] = {
+          ...updatedMessages[streamingIndex],
+          isStreaming: false
+        };
+
+        return updatedMessages;
       });
 
-      // Refresh conversation list
       await fetchConversations();
 
     } catch (error) {
       console.error('Error in chat stream:', error);
-      // Clean up streaming message on error
+      // Clean up the specific streaming message using its unique ID
       setMessages(prev =>
-        prev[prev.length - 1]?.isStreaming
-          ? prev.slice(0, -1)
-          : prev
+        prev.filter(msg => msg.id !== `streaming-${timestamp}`)
       );
     } finally {
       setIsLoading(false);
@@ -174,6 +278,17 @@ const ChatInterface = () => {
       minute: '2-digit',
     });
   };
+
+  const getMessagePreview = (content: string | MessageContentItem[]): string => {
+    if (typeof content === 'string') {
+      return content;
+    }
+    // For MessageContentItem[], combine text content
+    return content
+      .map(item => item.type === 'text' ? item.content : item.type === 'tool' ? `[Tool: ${item.toolDetails?.name}]` : '')
+      .join(' ');
+  };
+
 
   return (
     <div className="flex flex-col h-screen max-w-4xl mx-auto p-4">
@@ -201,7 +316,7 @@ const ChatInterface = () => {
                   }`}
                 >
                   <div className="font-medium">
-                    {conv.messages[0]?.content.slice(0, 30)}...
+                    {conv.messages[0] ? getMessagePreview(conv.messages[0].content).slice(0, 30) + '...' : 'New Conversation'}
                   </div>
                   <div className="text-sm text-gray-500">
                     {formatDate(conv.createdAt)}
@@ -219,27 +334,30 @@ const ChatInterface = () => {
             {Array.isArray(messages) && messages.map((message, index) => (
               <div
                 key={message.id || index}
-                className={`flex ${
-                  message.role === 'user' ? 'justify-end' : 'justify-start'
-                }`}
+                className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'
+                  }`}
               >
                 <div
-                  className={`max-w-3/4 p-3 rounded-lg ${
-                    message.role === 'user'
+                  className={`max-w-3/4 p-3 rounded-lg ${message.role === 'user'
                       ? 'bg-blue-500 text-white'
                       : 'bg-gray-100 text-gray-900'
-                  }`}
+                    }`}
                 >
                   <Badge className="mb-1">
                     {message.role === 'user' ? 'You' : 'Assistant'}
                   </Badge>
-                  <MessageContent content={message.content} />
+                  {typeof message.content === 'string' ? (
+                    <div className="whitespace-pre-wrap">{message.content}</div>
+                  ) : (
+                    <MessageContent content={message.content} />
+                  )}
                   {message.isStreaming && (
                     <span className="inline-block w-1.5 h-4 bg-current animate-pulse ml-1">|</span>
                   )}
                 </div>
               </div>
             ))}
+
             <div ref={messagesEndRef} />
           </div>
         </CardContent>

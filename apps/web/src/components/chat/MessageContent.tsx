@@ -1,70 +1,55 @@
-"use client";
+'use client';
 
 import React from 'react';
-import CodeBlock from './CodeBlock';
+import { Card } from '@/components/ui/card';
+
+type ToolDetails = {
+  name: string;
+  input: any;
+  result: any;
+};
+
+type ContentItem = {
+  type: 'text' | 'tool';
+  content: string;
+  toolDetails?: ToolDetails;
+};
 
 interface MessageContentProps {
-  content: string;
+  content: ContentItem[];
 }
 
 const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
-  // Split content into code blocks and regular text
-  const parseContent = (text: string) => {
-    const segments: { type: 'text' | 'code'; content: string }[] = [];
-    const regex = /(```[\s\S]*?```)|(`[^`]+`)/g;
-    let lastIndex = 0;
-    let match;
-
-    while ((match = regex.exec(text)) !== null) {
-      // Add text before the match
-      if (match.index > lastIndex) {
-        segments.push({
-          type: 'text',
-          content: text.slice(lastIndex, match.index)
-        });
-      }
-
-      // Add the code block
-      if (match[0].startsWith('```')) {
-        segments.push({
-          type: 'code',
-          content: match[0]
-        });
-      } else {
-        // Inline code
-        segments.push({
-          type: 'text',
-          content: match[0]
-        });
-      }
-
-      lastIndex = match.index + match[0].length;
-    }
-
-    // Add remaining text
-    if (lastIndex < text.length) {
-      segments.push({
-        type: 'text',
-        content: text.slice(lastIndex)
-      });
-    }
-
-    return segments;
-  };
-
-  const segments = parseContent(content);
+  if (!Array.isArray(content)) {
+    // Handle legacy string content
+    return <div className="whitespace-pre-wrap">{content}</div>;
+  }
 
   return (
-    <div className="whitespace-pre-wrap">
-      {segments.map((segment, index) => {
-        if (segment.type === 'code') {
-          return <CodeBlock key={index} code={segment.content} />;
+    <div className="space-y-2">
+      {content.map((item, index) => {
+        if (item.type === 'text') {
+          return (
+            <div key={index} className="whitespace-pre-wrap">
+              {item.content}
+            </div>
+          );
+        } else if (item.type === 'tool') {
+          return (
+            <Card key={index} className="p-2 bg-gray-50 dark:bg-gray-800">
+              <div className="font-medium text-sm">{item.content}</div>
+              {item.toolDetails && item.toolDetails.result && (
+                <div className="mt-2 text-sm">
+                  <div className="font-medium text-gray-500">Result:</div>
+                  <pre className="mt-1 p-2 bg-gray-100 dark:bg-gray-900 rounded overflow-x-auto">
+                    {JSON.stringify(item.toolDetails.result, null, 2)}
+                  </pre>
+                </div>
+              )}
+            </Card>
+          );
         }
-        return (
-          <span key={index} className="break-words">
-            {segment.content}
-          </span>
-        );
+        return null;
       })}
     </div>
   );

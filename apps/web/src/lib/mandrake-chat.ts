@@ -10,7 +10,6 @@ interface ChatInput {
   conversationId?: string;
 }
 
-// Types for our message handling
 interface TextContent {
   type: 'text';
   text: string;
@@ -66,46 +65,87 @@ export class MandrakeChat {
   async streamChat(message: string, conversationId?: string) {
     const self = this;
     const streamProcessor = new StreamProcessor();
+    let messageHistory: any[] = [];
+    let toolCallInProgress = false;
 
     return new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
 
-        // Subscribe to state changes to handle UI updates
-        streamProcessor.subscribe((state) => {
+        // Enhanced chunk sending with validation
+        const sendChunk = (type: 'chunk' | 'tool_call' | 'tool_result', content: any) => {
+          try {
+            // Clean up and validate content before sending
+            let cleanContent = content;
+            if (typeof content === 'string' && content.includes('"content":')) {
+              try {
+                const parsed = JSON.parse(content);
+                cleanContent = parsed.content;
+              } catch (e) {
+                console.log("[MandrakeChat] Failed to parse JSON chunk:", e);
+              }
+            }
+
+            const chunk = encoder.encode(
+              JSON.stringify({ type, content: cleanContent }) + '\n'
+            );
+            controller.enqueue(chunk);
+          } catch (e) {
+            console.error("[MandrakeChat] Error sending chunk:", e);
+          }
+        };
+
+        // Subscribe to state changes for UI updates
+        const unsubscribe = streamProcessor.subscribe((state) => {
           if (state.type === 'streaming' && state.chunk) {
-            const chunk = { type: 'chunk', content: state.chunk };
-            controller.enqueue(encoder.encode(JSON.stringify(chunk) + '\n'));
+            sendChunk('chunk', state.chunk);
           }
         });
 
         try {
-          const messages = await self.buildMessages({ message, conversationId });
-          let currentStream = await self.chatModel.stream(messages);
+          messageHistory = await self.buildMessages({ message, conversationId });
+          let currentStream = await self.chatModel.stream(messageHistory);
 
           while (currentStream) {
             const toolCall = await streamProcessor.processStream(currentStream);
 
-            if (toolCall) {
-              // Handle tool call
-              const toolChunk = {
-                type: 'tool_call',
-                content: JSON.stringify({ content: [toolCall] })
-              };
-              controller.enqueue(encoder.encode(JSON.stringify(toolChunk) + '\n'));
+            if (toolCall && !toolCallInProgress) {
+              // Start tool call processing
+              toolCallInProgress = true;
 
-              const result = await self.handleToolCall(toolCall);
+              // Notify about tool call
+              sendChunk('tool_call', {
+                name: toolCall.name,
+                input: toolCall.input
+              });
 
-              // Add tool interaction to message history
-              messages.push(
-                new AIMessage(JSON.stringify({ content: [toolCall] })),
-                new HumanMessage(JSON.stringify(result))
-              );
+              try {
+                // Execute tool
+                const result = await self.handleToolCall(toolCall);
+                sendChunk('tool_result', result);
 
-              // Start new stream with updated messages
-              currentStream = await self.chatModel.stream(messages);
-            } else {
-              // Stream completed normally
+                // Update message history with tool interaction
+                messageHistory.push(
+                  new AIMessage(JSON.stringify({
+                    content: [{
+                      type: 'tool_use',
+                      name: toolCall.name,
+                      input: toolCall.input
+                    }]
+                  })),
+                  new HumanMessage(JSON.stringify(result))
+                );
+
+                // Continue streaming with updated context
+                toolCallInProgress = false;
+                currentStream = await self.chatModel.stream(messageHistory);
+              } catch (toolError) {
+                console.error("[MandrakeChat] Tool execution error:", toolError);
+                toolCallInProgress = false;
+                throw toolError;
+              }
+            } else if (!toolCall) {
+              // Normal completion - no tool call
               break;
             }
           }
@@ -126,13 +166,13 @@ export class MandrakeChat {
           console.error("[MandrakeChat] Stream error:", error);
           controller.error(error);
         } finally {
+          unsubscribe(); // Clean up subscription
           controller.close();
         }
       }
     });
   }
 
-  // Helper methods...
   private async getAvailableTools() {
     const servers = Array.from(mcpService.getServers().values());
     return Promise.all(
