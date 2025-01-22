@@ -1,3 +1,4 @@
+// apps/web/src/lib/mcp.ts
 import { DockerMCPService, createProductionConfigs } from '@mandrake/mcp';
 
 declare global {
@@ -5,12 +6,13 @@ declare global {
     var mcpInitialized: Promise<void> | undefined;
 }
 
-export const mcpService = global.mcpService || new DockerMCPService();
+// Initialize immediately when this module is loaded on the server
+if (!global.mcpService) {
+    global.mcpService = new DockerMCPService();
+    global.mcpInitialized = global.mcpService.initialize(
+        createProductionConfigs('/Users/johnzampolin/.mandrake/workspace')
+    );
+}
 
-// Create initialization promise
-global.mcpInitialized = global.mcpInitialized || mcpService.initialize(
-    createProductionConfigs('/Users/johnzampolin/.mandrake/workspace')
-);
-
-// Export the initialization promise
-export const mcpInitialized = global.mcpInitialized;
+export const mcpService = global.mcpService!;
+export const mcpInitialized = global.mcpInitialized!;
