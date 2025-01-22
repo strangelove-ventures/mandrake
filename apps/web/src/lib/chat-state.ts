@@ -131,66 +131,88 @@ export class StreamProcessor {
   getFullResponse(): string {
     return this.fullResponse;
   }
-  
+
   async processStream(stream: AsyncGenerator<AIMessageChunk>) {
     this.stateMachine.transition({ type: 'START_STREAM' });
     let jsonBuffer = '';
+    let lastWasText = false;
 
     try {
       for await (const chunk of stream) {
         if (!chunk.content) continue;
         const content = chunk.content.toString();
 
-        // Case 1: Processing JSON content
-        if (this.isJsonStart(content) || jsonBuffer) {
+        // Accumulate JSON if we're in the middle of a JSON object
+        if (jsonBuffer || content.trimStart().startsWith('{')) {
           jsonBuffer += content;
 
-          try {
-            const parsed = JSON.parse(jsonBuffer);
-            jsonBuffer = ''; // Reset buffer
+          // Try to extract complete JSON objects
+          while (true) {
+            try {
+              const endIndex = this.findJsonObjectEnd(jsonBuffer);
+              if (endIndex === -1) break;  // No complete JSON object yet
 
-            if (Array.isArray(parsed.content)) {
-              for (const item of parsed.content) {
-                if (item.type === 'text') {
-                  // Emit text without additional newline
-                  this.fullResponse += item.text;
-                  this.stateMachine.transition({
-                    type: 'RECEIVE_CHUNK',
-                    content: item.text
-                  });
-                } else if (item.type === 'tool_use') {
-                  this.stateMachine.transition({
-                    type: 'TOOL_CALL',
-                    name: item.name,
-                    input: item.input
-                  });
-                  return item;
+              const jsonStr = jsonBuffer.slice(0, endIndex + 1);
+              jsonBuffer = jsonBuffer.slice(endIndex + 1);
+
+              const parsed = JSON.parse(jsonStr);
+
+              if (Array.isArray(parsed.content)) {
+                for (const item of parsed.content) {
+                  if (item.type === 'text') {
+                    // Add spacing between text blocks if needed
+                    if (lastWasText) {
+                      this.fullResponse += '\n';
+                      this.stateMachine.transition({
+                        type: 'RECEIVE_CHUNK',
+                        content: '\n'
+                      });
+                    }
+
+                    this.fullResponse += item.text;
+                    this.stateMachine.transition({
+                      type: 'RECEIVE_CHUNK',
+                      content: item.text
+                    });
+                    lastWasText = true;
+                  }
+                  else if (item.type === 'tool_use') {
+                    lastWasText = false;
+                    this.stateMachine.transition({
+                      type: 'TOOL_CALL',
+                      name: item.name,
+                      input: item.input
+                    });
+                    return item;
+                  }
                 }
               }
-            }
-          } catch (e) {
-            // Only continue buffering if it looks like incomplete JSON
-            const openBraces = (jsonBuffer.match(/{/g) || []).length;
-            const closeBraces = (jsonBuffer.match(/}/g) || []).length;
-            if (openBraces === closeBraces) {
-              // Not incomplete JSON, emit as regular text
-              this.fullResponse += jsonBuffer;
-              this.stateMachine.transition({
-                type: 'RECEIVE_CHUNK',
-                content: jsonBuffer
-              });
-              jsonBuffer = '';
+            } catch (e) {
+              break;  // No more complete JSON objects
             }
           }
         }
-        // Case 2: Regular text content
+        // Handle non-JSON content
         else {
+          if (lastWasText) {
+            this.fullResponse += '\n';
+            this.stateMachine.transition({
+              type: 'RECEIVE_CHUNK',
+              content: '\n'
+            });
+          }
           this.fullResponse += content;
           this.stateMachine.transition({
             type: 'RECEIVE_CHUNK',
             content: content
           });
+          lastWasText = true;
         }
+      }
+
+      // Handle any remaining buffer
+      if (jsonBuffer) {
+        console.log('Remaining buffer:', jsonBuffer);
       }
 
       this.stateMachine.transition({ type: 'COMPLETE' });
@@ -204,12 +226,42 @@ export class StreamProcessor {
     }
   }
 
-  private looksLikeIncompleteJson(str: string): boolean {
-    const openBraces = (str.match(/{/g) || []).length;
-    const closeBraces = (str.match(/}/g) || []).length;
-    return openBraces !== closeBraces;
-  }
+  // Helper to find the end of a complete JSON object
+  private findJsonObjectEnd(str: string): number {
+    let braceCount = 0;
+    let inString = false;
+    let escaped = false;
 
+    for (let i = 0; i < str.length; i++) {
+      const char = str[i];
+
+      if (inString) {
+        if (char === '\\' && !escaped) {
+          escaped = true;
+          continue;
+        }
+        if (char === '"' && !escaped) {
+          inString = false;
+        }
+        escaped = false;
+        continue;
+      }
+
+      if (char === '"') {
+        inString = true;
+      } else if (char === '{') {
+        braceCount++;
+      } else if (char === '}') {
+        braceCount--;
+        if (braceCount === 0) {
+          return i;
+        }
+      }
+    }
+
+    return -1;  // No complete JSON object found
+  }
+  
   private isJsonStart(content: string): boolean {
     return content.toString().trim().startsWith('{');
   }
