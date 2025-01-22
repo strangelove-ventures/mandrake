@@ -3,6 +3,7 @@ import { HumanMessage, AIMessage, SystemMessage, AIMessageChunk } from "@langcha
 import { mcpService, mcpInitialized } from './mcp';
 import { buildSystemPrompt } from './chat';
 import { prisma } from './db';
+import { dbInitialized } from './init';
 
 interface ChatInput {
   message: string;
@@ -184,6 +185,8 @@ export class MandrakeChat {
   }
 
   private async getOrCreateConversation({ message, conversationId }: ChatInput) {
+    const workspaceId = await dbInitialized;
+    
     const conversation = conversationId
       ? await prisma.conversation.findUnique({
         where: { id: conversationId },
@@ -193,12 +196,12 @@ export class MandrakeChat {
         ? await prisma.conversation.create({
           data: {
             title: message.slice(0, 50),
-            workspaceId: '06d07df4-299d-43f2-b4c3-9b66ae8ccd63'
+            workspaceId
           },
           include: { messages: true }
         })
         : null;
-
+  
     if (!conversation) throw new Error('Conversation not found or could not be created');
     return conversation;
   }

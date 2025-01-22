@@ -1,6 +1,8 @@
+// src/app/api/chat/stream/route.ts
 import { NextRequest } from 'next/server';
 import { MandrakeChat } from '@/lib/mandrake-chat';
 import { prisma } from '@/lib/db';
+import { dbInitialized } from '@/lib/init';
 
 export async function POST(req: NextRequest) {
   try {
@@ -10,23 +12,28 @@ export async function POST(req: NextRequest) {
       return new Response('Message is required', { status: 400 });
     }
 
-    // First create or get the conversation and store initial message
+    // Wait for DB initialization
+    const workspaceId = await dbInitialized;
+
+    // Create or get the conversation
     const conversation = conversationId
       ? await prisma.conversation.findUnique({
-        where: { id: conversationId }
-      })
+          where: { id: conversationId },
+          include: { messages: true }
+        })
       : await prisma.conversation.create({
-        data: {
-          title: message.slice(0, 50),
-          workspaceId: '06d07df4-299d-43f2-b4c3-9b66ae8ccd63', // Default workspace
-          messages: {
-            create: {
-              role: 'user',
-              content: message,
+          data: {
+            title: message.slice(0, 50),
+            workspaceId,
+            messages: {
+              create: {
+                role: 'user',
+                content: message,
+              }
             }
-          }
-        }
-      });
+          },
+          include: { messages: true }
+        });
 
     if (!conversation) {
       return new Response('Conversation not found', { status: 404 });
@@ -45,7 +52,12 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('Stream route error:', error);
-    return new Response('Internal server error', { status: 500 });
+    console.error('Stream route error:', error instanceof Error ? error.message : 'Unknown error');
+    return new Response(JSON.stringify({ error: 'Internal server error' }), { 
+      status: 500,
+      headers: {
+        'Content-Type': 'application/json'
+      }
+    });
   }
 }
