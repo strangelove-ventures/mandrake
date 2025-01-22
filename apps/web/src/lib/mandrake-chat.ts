@@ -4,7 +4,6 @@ import { mcpService, mcpInitialized } from './mcp';
 import { buildSystemPrompt } from './chat';
 import { StreamProcessor } from './chat-state';
 import { prisma } from './db';
-import { IterableReadableStream } from "@langchain/core/utils/stream";
 
 interface ChatInput {
   message: string;
