@@ -6,8 +6,8 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc",
-    "clean": "rm -rf dist coverage .turbo",
+    "build": "tsc --build",
+    "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo",
     "test": "jest packages/mcp/src/docker/__tests__/multi-server.test.ts",
     "test:server": "jest packages/mcp/src/docker/__tests__/single-server.test.ts",
     "build:test-servers": "node scripts/build-test-servers.js",

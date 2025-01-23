@@ -39,6 +39,5 @@ test.env
 # typescript
 *.tsbuildinfo
 
-# docker data for test env
-.docker
-.mongodb
+# postgres
+testdb

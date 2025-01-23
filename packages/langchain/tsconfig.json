@@ -7,7 +7,6 @@
     "rootDir": "./src"
   },
   "references": [
-    { "path": "../types" },
-    { "path": "../core" }
+    { "path": "../types" }
   ]
 }

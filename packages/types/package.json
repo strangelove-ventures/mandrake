@@ -1,19 +1,18 @@
 {
   "name": "@mandrake/types",
   "version": "0.0.1",
-  "private": true,
-  "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "private": true,
+  "type": "module",
   "scripts": {
-    "build": "tsc",
-    "clean": "rm -rf dist coverage .turbo",
-    "test": "jest",
-    "lint": "eslint src/**/*.ts"
+    "build": "tsc --build",
+    "clean": "rm -rf dist coverage .turbo"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.1.1",
-    "winston": "^3.17.0",
-    "zod": "^3.22.4"
+    "winston": "^3.17.0"
   }
 }
