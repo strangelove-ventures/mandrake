@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --build",
-    "clean": "rm -rf dist coverage .turbo"
+    "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo"
   },
   "devDependencies": {
     "typescript": "^5.3.3"

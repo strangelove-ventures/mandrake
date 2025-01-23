@@ -55,13 +55,20 @@ const ChatInterface = () => {
     try {
       const response = await fetch('/api/chat/conversations');
       const data = await response.json();
-      setConversations(data);
-      
-      if (!currentConversationId && data.length > 0) {
-        await loadConversation(data[0].id);
+
+      // Ensure data is an array before setting state
+      if (Array.isArray(data)) {
+        setConversations(data);
+        if (!currentConversationId && data.length > 0) {
+          await loadConversation(data[0].id);
+        }
+      } else if (data.error) {
+        console.error('Error from API:', data.error);
+        setConversations([]); // Reset to empty array on error
       }
     } catch (error) {
       console.error('Error fetching conversations:', error);
+      setConversations([]); // Reset to empty array on error
     }
   };
 
@@ -308,13 +315,12 @@ const ChatInterface = () => {
               <SheetTitle>Conversation History</SheetTitle>
             </SheetHeader>
             <div className="py-4">
-              {conversations.map((conv) => (
+              {Array.isArray(conversations) ? conversations.map((conv) => (
                 <button
                   key={conv.id}
                   onClick={() => loadConversation(conv.id)}
-                  className={`w-full text-left p-3 rounded hover:bg-gray-100 mb-2 ${
-                    conv.id === currentConversationId ? 'bg-gray-100' : ''
-                  }`}
+                  className={`w-full text-left p-3 rounded hover:bg-gray-100 mb-2 ${conv.id === currentConversationId ? 'bg-gray-100' : ''
+                    }`}
                 >
                   <div className="font-medium">
                     {conv.messages[0] ? getMessagePreview(conv.messages[0].content).slice(0, 30) + '...' : 'New Conversation'}
@@ -323,7 +329,9 @@ const ChatInterface = () => {
                     {formatDate(conv.createdAt)}
                   </div>
                 </button>
-              ))}
+              )) : (
+                <div className="p-3 text-gray-500">No conversations available</div>
+              )}
             </div>
           </SheetContent>
         </Sheet>

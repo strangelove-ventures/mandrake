@@ -1,14 +1,16 @@
-// src/app/api/chat/conversations/route.ts
 import { NextResponse } from 'next/server';
 import { prisma } from '@mandrake/storage';
 import { dbInitialized } from '@/lib/init';
 
 export async function GET() {
   try {
-    // Wait for DB initialization
-    await dbInitialized;
-    
+    // Wait for DB initialization and get workspace ID
+    const workspaceId = await dbInitialized;
+
     const conversations = await prisma.conversation.findMany({
+      where: {
+        workspaceId: workspaceId  // Add this line
+      },
       include: {
         messages: {
           orderBy: {

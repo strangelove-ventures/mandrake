@@ -15,9 +15,9 @@ const containerName = 'mandrake-postgres-dev';
 const DB_CONFIG = {
     name: containerName,
     image: 'postgres:14-alpine',
-    user: 'mandrake',
-    password: 'devpassword',
-    database: 'mandrake',
+    user: 'postgres',
+    password: 'password',
+    database: 'postgres',
     port: '5432',
     dataDir: path.join(path.dirname(__dirname), 'testdb')
 };
@@ -56,8 +56,8 @@ async function setupDatabaseUser(container: Docker.Container): Promise<void> {
     const rootClient = new Client({
         host: 'localhost',
         port: parseInt(DB_CONFIG.port),
-        user: 'postgres',
-        database: 'postgres'
+        user: DB_CONFIG.user,
+        password: DB_CONFIG.password
     });
 
     try {
@@ -112,13 +112,20 @@ async function setupDatabaseUser(container: Docker.Container): Promise<void> {
 
         // Grant all necessary permissions
         await dbClient.query(`
-            GRANT ALL PRIVILEGES ON DATABASE ${DB_CONFIG.database} TO ${DB_CONFIG.user};
-            GRANT ALL PRIVILEGES ON SCHEMA public TO ${DB_CONFIG.user};
-            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${DB_CONFIG.user};
-            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${DB_CONFIG.user};
-            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO ${DB_CONFIG.user};
-            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TYPES TO ${DB_CONFIG.user};
-        `);
+    GRANT ALL PRIVILEGES ON DATABASE ${DB_CONFIG.database} TO ${DB_CONFIG.user};
+    GRANT ALL PRIVILEGES ON SCHEMA public TO ${DB_CONFIG.user};
+    GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${DB_CONFIG.user};
+    GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${DB_CONFIG.user};
+    GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO ${DB_CONFIG.user};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public 
+        GRANT ALL ON TABLES TO ${DB_CONFIG.user};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public 
+        GRANT ALL ON SEQUENCES TO ${DB_CONFIG.user};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public 
+        GRANT ALL ON FUNCTIONS TO ${DB_CONFIG.user};
+    ALTER DEFAULT PRIVILEGES IN SCHEMA public 
+        GRANT ALL ON TYPES TO ${DB_CONFIG.user};
+`);
 
         await dbClient.end();
 
@@ -198,7 +205,8 @@ async function startContainer() {
             Env: [
                 `POSTGRES_DB=${DB_CONFIG.database}`,
                 `POSTGRES_USER=${DB_CONFIG.user}`,
-                `POSTGRES_PASSWORD=${DB_CONFIG.password}`
+                `POSTGRES_PASSWORD=${DB_CONFIG.password}`,
+                'POSTGRES_HOST_AUTH_METHOD=trust'
             ],
             ExposedPorts: {
                 '5432/tcp': {}
@@ -217,15 +225,18 @@ async function startContainer() {
         await container.start();
 
         // Wait for initial postgres user to be available
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        // Setup the mandrake user
-        await setupDatabaseUser(container);
-
         const isReady = await waitForDatabase(container);
         if (!isReady) {
             throw new Error('Database failed to become ready in time');
         }
+
+        // Setup the mandrake user
+        await setupDatabaseUser(container);
+
+        // const isReady = await waitForDatabase(container);
+        // if (!isReady) {
+        //     throw new Error('Database failed to become ready in time');
+        // }
 
         console.log('Database ready!');
         console.log(`Connection URL: postgresql://${DB_CONFIG.user}:${DB_CONFIG.password}@localhost:${DB_CONFIG.port}/${DB_CONFIG.database}`);

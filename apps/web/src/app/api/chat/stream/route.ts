@@ -1,7 +1,7 @@
 // src/app/api/chat/stream/route.ts
 import { NextRequest } from 'next/server';
 import { MandrakeChat } from '@/lib/mandrake-chat';
-import { prisma } from '@/mandrake/storage';
+import { prisma } from '@mandrake/storage';
 import { dbInitialized } from '@/lib/init';
 
 export async function POST(req: NextRequest) {

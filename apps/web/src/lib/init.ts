@@ -1,6 +1,5 @@
 // src/lib/init.ts
-import { ensureDefaultWorkspace } from '@mandrake/storage';
-import { prisma } from './db';
+import { ensureDefaultWorkspace, prisma } from '@mandrake/storage';
 
 declare global {
   var dbInitialized: Promise<string> | undefined;

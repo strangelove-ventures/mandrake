@@ -7,7 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc --build",
-    "clean": "rm -rf dist coverage .turbo",
+    "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy"
