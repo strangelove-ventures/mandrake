@@ -81,6 +81,7 @@ const ChatInterface = () => {
     setCurrentConversationId(null);
   };
 
+  // In ChatInterface.tsx, update the handleSubmit function:
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;

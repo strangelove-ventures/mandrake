@@ -14,7 +14,7 @@
     "@mandrake/mcp": "^0.0.1",
     "@mandrake/storage": "^0.0.1",
     "@mandrake/types": "^0.0.1",
-    "@radix-ui/react-dialog": "^1.1.4",
+    "@prisma/client": "^6.2.1",
     "@radix-ui/react-slot": "^1.1.1",
     "@types/react-syntax-highlighter": "^15.5.13",
     "class-variance-authority": "^0.7.1",
