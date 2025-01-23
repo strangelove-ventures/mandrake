@@ -51,6 +51,84 @@ async function stopContainer() {
     }
 }
 
+async function setupDatabaseUser(container: Docker.Container): Promise<void> {
+    // First connect as postgres (default superuser)
+    const rootClient = new Client({
+        host: 'localhost',
+        port: parseInt(DB_CONFIG.port),
+        user: 'postgres',
+        database: 'postgres'
+    });
+
+    try {
+        await rootClient.connect();
+        
+        // Create user if it doesn't exist
+        await rootClient.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '${DB_CONFIG.user}') THEN
+                    CREATE USER ${DB_CONFIG.user} WITH PASSWORD '${DB_CONFIG.password}' SUPERUSER;
+                END IF;
+            END
+            $$;
+        `);
+
+        // Create database if it doesn't exist
+        await rootClient.query(`
+            DO $$
+            BEGIN
+                IF NOT EXISTS (SELECT FROM pg_database WHERE datname = '${DB_CONFIG.database}') THEN
+                    CREATE DATABASE ${DB_CONFIG.database} OWNER ${DB_CONFIG.user};
+                END IF;
+            END
+            $$;
+        `);
+
+        // Disconnect from 'postgres' database
+        await rootClient.end();
+
+        // Connect to the new database to set up schema permissions
+        const dbClient = new Client({
+            host: 'localhost',
+            port: parseInt(DB_CONFIG.port),
+            user: 'postgres',
+            database: DB_CONFIG.database
+        });
+
+        await dbClient.connect();
+
+        // Drop all existing tables to ensure clean state
+        await dbClient.query(`
+            DO $$ 
+            DECLARE
+                r RECORD;
+            BEGIN
+                FOR r IN (SELECT tablename FROM pg_tables WHERE schemaname = 'public') LOOP
+                    EXECUTE 'DROP TABLE IF EXISTS ' || quote_ident(r.tablename) || ' CASCADE';
+                END LOOP;
+            END $$;
+        `);
+
+        // Grant all necessary permissions
+        await dbClient.query(`
+            GRANT ALL PRIVILEGES ON DATABASE ${DB_CONFIG.database} TO ${DB_CONFIG.user};
+            GRANT ALL PRIVILEGES ON SCHEMA public TO ${DB_CONFIG.user};
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO ${DB_CONFIG.user};
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON SEQUENCES TO ${DB_CONFIG.user};
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON FUNCTIONS TO ${DB_CONFIG.user};
+            ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TYPES TO ${DB_CONFIG.user};
+        `);
+
+        await dbClient.end();
+
+        console.log('Database user and permissions set up successfully');
+    } catch (err) {
+        console.error('Error setting up database user:', err);
+        throw err;
+    }
+}
+
 async function waitForDatabase(container: Docker.Container): Promise<boolean> {
     console.log('Waiting for database to be ready...');
     let client: pkg.Client | null = null;
@@ -102,7 +180,7 @@ async function waitForDatabase(container: Docker.Container): Promise<boolean> {
                 console.error('Final connection attempt failed:', err);
                 throw err;
             }
-            console.log(`Attempt ${i + 1}/30: Connection check failed`);
+            console.log(`Attempt ${i + 1}/30: Connection check failed. Error:`, err.message);
         }
         await new Promise(resolve => setTimeout(resolve, 1000));
     }
@@ -138,6 +216,12 @@ async function startContainer() {
         console.log('Starting container...');
         await container.start();
 
+        // Wait for initial postgres user to be available
+        await new Promise(resolve => setTimeout(resolve, 3000));
+
+        // Setup the mandrake user
+        await setupDatabaseUser(container);
+
         const isReady = await waitForDatabase(container);
         if (!isReady) {
             throw new Error('Database failed to become ready in time');
@@ -147,7 +231,7 @@ async function startContainer() {
         console.log(`Connection URL: postgresql://${DB_CONFIG.user}:${DB_CONFIG.password}@localhost:${DB_CONFIG.port}/${DB_CONFIG.database}`);
 
         // Create .env file for the storage package
-        const envContent = `DATABASE_URL=postgresql://${DB_CONFIG.user}:${DB_CONFIG.password}@localhost:${DB_CONFIG.port}/${DB_CONFIG.database}`;
+        const envContent = `DATABASE_URL=postgresql://${DB_CONFIG.user}:${DB_CONFIG.password}@localhost:${DB_CONFIG.port}/${DB_CONFIG.database}?schema=public`;
         await fs.writeFile('packages/storage/.env', envContent);
         console.log('Created .env file in storage package');
 
