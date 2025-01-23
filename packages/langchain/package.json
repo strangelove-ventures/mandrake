@@ -18,7 +18,7 @@
     "@langchain/community": "^0.0.29",
     "@langchain/core": "^0.1.19",
     "@langchain/openai": "^0.0.14",
-    "langchain": "^0.1.17",
+    "langchain": "^0.2.19",
     "zod": "^3.22.4"
   }
 }
