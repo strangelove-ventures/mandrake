@@ -1,6 +1,16 @@
-import { Message as DBMessage } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { Message, MessageRole } from '@mandrake/types';
 import { BaseMessage, HumanMessage, AIMessage, SystemMessage } from '@langchain/core/messages';
+
+// Define the type based on our schema
+interface DBMessage {
+    id: string;
+    role: string;
+    content: string;
+    metadata?: any;
+    conversationId: string;
+    createdAt: Date;
+}
 
 export function toLangChainMessage(dbMessage: DBMessage): BaseMessage {
     let content;

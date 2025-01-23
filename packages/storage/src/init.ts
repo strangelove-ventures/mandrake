@@ -1,4 +1,7 @@
-import { prisma } from './';
+import { PrismaClient } from '@prisma/client';
+
+// Create prisma instance for this file
+const prisma = new PrismaClient();
 
 export async function ensureDefaultWorkspace() {
     // Try to find existing default workspace
