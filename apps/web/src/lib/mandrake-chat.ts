@@ -3,12 +3,20 @@ import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages
 import { mcpService, mcpInitialized } from './mcp';
 import { buildSystemPrompt } from './chat';
 import { StreamProcessor } from './chat-state';
-import { prisma } from './db';
+import { 
+  prisma,
+  getSessionMessages, 
+  newRoundForSession,
+  getOrCreateSession,
+  newToolCallTurn,
+  newToolResultTurn,
+  newContentTurn
+} from '@mandrake/storage';
 import { dbInitialized } from './init';
 
 interface ChatInput {
   message: string;
-  conversationId?: string;
+  sessionId?: string;
 }
 
 interface TextContent {
@@ -44,11 +52,15 @@ export class MandrakeChat {
   private async buildMessages(input: ChatInput) {
     await mcpInitialized;
     const tools = await this.getAvailableTools();
-    const conversation = await this.getOrCreateConversation(input);
+    
+    // Use new session message format
+    const messages = input.sessionId 
+      ? await getSessionMessages(input.sessionId)
+      : [];
 
     return [
       new SystemMessage(buildSystemPrompt(tools)),
-      ...conversation.messages.map(msg =>
+      ...messages.map(msg =>
         msg.role === 'user'
           ? new HumanMessage(msg.content)
           : new AIMessage(msg.content)
@@ -63,20 +75,21 @@ export class MandrakeChat {
     return await mapping.server.invokeTool(toolCall.name, toolCall.input);
   }
 
-  async streamChat(message: string, conversationId?: string) {
+  async streamChat(message: string, sessionId?: string) {
     const self = this;
     const streamProcessor = new StreamProcessor();
     let messageHistory: any[] = [];
     let toolCallInProgress = false;
+    let currentSession;
+    let currentRound;
+    let currentResponse;
 
     return new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
 
-        // Enhanced chunk sending with validation
         const sendChunk = (type: 'chunk' | 'tool_call' | 'tool_result', content: any) => {
           try {
-            // Clean up and validate content before sending
             let cleanContent = content;
             if (typeof content === 'string' && content.includes('"content":')) {
               try {
@@ -96,7 +109,6 @@ export class MandrakeChat {
           }
         };
 
-        // Subscribe to state changes for UI updates
         const unsubscribe = streamProcessor.subscribe((state) => {
           if (state.type === 'streaming' && state.chunk) {
             sendChunk('chunk', state.chunk);
@@ -104,25 +116,66 @@ export class MandrakeChat {
         });
 
         try {
-          messageHistory = await self.buildMessages({ message, conversationId });
+          // Get or create session first
+          const workspaceId = await dbInitialized;
+          currentSession = await getOrCreateSession(
+            workspaceId,
+            sessionId,
+            message.slice(0, 50)
+          );
+
+          if (!currentSession) throw new Error('Session not found or could not be created');
+
+          // Build message history
+          messageHistory = await self.buildMessages({ 
+            message, 
+            sessionId: currentSession.id 
+          });
+
+          // Get or create round with request and response
+          currentRound = await newRoundForSession(currentSession.id, message);
+          if (!currentRound) throw new Error('Failed to create round');
+          // Now we have full objects via Prisma's include
+          currentResponse = currentRound.response;
+          let currentTurnIndex = 0;
+
+          // Start streaming
           let currentStream = await self.chatModel.stream(messageHistory);
 
           while (currentStream) {
             const toolCall = await streamProcessor.processStream(currentStream);
 
             if (toolCall && !toolCallInProgress) {
-              // Start tool call processing
               toolCallInProgress = true;
 
-              // Notify about tool call
+              // Create tool call turn
+              let serverId =  mcpService.getToolServer(toolCall.name)?.server.getId()
+              if (serverId === undefined) {
+                throw new Error(`No server found for tool: ${toolCall.name}`);
+              }
+              await newToolCallTurn(
+                currentResponse.id,
+                currentTurnIndex++,
+                serverId,
+                toolCall.name,
+                toolCall.input
+              );
+
               sendChunk('tool_call', {
                 name: toolCall.name,
                 input: toolCall.input
               });
 
               try {
-                // Execute tool
                 const result = await self.handleToolCall(toolCall);
+
+                // Create tool result turn
+                await newToolResultTurn(
+                  currentResponse.id,
+                  currentTurnIndex++,
+                  result
+                );
+
                 sendChunk('tool_result', result);
 
                 // Update message history with tool interaction
@@ -137,7 +190,6 @@ export class MandrakeChat {
                   new HumanMessage(JSON.stringify(result))
                 );
 
-                // Continue streaming with updated context
                 toolCallInProgress = false;
                 currentStream = await self.chatModel.stream(messageHistory);
               } catch (toolError) {
@@ -146,28 +198,24 @@ export class MandrakeChat {
                 throw toolError;
               }
             } else if (!toolCall) {
-              // Normal completion - no tool call
+              // Final text response - create content turn
+              const fullResponse = streamProcessor.getFullResponse();
+              if (fullResponse) {
+                await newContentTurn(
+                  currentResponse.id,
+                  currentTurnIndex++,
+                  fullResponse
+                );
+              }
               break;
             }
-          }
-
-          // Save conversation if we have a valid response
-          const fullResponse = streamProcessor.getFullResponse();
-          if (conversationId && fullResponse) {
-            await prisma.message.create({
-              data: {
-                role: 'assistant',
-                content: fullResponse,
-                conversationId
-              }
-            });
           }
 
         } catch (error) {
           console.error("[MandrakeChat] Stream error:", error);
           controller.error(error);
         } finally {
-          unsubscribe(); // Clean up subscription
+          unsubscribe();
           controller.close();
         }
       }
@@ -186,27 +234,5 @@ export class MandrakeChat {
         }
       })
     ).then(serverTools => serverTools.flat());
-  }
-
-  private async getOrCreateConversation({ message, conversationId }: ChatInput) {
-    const workspaceId = await dbInitialized;
-    
-    const conversation = conversationId
-      ? await prisma.conversation.findUnique({
-        where: { id: conversationId },
-        include: { messages: { orderBy: { createdAt: 'asc' } } }
-      })
-      : message
-        ? await prisma.conversation.create({
-          data: {
-            title: message.slice(0, 50),
-            workspaceId
-          },
-          include: { messages: true }
-        })
-        : null;
-  
-    if (!conversation) throw new Error('Conversation not found or could not be created');
-    return conversation;
   }
 }

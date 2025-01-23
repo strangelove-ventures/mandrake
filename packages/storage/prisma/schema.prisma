@@ -8,37 +8,70 @@ datasource db {
 }
 
 model Workspace {
-  id            String         @id @default(uuid())
-  name          String
-  description   String?
-  config        Json?         
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  conversations Conversation[]
+  id          String    @id @default(uuid())
+  name        String
+  description String?
+  config      Json?         
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  sessions    Session[]
 
   @@index([createdAt])
 }
 
-model Conversation {
-  id          String      @id @default(uuid())
+model Session {
+  id          String    @id @default(uuid())
   title       String?     
   workspaceId String      
-  workspace   Workspace   @relation(fields: [workspaceId], references: [id])
-  messages    Message[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id])
+  rounds      Round[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([workspaceId, updatedAt])
 }
 
-model Message {
-  id              String       @id @default(uuid())
-  role            String      
-  content         String      
-  metadata        Json?       
-  conversationId  String      
-  conversation    Conversation @relation(fields: [conversationId], references: [id])
-  createdAt       DateTime     @default(now())
+model Round {
+  id         String   @id @default(uuid())
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id])
+  request    Request  @relation(fields: [requestId], references: [id])
+  requestId  String   @unique
+  response   Response @relation(fields: [responseId], references: [id])
+  responseId String   @unique
+  index      Int      
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  @@index([conversationId, createdAt])
+  @@index([sessionId, index])
+}
+
+model Request {
+  id        String   @id @default(uuid())
+  round     Round?   
+  content   String   
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Response {
+  id        String   @id @default(uuid())
+  round     Round?
+  turns     Turn[]   
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Turn {
+  id         String   @id @default(uuid())
+  responseId String
+  response   Response @relation(fields: [responseId], references: [id])
+  index      Int      
+  toolCall   Json?    // {server: string, input: any}
+  toolResult Json?    // Output data from tool
+  content    String?  // Text content if not a tool call
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([responseId, index])
 }

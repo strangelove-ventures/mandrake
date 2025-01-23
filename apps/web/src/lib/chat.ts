@@ -1,16 +1,15 @@
 // apps/web/src/lib/chat.ts
-import { mcpService } from './mcp';
+import { mcpService, mcpInitialized } from './mcp';
 import { formatToolsOpenAI } from '@mandrake/mcp';
 import { Tool } from '@mandrake/types';
 import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
-import { prisma } from '@mandrake/storage';
-
+import { getSessionMessages } from '@mandrake/storage';
 
 export type StreamMessage = {
   type: 'init' | 'chunk' | 'tool_call' | 'done';
   content?: string;
-  conversationId?: string;
+  sessionId?: string;
   userMessage?: any;
   aiMessage?: any;
 };
@@ -84,10 +83,15 @@ ${JSON.stringify(toolSchemas, null, 2)}
 Remember:
 - Never use markdown code blocks or language tags around the JSON
 - Each tool call must be preceded by explanatory text
-- Wait for each tool's response before proceeding`;
+- Wait for each tool's response before proceeding
+
+{{ project context }}
+{{ dynamic project context }}
+
+`;
 }
 
-export async function buildMessageHistory(conversationId?: string, message?: string) {
+export async function buildMessageHistory(sessionId?: string, message?: string) {
     try {
         console.log('Starting buildMessageHistory');
         console.log('Waiting for MCP initialization...');
@@ -113,46 +117,23 @@ export async function buildMessageHistory(conversationId?: string, message?: str
         // Build system prompt
         const systemPrompt = buildSystemPrompt(tools);
 
-        // Find or create conversation
-        const conversation = conversationId
-            ? await prisma.conversation.findUnique({
-                where: { id: conversationId },
-                include: {
-                    messages: {
-                        orderBy: {
-                            createdAt: 'asc'
-                        }
-                    }
-                }
-            })
-            : message
-                ? await prisma.conversation.create({
-                    data: {
-                        title: message.slice(0, 50),
-                        workspaceId: '06d07df4-299d-43f2-b4c3-9b66ae8ccd63' // Use default workspace ID
-                    },
-                    include: { messages: true }
-                })
-                : null;
-
-        if (!conversation) {
-            throw new Error('Conversation not found or could not be created');
+        // Get session messages
+        let messages: { role: string; content: string; }[] = [];
+        if (sessionId) {
+            messages = await getSessionMessages(sessionId);
         }
 
-        console.log(`Using conversation ${conversation.id} with ${conversation.messages.length} messages`);
+        console.log(`Using session ${sessionId} with ${messages.length} messages`);
 
         // Format messages for LangChain
-        const messages = [
+        return [
             new SystemMessage(systemPrompt),
-            ...conversation.messages.map(msg =>
+            ...messages.map(msg =>
                 msg.role === 'user'
                     ? new HumanMessage(msg.content)
                     : new AIMessage(msg.content)
             )
         ];
-
-        console.log(`Returning ${messages.length} formatted messages`);
-        return messages;
 
     } catch (e) {
         console.error('Error in buildMessageHistory:', e);

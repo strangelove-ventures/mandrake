@@ -1,52 +1,44 @@
+// components/chat/MessageContent.tsx
 'use client';
 
 import React from 'react';
-import { Card } from '@/components/ui/card';
+import ToolCall from './ToolCall';
 
-type ToolDetails = {
-  name: string;
-  input: any;
-  result: any;
-};
-
-type ContentItem = {
-  type: 'text' | 'tool';
-  content: string;
-  toolDetails?: ToolDetails;
-};
-
-interface MessageContentProps {
-  content: ContentItem[];
+interface Turn {
+  id: string;
+  index: number;
+  content?: string;
+  toolCall?: {
+    server: string;
+    name: string;
+    input: any;
+  };
+  toolResult?: any;
 }
 
-const MessageContent: React.FC<MessageContentProps> = ({ content }) => {
-  if (!Array.isArray(content)) {
-    // Handle legacy string content
-    return <div className="whitespace-pre-wrap">{content}</div>;
-  }
+interface MessageContentProps {
+  turns: Turn[];
+}
 
+const MessageContent: React.FC<MessageContentProps> = ({ turns }) => {
   return (
     <div className="space-y-2">
-      {content.map((item, index) => {
-        if (item.type === 'text') {
+      {turns.map((turn) => {
+        if (turn.content) {
           return (
-            <div key={index} className="whitespace-pre-wrap">
-              {item.content}
+            <div key={turn.id} className="whitespace-pre-wrap">
+              {turn.content}
             </div>
           );
-        } else if (item.type === 'tool') {
+        } else if (turn.toolCall) {
           return (
-            <Card key={index} className="p-2 bg-gray-50 dark:bg-gray-800">
-              <div className="font-medium text-sm">{item.content}</div>
-              {item.toolDetails && item.toolDetails.result && (
-                <div className="mt-2 text-sm">
-                  <div className="font-medium text-gray-500">Result:</div>
-                  <pre className="mt-1 p-2 bg-gray-100 dark:bg-gray-900 rounded overflow-x-auto">
-                    {JSON.stringify(item.toolDetails.result, null, 2)}
-                  </pre>
-                </div>
-              )}
-            </Card>
+            <ToolCall
+              key={turn.id}
+              name={turn.toolCall.name}
+              input={turn.toolCall.input}
+              result={turn.toolResult}
+              serverId={turn.toolCall.server}
+            />
           );
         }
         return null;

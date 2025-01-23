@@ -140,7 +140,7 @@ async function waitForDatabase(container: Docker.Container): Promise<boolean> {
     console.log('Waiting for database to be ready...');
     let client: pkg.Client | null = null;
 
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 40; i++) {
         try {
             const info = await container.inspect();
             if (!info.State.Running) {
@@ -178,7 +178,7 @@ async function waitForDatabase(container: Docker.Container): Promise<boolean> {
                 return true;
             }
 
-            console.log(`Attempt ${i + 1}/30: Waiting for database to initialize...`);
+            console.log(`Attempt ${i + 1}/40: Waiting for database to initialize...`);
         } catch (err) {
             if (client) {
                 client.end().catch(console.error);

@@ -1,47 +1,18 @@
 // src/app/api/chat/stream/route.ts
 import { NextRequest } from 'next/server';
 import { MandrakeChat } from '@/lib/mandrake-chat';
-import { prisma } from '@mandrake/storage';
-import { dbInitialized } from '@/lib/init';
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, conversationId } = await req.json();
+    const { message, sessionId } = await req.json();
 
     if (!message) {
       return new Response('Message is required', { status: 400 });
     }
 
-    // Wait for DB initialization
-    const workspaceId = await dbInitialized;
-
-    // Create or get the conversation
-    const conversation = conversationId
-      ? await prisma.conversation.findUnique({
-          where: { id: conversationId },
-          include: { messages: true }
-        })
-      : await prisma.conversation.create({
-          data: {
-            title: message.slice(0, 50),
-            workspaceId,
-            messages: {
-              create: {
-                role: 'user',
-                content: message,
-              }
-            }
-          },
-          include: { messages: true }
-        });
-
-    if (!conversation) {
-      return new Response('Conversation not found', { status: 404 });
-    }
-
-    // Get the chat stream
+    // Get the chat stream - MandrakeChat handles session creation/retrieval
     const chat = new MandrakeChat();
-    const stream = await chat.streamChat(message, conversation.id);
+    const stream = await chat.streamChat(message, sessionId);
 
     // Return the stream with proper headers
     return new Response(stream, {

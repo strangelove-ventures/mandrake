@@ -156,27 +156,25 @@ export class StreamProcessor {
     }
   }
 
-  private async processChunk(chunk: AIMessageChunk) {
-    if (!chunk.content) return null;
-    const content = chunk.content.toString();
+private async processChunk(chunk: AIMessageChunk) {
+  if (!chunk.content) return null;
+  const content = chunk.content.toString();
 
-    console.log('[StreamProcessor] Processing chunk:', content);
+  console.log('[StreamProcessor] Processing chunk:', content);
 
-    // Determine if this chunk is part of JSON content
-    if (this.isJsonContent(content) || this.jsonBuffer.length > 0) {
-      this.jsonBuffer += content;
-
-      if (this.isCompleteJson()) {
-        return await this.handleJsonContent();
-      }
-      return null;
-    } else {
-      // Accumulate text content
-      this.textBuffer += content;
-      await this.flushTextBuffer();
-      return null;
-    }
+  // Just emit text directly unless we detect JSON
+  if (!this.isJsonContent(content) && this.jsonBuffer.length === 0) {
+    await this.emitText(content);
+    return null;
   }
+
+  // Handle JSON content
+  this.jsonBuffer += content;
+  if (this.isCompleteJson()) {
+    return await this.handleJsonContent();
+  }
+  return null;
+}
 
   private async flushTextBuffer() {
     if (this.textBuffer) {
@@ -208,10 +206,7 @@ export class StreamProcessor {
     for (const item of parsed.content) {
       if (item.type === 'text') {
         // Only emit text if not followed by a tool call
-        const hasToolCall = parsed.content.some((i: { type: string; }) => i.type === 'tool_use');
-        if (!hasToolCall) {
-          await this.emitText(item.text);
-        }
+        await this.emitText(item.text);
       } else if (item.type === 'tool_use') {
         // Transition state for tool call
         this.stateMachine.transition({
@@ -239,16 +234,16 @@ export class StreamProcessor {
   }
 
   private isJsonContent(content: string): boolean {
-    return content.trimStart().startsWith('{');
+    return content.replace(/\s+/g, '').trimStart().startsWith('{');
   }
 
   private isCompleteJson(): boolean {
-    // Enhanced JSON completion check
+    const sanitizedBuffer = this.jsonBuffer.replace(/\s+/g, ' ').trim();
     let depth = 0;
     let inString = false;
     let escaped = false;
 
-    for (const char of this.jsonBuffer) {
+    for (const char of sanitizedBuffer) {
       if (!inString) {
         if (char === '{') depth++;
         if (char === '}') depth--;
@@ -263,7 +258,7 @@ export class StreamProcessor {
       }
     }
 
-    return depth === 0 && !inString && this.jsonBuffer.trimStart().startsWith('{');
+    return depth === 0 && !inString && sanitizedBuffer.startsWith('{');
   }
 
   private handleError(error: unknown) {
