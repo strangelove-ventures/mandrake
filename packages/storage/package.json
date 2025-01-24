@@ -6,8 +6,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "prisma generate",
     "build": "tsc --build",
-    "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo",
+    "clean": "rm -rf dist coverage .turbo node_modules/.prisma tsconfig.tsbuildinfo",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate deploy"
@@ -15,11 +16,11 @@
   "dependencies": {
     "@langchain/core": "^0.3.32",
     "@mandrake/types": "^0.0.1",
-    "@prisma/client": "^5.8.0",
+    "@prisma/client": "6.2.1",
     "langchain": "^0.3.12"
   },
   "devDependencies": {
-    "prisma": "^5.8.0",
+    "prisma": "6.2.1",
     "typescript": "^5.3.3"
   }
 }

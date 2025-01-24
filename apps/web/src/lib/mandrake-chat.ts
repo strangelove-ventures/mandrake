@@ -2,9 +2,7 @@ import { ChatOpenAI } from "@langchain/openai";
 import { HumanMessage, AIMessage, SystemMessage } from "@langchain/core/messages";
 import { mcpService, mcpInitialized } from './mcp';
 import { buildSystemPrompt } from './chat';
-import { StreamProcessor } from './chat-state';
 import { 
-  prisma,
   getSessionMessages, 
   newRoundForSession,
   getOrCreateSession,
@@ -14,24 +12,10 @@ import {
 } from '@mandrake/storage';
 import { dbInitialized } from './init';
 
-interface ChatInput {
-  message: string;
-  sessionId?: string;
-}
-
-interface TextContent {
-  type: 'text';
-  text: string;
-}
-
-interface ToolCallContent {
-  type: 'tool_use';
+interface ToolCall {
   name: string;
   input: any;
 }
-
-type MessageContent = TextContent | ToolCallContent;
-type ParsedResponse = { content: MessageContent[] };
 
 export class MandrakeChat {
   private chatModel: ChatOpenAI;
@@ -49,13 +33,12 @@ export class MandrakeChat {
     });
   }
 
-  private async buildMessages(input: ChatInput) {
+  private async buildMessages(message: string, sessionId?: string) {
     await mcpInitialized;
     const tools = await this.getAvailableTools();
     
-    // Use new session message format
-    const messages = input.sessionId 
-      ? await getSessionMessages(input.sessionId)
+    const messages = sessionId 
+      ? await getSessionMessages(sessionId)
       : [];
 
     return [
@@ -65,11 +48,11 @@ export class MandrakeChat {
           ? new HumanMessage(msg.content)
           : new AIMessage(msg.content)
       ),
-      new HumanMessage(input.message)
+      new HumanMessage(message)
     ];
   }
 
-  private async handleToolCall(toolCall: ToolCallContent): Promise<any> {
+  private async handleToolCall(toolCall: ToolCall): Promise<any> {
     const mapping = mcpService.getToolServer(toolCall.name);
     if (!mapping) throw new Error(`No server found for tool: ${toolCall.name}`);
     return await mapping.server.invokeTool(toolCall.name, toolCall.input);
@@ -77,151 +60,114 @@ export class MandrakeChat {
 
   async streamChat(message: string, sessionId?: string) {
     const self = this;
-    const streamProcessor = new StreamProcessor();
-    let messageHistory: any[] = [];
-    let toolCallInProgress = false;
-    let currentSession;
-    let currentRound;
-    let currentResponse;
-
     return new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
-
-        const sendChunk = (type: 'chunk' | 'tool_call' | 'tool_result', content: any) => {
-          try {
-            let cleanContent = content;
-            if (typeof content === 'string' && content.includes('"content":')) {
-              try {
-                const parsed = JSON.parse(content);
-                cleanContent = parsed.content;
-              } catch (e) {
-                console.log("[MandrakeChat] Failed to parse JSON chunk:", e);
-              }
-            }
-
-            const chunk = encoder.encode(
-              JSON.stringify({ type, content: cleanContent }) + '\n'
-            );
-            controller.enqueue(chunk);
-          } catch (e) {
-            console.error("[MandrakeChat] Error sending chunk:", e);
-          }
+        const sendChunk = (type: string, content: any) => {
+          controller.enqueue(
+            encoder.encode(JSON.stringify({ type, content }) + '\n')
+          );
         };
 
-        const unsubscribe = streamProcessor.subscribe((state) => {
-          if (state.type === 'streaming' && state.chunk) {
-            sendChunk('chunk', state.chunk);
-          }
-        });
-
         try {
-          // Get or create session first
+          // Initialize session and round
           const workspaceId = await dbInitialized;
-          currentSession = await getOrCreateSession(
+          const session = await getOrCreateSession(
             workspaceId,
             sessionId,
             message.slice(0, 50)
           );
 
-          if (!currentSession) throw new Error('Session not found or could not be created');
+          const round = await newRoundForSession(session.id, message);
+          if (!round) throw new Error('Failed to create round');
 
-          // Build message history
-          messageHistory = await self.buildMessages({ 
-            message, 
-            sessionId: currentSession.id 
-          });
-
-          // Get or create round with request and response
-          currentRound = await newRoundForSession(currentSession.id, message);
-          if (!currentRound) throw new Error('Failed to create round');
-          // Now we have full objects via Prisma's include
-          currentResponse = currentRound.response;
+          const messageHistory = await self.buildMessages(message, session.id);
           let currentTurnIndex = 0;
 
           // Start streaming
-          let currentStream = await self.chatModel.stream(messageHistory);
+          let stream = await self.chatModel.stream(messageHistory);
+          let currentBuffer = '';
 
-          while (currentStream) {
-            const toolCall = await streamProcessor.processStream(currentStream);
+          // Process the stream
+          for await (const chunk of stream) {
+            if (!chunk.content) continue;
 
-            if (toolCall && !toolCallInProgress) {
-              toolCallInProgress = true;
+            console.log('Stream chunk:', chunk.content);
+            currentBuffer += chunk.content;
+            console.log('Current buffer:', currentBuffer);
 
-              // Create tool call turn
-              let serverId =  mcpService.getToolServer(toolCall.name)?.server.getId()
-              if (serverId === undefined) {
-                throw new Error(`No server found for tool: ${toolCall.name}`);
+            // Check for complete tool calls
+            if (isToolCall(currentBuffer)) {
+              console.log('Detected tool call, parsing...');
+              const toolCall = parseToolCall(currentBuffer);
+              console.log('Parsed tool call:', toolCall);
+              currentBuffer = '';
+
+              if (!toolCall) {
+                throw new Error('Failed to parse tool call');
               }
+
+              // Record tool call
+              const serverId = mcpService.getToolServer(toolCall.name)?.server.getId();
+              if (!serverId) throw new Error(`No server found for tool: ${toolCall.name}`);
+
               await newToolCallTurn(
-                currentResponse.id,
+                round.response.id,
                 currentTurnIndex++,
                 serverId,
                 toolCall.name,
                 toolCall.input
               );
 
+              // Send tool call to client
               sendChunk('tool_call', {
                 name: toolCall.name,
+                server: serverId,
                 input: toolCall.input
               });
 
-              try {
-                const result = await self.handleToolCall(toolCall);
+              // Execute tool and record result
+              const result = await self.handleToolCall(toolCall);
+              await newToolResultTurn(
+                round.response.id,
+                currentTurnIndex++,
+                result
+              );
 
-                // Create tool result turn
-                await newToolResultTurn(
-                  currentResponse.id,
-                  currentTurnIndex++,
-                  result
-                );
+              // Send result to client
+              sendChunk('tool_result', result);
 
-                sendChunk('tool_result', result);
-
-                // Update message history with tool interaction
-                messageHistory.push(
-                  new AIMessage(JSON.stringify({
-                    content: [{
-                      type: 'tool_use',
-                      name: toolCall.name,
-                      input: toolCall.input
-                    }]
-                  })),
-                  new HumanMessage(JSON.stringify(result))
-                );
-
-                toolCallInProgress = false;
-                currentStream = await self.chatModel.stream(messageHistory);
-              } catch (toolError) {
-                console.error("[MandrakeChat] Tool execution error:", toolError);
-                toolCallInProgress = false;
-                throw toolError;
-              }
-            } else if (!toolCall) {
-              // Final text response - create content turn
-              const fullResponse = streamProcessor.getFullResponse();
-              if (fullResponse) {
-                await newContentTurn(
-                  currentResponse.id,
-                  currentTurnIndex++,
-                  fullResponse
-                );
-              }
-              break;
+              // Update message history and continue streaming
+              messageHistory.push(
+                new AIMessage(JSON.stringify(toolCall)),
+                new HumanMessage(JSON.stringify(result))
+              );
+              stream = await self.chatModel.stream(messageHistory);
+            } else {
+              // Only send chunk if it's not part of a tool call
+              sendChunk('chunk', chunk.content);
             }
+          }
+
+          // Save final content if any remains
+          if (currentBuffer) {
+            await newContentTurn(
+              round.response.id,
+              currentTurnIndex,
+              currentBuffer
+            );
           }
 
         } catch (error) {
           console.error("[MandrakeChat] Stream error:", error);
           controller.error(error);
         } finally {
-          unsubscribe();
           controller.close();
         }
       }
     });
   }
-
+  
   private async getAvailableTools() {
     const servers = Array.from(mcpService.getServers().values());
     return Promise.all(
@@ -234,5 +180,35 @@ export class MandrakeChat {
         }
       })
     ).then(serverTools => serverTools.flat());
+  }
+}
+
+function isToolCall(text: string): boolean {
+  try {
+    console.log('Checking for tool call:', text);
+    const parsed = JSON.parse(text);
+    const result = parsed.content &&
+      Array.isArray(parsed.content) &&
+      parsed.content.some((item: any) => item.type === 'tool_use');
+    console.log('Is tool call?', result);
+    return result;
+  } catch (e) {
+    console.log('Failed to parse JSON:', e);
+    return false;
+  }
+}
+
+function parseToolCall(text: string): ToolCall | null {
+  try {
+    const parsed = JSON.parse(text);
+    const toolUse = parsed.content?.find((item: any) => item.type === 'tool_use');
+    if (!toolUse) return null;
+
+    return {
+      name: toolUse.name,
+      input: toolUse.input
+    };
+  } catch {
+    return null;
   }
 }

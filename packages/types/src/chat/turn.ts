@@ -1,12 +1,12 @@
 export interface Turn {
-    id: string
-    responseId: string
-    index: number
+    id: string;
+    responseId: string;
+    index: number;
+    content?: string;
     toolCall?: {
-        server: string
-        name: string
-        input: any
-    }
-    toolResult?: any
-    content?: string
+        server: string;
+        name: string;
+        input: any;
+    };
+    toolResult?: any;
 }

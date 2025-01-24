@@ -9,7 +9,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/co
 import { Loader2, MessageSquarePlus } from 'lucide-react';
 import MessageContent from './MessageContent';
 import { useChatStore } from '@/lib/stores/chat';
-import { Turn, Round, Session } from '@mandrake/types/src/chat';
+import { Turn, Round, Session } from '@mandrake/types';
 
 const ChatInterface = () => {
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -22,6 +22,7 @@ const ChatInterface = () => {
     input,
     isLoading,
     userInput,
+    pendingRoundId,
     setInput,
     fetchSessions,
     loadSession,
@@ -97,23 +98,28 @@ const ChatInterface = () => {
           <div className="space-y-4">
             {currentRounds.map((round) => (
               <React.Fragment key={round.id}>
-                <div className="flex justify-end">
-                  <div className="max-w-3/4 p-3 rounded-lg bg-blue-500 text-white">
-                    <Badge className="mb-1">You</Badge>
-                    <div className="whitespace-pre-wrap">{round.request.content}</div>
-                  </div>
-                </div>
-                <div className="flex justify-start">
-                  <div className="max-w-3/4 p-3 rounded-lg bg-gray-100 text-gray-900">
-                    <Badge className="mb-1">Assistant</Badge>
-                    <MessageContent turns={round.response.turns} />
-                  </div>
-                </div>
+                {round.id !== pendingRoundId && (
+                  <>
+                    <div className="flex justify-end">
+                      <div className="max-w-3/4 p-3 rounded-lg bg-blue-500 text-white">
+                        <Badge className="mb-1">You</Badge>
+                        <div className="whitespace-pre-wrap">{round.request.content}</div>
+                      </div>
+                    </div>
+                    <div className="flex justify-start">
+                      <div className="max-w-3/4 p-3 rounded-lg bg-gray-100 text-gray-900">
+                        <Badge className="mb-1">Assistant</Badge>
+                        <MessageContent turns={round.response.turns} />
+                      </div>
+                    </div>
+                  </>
+                )}
               </React.Fragment>
             ))}
 
-            {/* Streaming Content */}
-            {streamingContent.length > 0 && (
+            {/* Streaming Content - only show if we have a pending round */}
+            {streamingContent.length > 0 && pendingRoundId && (
+
               <>
                 {/* User message */}
                 <div className="flex justify-end">

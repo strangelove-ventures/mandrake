@@ -1,7 +1,5 @@
-// /lib/stores/chat.ts
+'use client'
 import { create } from 'zustand'
-import { MandrakeChat } from '../mandrake-chat'
-import { StreamProcessor } from '../chat-state'
 import { Session, Round, Turn } from '@mandrake/types'
 
 interface ChatState {
@@ -12,8 +10,13 @@ interface ChatState {
 
     // Stream state 
     isStreaming: boolean
-    streamingContent: Turn[] // Now using the same Turn type
-    currentToolCall: Turn | null // Consistent type usage
+    streamingContent: Turn[] 
+    currentToolCall: Turn | null 
+    pendingRoundId: string
+    
+    // Text buffering state
+    jsonBuffer: string
+    textBuffer: string
 
     // UI state
     input: string
@@ -27,9 +30,9 @@ interface ChatState {
     startNewSession: () => void
     sendMessage: (message: string) => Promise<void>
     handleStreamChunk: (data: any) => void
+    processJsonContent: (content: string) => void
+    flushTextBuffer: () => void
 }
-
-const chat = new MandrakeChat()
 
 export const useChatStore = create<ChatState>()((set, get) => ({
     // Initial state
@@ -39,6 +42,9 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     isStreaming: false,
     streamingContent: [],
     currentToolCall: null,
+    pendingRoundId: '',
+    jsonBuffer: '',
+    textBuffer: '',
     input: '',
     isLoading: false,
     userInput: '',
@@ -63,12 +69,31 @@ export const useChatStore = create<ChatState>()((set, get) => ({
 
     loadSession: async (sessionId) => {
         try {
+            console.log('Loading session:', sessionId);
+            console.log('Current state before load:', get());
+
             const response = await fetch(`/api/chat/${sessionId}`)
             const session = await response.json()
-            set({
-                currentSession: session,
-                currentRounds: session.rounds || [],
-            })
+            console.log('Received session data:', session);
+
+            set((state) => {
+                console.log('Setting new state with:', {
+                    currentSession: session,
+                    currentRounds: session.rounds || [],
+                    streamingContent: state.streamingContent,
+                    pendingRoundId: state.pendingRoundId
+                });
+
+                return {
+                    currentSession: session,
+                    currentRounds: session.rounds || [],
+                    // Don't reset streaming or pending state
+                    streamingContent: state.streamingContent,
+                    pendingRoundId: state.pendingRoundId
+                };
+            });
+
+            console.log('State after load:', get());
         } catch (error) {
             console.error('Error loading session:', error)
         }
@@ -77,13 +102,29 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     startNewSession: () => {
         set({
             currentSession: null,
-            currentRounds: []
+            currentRounds: [],
+            streamingContent: [],
+            currentToolCall: null,
+            jsonBuffer: '',
+            textBuffer: ''
         })
     },
 
     sendMessage: async (message) => {
-        const { currentSession } = get()
-        set({ isLoading: true, userInput: message })
+        const { currentSession, currentRounds } = get()
+        console.log('Sending message, current state:', { currentSession, currentRounds });
+
+        const pendingRoundId = `pending-${Date.now()}`;
+
+        set({
+            isLoading: true,
+            userInput: message,
+            pendingRoundId,
+            currentRounds: currentRounds, // Preserve existing rounds
+            streamingContent: [],
+            jsonBuffer: '',
+            textBuffer: ''
+        });
 
         try {
             const response = await fetch('/api/chat/stream', {
@@ -118,10 +159,73 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                     }
                 }
             }
+            console.log('Stream complete, state before loadSession:', get());
+
+            // After stream completes, fetch updated session to get final state
+            if (currentSession?.id) {
+                await get().loadSession(currentSession.id)
+            }
+            console.log('Final state after loadSession:', get());
+
         } catch (error) {
             console.error('Error in chat stream:', error)
         } finally {
+            get().flushTextBuffer()
             set({ isLoading: false })
+            console.log('State after cleanup:', get());
+        }
+    },
+
+    processJsonContent: (content: string) => {
+        const state = get()
+        let { jsonBuffer } = state
+
+        // Accumulate JSON content
+        jsonBuffer += content
+
+        try {
+            // Attempt to parse accumulated JSON
+            const parsed = JSON.parse(jsonBuffer)
+            if (!Array.isArray(parsed)) {
+                get().handleStreamChunk({ type: 'chunk', content: jsonBuffer })
+                set({ jsonBuffer: '' })
+                return
+            }
+
+            // Process each content item
+            for (const item of parsed) {
+                if (item.type === 'text') {
+                    get().handleStreamChunk({ type: 'chunk', content: item.text })
+                } else if (item.type === 'tool_use') {
+                    get().handleStreamChunk({ 
+                        type: 'tool_call',
+                        content: {
+                            name: item.name,
+                            input: item.input
+                        }
+                    })
+                }
+            }
+
+            // Clear buffer after successful processing
+            set({ jsonBuffer: '' })
+        } catch (e) {
+            // If parsing fails, keep accumulating
+            if (!isCompleteJson(jsonBuffer)) {
+                set({ jsonBuffer })
+            } else {
+                // If we have complete but invalid JSON, treat as text
+                get().handleStreamChunk({ type: 'chunk', content: jsonBuffer })
+                set({ jsonBuffer: '' })
+            }
+        }
+    },
+
+    flushTextBuffer: () => {
+        const { textBuffer } = get()
+        if (textBuffer) {
+            get().handleStreamChunk({ type: 'chunk', content: textBuffer })
+            set({ textBuffer: '' })
         }
     },
 
@@ -129,28 +233,39 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         set((state) => {
             switch (data.type) {
                 case 'chunk': {
-                    const chunkText = typeof data.content === 'string'
-                        ? data.content
-                        : JSON.stringify(data.content)
+                    // Data is already parsed, so content might be either a string or an object
+                    let content = data.content;
 
-                    let newTurns = [...state.streamingContent]
-
-                    if (!newTurns.length || !newTurns[newTurns.length - 1].content) {
-                        newTurns.push({
-                            id: `streaming-${newTurns.length}`,
-                            responseId: 'streaming',
-                            index: newTurns.length,
-                            content: chunkText
-                        })
-                    } else {
-                        const lastTurn = newTurns[newTurns.length - 1]
-                        newTurns[newTurns.length - 1] = {
-                            ...lastTurn,
-                            content: (lastTurn.content || '') + chunkText
+                    // If it's an object with the LLM response format, extract the text
+                    if (content && typeof content === 'object' && content.content && Array.isArray(content.content)) {
+                        const textContent = content.content.find((item: { type: string }) => item.type === 'text');
+                        if (textContent) {
+                            content = textContent.text;
                         }
                     }
 
-                    return { streamingContent: newTurns }
+                    const chunkText = typeof content === 'string'
+                        ? content
+                        : JSON.stringify(content);
+
+                    let newTurns = [...state.streamingContent];
+
+                    if (!newTurns.length || !newTurns[newTurns.length - 1].content) {
+                        newTurns.push({
+                            id: `streaming-${newTurns.length}-${Date.now()}`,
+                            responseId: 'streaming',
+                            index: newTurns.length,
+                            content: chunkText
+                        });
+                    } else {
+                        const lastTurn = newTurns[newTurns.length - 1];
+                        newTurns[newTurns.length - 1] = {
+                            ...lastTurn,
+                            content: (lastTurn.content || '') + chunkText,
+                        };
+                    }
+
+                    return { streamingContent: newTurns };
                 }
 
                 case 'tool_call': {
@@ -197,3 +312,28 @@ export const useChatStore = create<ChatState>()((set, get) => ({
         })
     },
 }))
+
+// Helper function for JSON validation
+function isCompleteJson(text: string): boolean {
+    const sanitized = text.replace(/\\s+/g, ' ').trim()
+    let depth = 0
+    let inString = false
+    let escaped = false
+
+    for (const char of sanitized) {
+        if (!inString) {
+            if (char === '{') depth++
+            if (char === '}') depth--
+            if (char === '"') inString = true
+        } else {
+            if (char === '\\\\' && !escaped) {
+                escaped = true
+                continue
+            }
+            if (char === '"' && !escaped) inString = false
+            escaped = false
+        }
+    }
+
+    return depth === 0 && !inString && sanitized.startsWith('{')
+}
