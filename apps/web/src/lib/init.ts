@@ -1,4 +1,3 @@
-// src/lib/init.ts
 import { ensureDefaultWorkspace, prisma } from '@mandrake/storage';
 
 declare global {

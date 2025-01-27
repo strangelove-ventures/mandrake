@@ -1,10 +1,12 @@
 import { ReadableStreamReadResult } from 'stream/web'
 import { PrismaClient } from '@prisma/client'
+import { DbConfig } from './db'
 import { createSessionStream } from './notifications'
 import { setupTestDatabase } from './test/db'
 
 describe('notifications', () => {
     let testPrisma: PrismaClient
+    let testConfig: DbConfig
     let cleanup: (() => Promise<void>) | undefined
 
     // Increase timeout for DB setup
@@ -12,6 +14,7 @@ describe('notifications', () => {
         const db = await setupTestDatabase()
         cleanup = db.cleanup
         testPrisma = db.prisma
+        testConfig = db.config
     }, 60000) // 30 second timeout
 
     afterAll(async () => {
@@ -37,7 +40,7 @@ describe('notifications', () => {
         })
 
         // Set up stream
-        const stream = await createSessionStream(session.id)
+        const stream = await createSessionStream(session.id, testConfig, testPrisma)
         const reader = stream.getReader()
 
         // Update session to trigger stream
@@ -56,10 +59,8 @@ describe('notifications', () => {
 
         expect(done).toBe(false)
         expect(value).toBeDefined()
-
-        // Parse the streamed data
-        const data = JSON.parse(value)
-        expect(data.id).toBe(session.id)
+        // Remove the JSON.parse since value is already an object
+        expect(value.id).toBe(session.id)
 
         // Release reader and cleanup
         await reader.cancel()

@@ -1,30 +1,33 @@
-import { Client } from 'pg'
+import pkg from 'pg';
 import { prisma } from './index'
+const { Client } = pkg;
+import { PrismaClient } from '@prisma/client'
+import { DbConfig } from './db'
 
-export async function createSessionStream(sessionId: string) {
+
+export async function createSessionStream(
+    sessionId: string,
+    dbConfig: DbConfig,
+    prismaClient: PrismaClient
+) {
     const client = new Client({
         host: 'localhost',
-        port: 5433,  // Match our test DB port
-        user: 'postgres',
-        password: 'password',
-        database: 'mandrake_test'
+        port: parseInt(dbConfig.port),
+        user: dbConfig.user,
+        password: dbConfig.password,
+        database: dbConfig.database
     })
 
     await client.connect()
 
-    // Create a readable stream for the notifications
     return new ReadableStream({
         async start(controller) {
             try {
-                // Listen for notifications for this session
                 await client.query('LISTEN session_updates')
-
-                // Handle notifications
                 client.on('notification', async (msg) => {
                     const payload = JSON.parse(msg.payload!)
                     if (payload.sessionId === sessionId) {
-                        // Get the updated session data
-                        const session = await prisma.session.findUnique({
+                        const session = await prismaClient.session.findUnique({
                             where: { id: sessionId }
                         })
                         controller.enqueue(session)

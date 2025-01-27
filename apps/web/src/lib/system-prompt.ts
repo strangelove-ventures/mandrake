@@ -4,8 +4,9 @@ import { Tool } from '@mandrake/types';
 export function buildSystemPrompt(tools: Tool[]) {
     const toolSchemas = formatToolsOpenAI(tools);
 
-    return `In this environment you have access to several tools that can help you fulfill user requests.
-
+    return `
+<output_format>
+In this environment you have access to several tools that can help you fulfill user requests.
 When you need to use a tool, you must return a single JSON object with EXACTLY this format:
 
 {
@@ -24,6 +25,7 @@ When you need to use a tool, you must return a single JSON object with EXACTLY t
     }
   ]
 }
+</output_format>
 
 Important format notes:
 - Line breaks in text and content must use "\\n" not actual line breaks

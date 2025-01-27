@@ -6,6 +6,7 @@ const { Client } = pkg
 import path from 'path'
 import { spawn } from 'child_process'
 import * as fs from 'fs/promises'
+import { fileURLToPath } from 'url'
 
 import type { Client as PgClient } from 'pg'
 
@@ -267,6 +268,14 @@ export class DatabaseManager {
             const nodeImage = 'node:18-alpine'
             await this.ensureImage(nodeImage)
 
+            const __filename = fileURLToPath(import.meta.url);
+            const __dirname = path.dirname(__filename);
+
+            const storagePath = path.dirname(path.dirname(path.dirname(__dirname)))
+            const prismaPath = path.join(storagePath, 'storage', 'prisma')
+
+            console.log('Mounting prisma directory:', prismaPath)
+
             const nodeContainer = await this.docker.createContainer({
                 Image: nodeImage,
                 Cmd: [
@@ -280,7 +289,7 @@ export class DatabaseManager {
                 WorkingDir: '/app',
                 HostConfig: {
                     Binds: [
-                        `${path.join(process.cwd(), 'packages', 'storage', 'prisma')}:/app/prisma`
+                        `${prismaPath}:/app/prisma`
                     ]
                 }
             })
