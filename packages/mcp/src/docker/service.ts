@@ -47,6 +47,11 @@ export class DockerMCPService implements MCPService {
       }
     }
   }
+  async getTools(): Promise<Tool[]> {
+    // Use Array.from to convert Map values to array
+    // Then use flatMap to get all tools from all server mappings
+    return Array.from(this.toolMappings.values()).map(mapping => mapping.tool);
+  }
 
   getToolServer(toolName: string): ToolMapping | undefined {
     return this.toolMappings.get(toolName);

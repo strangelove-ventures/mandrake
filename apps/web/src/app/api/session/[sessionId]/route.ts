@@ -6,7 +6,7 @@ export async function GET(
   { params }: { params: { sessionId: string } }
 ) {
   try {
-    const { sessionId } = params;
+    const { sessionId } = await params;
 
     const session = await prisma.session.findUnique({
       where: { id: sessionId },

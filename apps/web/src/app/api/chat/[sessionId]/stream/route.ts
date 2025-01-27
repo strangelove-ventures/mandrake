@@ -1,13 +1,11 @@
-// apps/web/src/app/api/chat/[sessionId]/stream/route.ts
 import { NextRequest } from 'next/server'
-import { prisma } from '@mandrake/storage'
-import { sessionNotifier } from '@mandrake/storage'
+import { prisma, sessionNotifier } from '@mandrake/storage'
 
 export async function GET(
     req: NextRequest,
-    { params }: { params: { sessionId: string } }
+    { params }: { params: Promise<{ sessionId: string }> }
 ) {
-    const { sessionId } = params
+    const { sessionId } = await params
 
     return new Response(
         new ReadableStream({
@@ -42,8 +40,27 @@ export async function GET(
                     send({ type: 'init', data: initial })
 
                     // Subscribe to updates
-                    const unsubscribe = sessionNotifier.subscribe(sessionId, (session) => {
-                        send({ type: 'update', data: session })
+                    const unsubscribe = await sessionNotifier.subscribe(sessionId, async (session) => {
+                        // Include the same relations as initial query
+                        const fullSession = await prisma.session.findUnique({
+                            where: { id: sessionId },
+                            include: {
+                                rounds: {
+                                    include: {
+                                        request: true,
+                                        response: {
+                                            include: {
+                                                turns: {
+                                                    orderBy: { index: 'asc' }
+                                                }
+                                            }
+                                        }
+                                    },
+                                    orderBy: { index: 'asc' }
+                                }
+                            }
+                        })
+                        send({ type: 'update', data: fullSession })
                     })
 
                     // Cleanup on disconnect

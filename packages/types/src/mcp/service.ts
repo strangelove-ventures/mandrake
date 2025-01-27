@@ -1,5 +1,6 @@
 import { ServerConfig } from './config';
 import { MCPServer } from './server';
+import { Tool } from './tools';
 
 /**
  * Core MCP service interface for managing multiple server instances
@@ -13,6 +14,9 @@ export interface MCPService {
 
   /** Get all managed servers */
   getServers(): Map<string, MCPServer>;
+
+  /** Get all tools available across all servers */
+  getTools(): Promise<Tool[]>;
 
   /** Clean up all managed servers */
   cleanup(): Promise<void>;

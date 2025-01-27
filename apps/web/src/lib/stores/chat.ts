@@ -11,6 +11,7 @@ interface ChatState {
     streamingTurns: Turn[]
     pendingRoundId: string | null
     userInput: string | null
+    currentResponse: string
 
     // UI state
     input: string
@@ -20,10 +21,8 @@ interface ChatState {
     // Actions
     setInput: (input: string) => void
     connectSession: (sessionId: string) => Promise<void>
-
     startNewSession: () => void
     sendMessage: (message: string) => Promise<void>
-    handleLLMChunk: (chunk: string) => void
     handleSessionUpdate: (session: Session) => void
     disconnectSession: () => void
 }
@@ -37,37 +36,73 @@ export const useChatStore = create<ChatState>()((set, get) => ({
     userInput: null,
     input: '',
     isLoading: false,
-
-    // Actions
+    currentResponse: '',
     eventSource: null,
 
     setInput: (input) => set({ input }),
 
     connectSession: async (sessionId: string) => {
         try {
+            console.log('Connecting to session:', sessionId)
             const response = await fetch(`/api/chat/${sessionId}`)
             const session = await response.json()
             set({ session })
 
+            console.log('Setting up EventSource')
             const es = new EventSource(`/api/chat/${sessionId}/stream`)
 
+            es.onopen = () => {
+                console.log('EventSource connected')
+            }
+
             es.onmessage = (event) => {
-                const update = JSON.parse(event.data)
-                if (update.type === 'init') {
-                    set({ session: update.data })
-                } else if (update.type === 'update') {
-                    set({ session: update.data })
+                console.log('Received SSE message:', event.data)
+                try {
+                    const update = JSON.parse(event.data)
+                    if (update.type === 'init') {
+                        console.log('Received init state')
+                        set({ session: update.data })
+                    } else if (update.type === 'update') {
+                        console.log('Received session update')
+                        set({ session: update.data })
+                    } else if (update.type === 'chunk') {
+                        console.log('Received chunk')
+                        set(state => ({
+                            currentResponse: state.currentResponse + update.content,
+                            streamingTurns: [
+                                ...state.streamingTurns,
+                                {
+                                    id: `streaming-${state.streamingTurns.length}`,
+                                    responseId: 'streaming',
+                                    index: state.streamingTurns.length,
+                                    type: 'text',
+                                    content: update.content
+                                }
+                            ]
+                        }))
+                    }
+                } catch (error) {
+                    console.error('Error processing SSE message:', error)
                 }
             }
 
             es.onerror = (error) => {
-                console.error('Session stream error:', error)
+                console.error('EventSource error:', {
+                    error,
+                    readyState: es.readyState,
+                    CONNECTING: EventSource.CONNECTING,
+                    OPEN: EventSource.OPEN,
+                    CLOSED: EventSource.CLOSED
+                })
+                if (es.readyState === EventSource.CLOSED) {
+                    console.log('EventSource connection closed')
+                }
                 es.close()
             }
 
             set({ eventSource: es })
         } catch (error) {
-            console.error('Error connecting to session:', error)
+            console.error('Session connection error:', error)
         }
     },
 
@@ -84,23 +119,23 @@ export const useChatStore = create<ChatState>()((set, get) => ({
             session: null,
             streamingTurns: [],
             pendingRoundId: null,
-            userInput: null
+            userInput: null,
+            currentResponse: ''
         })
     },
 
     sendMessage: async (message: string) => {
         const { session } = get()
 
-        // Set pending state
         set({
             isLoading: true,
             userInput: message,
             pendingRoundId: `pending-${Date.now()}`,
+            currentResponse: '',
             streamingTurns: []
         })
 
         try {
-            console.log('Sending message:', message)
             const response = await fetch('/api/chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -114,89 +149,56 @@ export const useChatStore = create<ChatState>()((set, get) => ({
                 throw new Error('Stream response not ok')
             }
 
-            console.log('Stream connected')
             const reader = response.body.getReader()
             const decoder = new TextDecoder()
+            let buffer = ''
 
-            // Process stream
             while (true) {
                 const { value, done } = await reader.read()
-                if (done) { 
-                    console.log('Stream complete')
-                    break 
-                }
+                if (done) break
 
-                const chunk = decoder.decode(value)
-                console.log('Raw chunk:', chunk)
+                // Decode and buffer the chunk
+                buffer += decoder.decode(value)
 
-                const lines = chunk.split('\n').filter(Boolean)
-                console.log('Processing lines:', lines)
+                // Find any complete JSON objects
+                let startIdx = buffer.indexOf('{')
+                let endIdx = buffer.indexOf('}', startIdx)
 
-                for (const line of lines) {
+                while (startIdx !== -1 && endIdx !== -1) {
+                    const jsonStr = buffer.slice(startIdx, endIdx + 1)
                     try {
-                        const data = JSON.parse(line)
-                        console.log('Parsed chunk data:', data)
-
-                        if (data.type === 'chunk') {
-                            set((state) => {
-                                console.log('Current turns:', state.streamingTurns)
-                                const newTurns = [
+                        const update = JSON.parse(jsonStr)
+                        if (update.type === 'text') {
+                            set(state => ({
+                                streamingTurns: [
                                     ...state.streamingTurns,
                                     {
                                         id: `streaming-${state.streamingTurns.length}`,
                                         responseId: 'streaming',
                                         index: state.streamingTurns.length,
                                         type: 'text',
-                                        content: data.content
+                                        content: update.content
                                     }
                                 ]
-                                console.log('New turns:', newTurns)
-                                return { streamingTurns: newTurns }
-                            })
+                            }))
                         }
-                    } catch (error) {
-                        console.error('Error handling line:', line, error)
+                    } catch (e) {
+                        console.error('Error parsing JSON:', e)
                     }
+
+                    // Move past this object
+                    buffer = buffer.slice(endIdx + 1)
+                    startIdx = buffer.indexOf('{')
+                    endIdx = buffer.indexOf('}', startIdx)
                 }
-
-                get().handleLLMChunk(chunk)
             }
-
         } catch (error) {
             console.error('Error in chat stream:', error)
         } finally {
-            console.log('Stream finished, cleaning up')
             set({ isLoading: false })
         }
     },
-
-    handleLLMChunk: (chunk: string) => {
-        const lines = chunk.split('\n').filter(Boolean)
-
-        for (const line of lines) {
-            try {
-                const data = JSON.parse(line)
-
-                if (data.type === 'chunk') {
-                    set((state) => ({
-                        streamingTurns: [
-                            ...state.streamingTurns,
-                            {
-                                id: `streaming-${state.streamingTurns.length}`,
-                                responseId: 'streaming',
-                                index: state.streamingTurns.length,
-                                type: 'text',
-                                content: data.content
-                            }
-                        ]
-                    }))
-                }
-            } catch (error) {
-                console.error('Error handling chunk:', error)
-            }
-        }
-    },
-
+    
     handleSessionUpdate: (session: Session) => {
         set({ session })
     }

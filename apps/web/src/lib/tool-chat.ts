@@ -8,6 +8,7 @@ import {
     newContentTurn,
     getOrCreateSession
 } from '@mandrake/storage';
+import { buildSystemPrompt } from './system-prompt';
 import { mcpService } from './mcp';
 // import { Turn, TextTurn, ToolTurn } from '@mandrake/types';
 
@@ -91,13 +92,13 @@ export class ToolChat {
                         if (!chunk.content) continue;
 
                         console.log('Raw:', chunk)
-                        // Send raw chunk immediately for frontend display
-                        sendChunk('chunk', chunk.content);
+                        // Just send the text content for streaming display
+                        sendChunk('text', chunk.content);
 
                         // Accumulate for JSON parsing
                         currentBuffer += chunk.content;
 
-                        // Try to process complete JSON blocks
+                        // Process complete JSON for tool calls
                         if (isCompleteJson(currentBuffer)) {
                             const nextIndex = await self.processCompleteJson(
                                 currentBuffer,
@@ -105,14 +106,8 @@ export class ToolChat {
                                 currentTurnIndex,
                                 messageHistory
                             );
-
                             currentTurnIndex = nextIndex;
                             currentBuffer = '';
-
-                            // Get new stream with updated history if needed
-                            if (nextIndex > currentTurnIndex) {
-                                stream = await self.llm.stream(messageHistory);
-                            }
                         }
                     }
 
@@ -184,7 +179,8 @@ export class ToolChat {
 
     private async loadSystemPrompt(): Promise<string> {
         // TODO: Load system prompt from external source
-        throw new Error('System prompt loading not implemented');
+        const tools = await mcpService.getTools()
+        return buildSystemPrompt(tools);
     }
 }
 
