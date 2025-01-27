@@ -5,10 +5,11 @@
   },
   "references": [
     { "path": "packages/types" },
-    { "path": "packages/core" },
-    { "path": "packages/langchain" },
     { "path": "packages/mcp" },
     { "path": "packages/storage" }
+  ],
+  "include": [
+    "src/**/*"
   ],
   "files": []
 }

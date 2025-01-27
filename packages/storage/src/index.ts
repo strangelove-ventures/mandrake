@@ -1,13 +1,15 @@
-import { PrismaClient } from '@prisma/client';
+// packages/storage/src/index.ts
+import { PrismaClient } from '@prisma/client'
 
+// Create Prisma client with Pulse extension
 declare global {
     var prisma: PrismaClient | undefined;
 }
 
-export const prisma = global.prisma || new PrismaClient();
+export const prisma = new PrismaClient()
 
 if (process.env.NODE_ENV !== 'production') {
-    global.prisma = prisma;
+    global.prisma = prisma as unknown as PrismaClient;
 }
 
 // Export types from Prisma
@@ -24,3 +26,5 @@ export type {
 export * from './operations';
 export * from './mapping';
 export * from './init';
+export * from './notifications';
+export * from './db';
