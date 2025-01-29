@@ -1,0 +1,24 @@
+{
+  "name": "@mandrake/langchain",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts"
+  },
+  "dependencies": {
+    "@mandrake/types": "^0.0.1",
+    "@langchain/core": "^0.1.5",
+    "@langchain/anthropic": "^0.1.1",
+    "@langchain/openai": "^0.0.14"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0"
+  }
+}

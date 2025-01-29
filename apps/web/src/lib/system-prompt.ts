@@ -1,6 +1,12 @@
 import { formatToolsOpenAI } from '@mandrake/mcp';
 import { Tool } from '@mandrake/types';
 
+
+
+
+export function buildSystemPromptAnthropic() {
+
+}
 export function buildSystemPrompt(tools: Tool[]) {
     const toolSchemas = formatToolsOpenAI(tools);
 

@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "prebuild": "prisma generate",
+    "test": "jest",
     "build": "tsc --build",
     "clean": "rm -rf dist coverage .turbo node_modules/.prisma tsconfig.tsbuildinfo",
     "db:generate": "prisma generate",

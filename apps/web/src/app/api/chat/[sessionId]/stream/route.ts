@@ -1,6 +1,5 @@
 import { NextRequest } from 'next/server'
 import { prisma, sessionNotifier } from '@mandrake/storage'
-
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ sessionId: string }> }
@@ -66,11 +65,16 @@ export async function GET(
                     // Cleanup on disconnect
                     req.signal.addEventListener('abort', () => {
                         unsubscribe()
+                        controller.close()
                     })
+
                 } catch (error) {
                     console.error('Session stream error:', error)
                     controller.error(error)
                 }
+            },
+            cancel() {
+                // Keep stream open until explicitly cancelled
             }
         }),
         {
