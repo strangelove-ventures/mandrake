@@ -5,8 +5,10 @@ import type {
     ToolsConfig,
     ModelsConfig,
     ContextConfig,
+    ContextFile,
     WorkspaceFullConfig
 } from '@mandrake/types'
+import { FileWatcherService, FileChangeEvent } from '../services/file-watcher'
 
 interface CurrentWorkspace extends Workspace {
     config?: WorkspaceFullConfig
@@ -17,6 +19,11 @@ interface WorkspaceState {
     currentWorkspace?: CurrentWorkspace
     loading: boolean
     error?: string
+    currentFiles: ContextFile[]
+    fileWatcher: EventSource | null 
+    watchingWorkspace: string | null
+
+
     serverStatuses: Record<string, string>
     // List operations
     refreshServerStatuses: () => Promise<void>
@@ -26,11 +33,15 @@ interface WorkspaceState {
 
     // Single workspace operations
     loadWorkspace: (id: string) => Promise<void>
-
     // Config operations
     updateTools: (id: string, config: ToolsConfig) => Promise<void>
     updateModels: (id: string, config: ModelsConfig) => Promise<void>
     updateContext: (id: string, config: ContextConfig) => Promise<void>
+    startWatchingFiles: (workspaceId: string) => Promise<void>
+    stopWatchingFiles: () => void
+    refreshContextFiles: (workspaceId: string) => Promise<void>
+    updateContextFiles: (files: ContextFile[]) => void
+
     updateSystemPrompt: (id: string, prompt: string) => Promise<void>
 }
 
@@ -38,6 +49,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     workspaces: [],
     loading: false,
     serverStatuses: {},
+    currentFiles: [],
+    fileWatcher: null,
+    watchingWorkspace: null,
+
 
     refreshServerStatuses: async () => {
         const { currentWorkspace } = get()
@@ -51,6 +66,102 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             set({ serverStatuses: statuses })
         } catch (error) {
             console.error('Failed to refresh server statuses:', error)
+        }
+    },
+
+    startWatchingFiles: async (workspaceId: string) => {
+        const { watchingWorkspace, stopWatchingFiles } = get()
+
+        // If already watching a different workspace, stop that first
+        if (watchingWorkspace && watchingWorkspace !== workspaceId) {
+            stopWatchingFiles()
+        }
+
+        try {
+            // Initial file load
+            const response = await fetch(`/api/workspace/${workspaceId}/context/files`)
+            if (!response.ok) throw new Error('Failed to fetch context files')
+            const files = await response.json()
+
+            // Setup watcher
+            const eventSource = new EventSource(`/api/workspace/${workspaceId}/context/files/stream`)
+
+            eventSource.onmessage = (event) => {
+                const fileEvent: FileChangeEvent = JSON.parse(event.data)
+                // On any file change, refresh the file list
+                get().refreshContextFiles(workspaceId)
+            }
+
+            eventSource.onerror = (error) => {
+                console.error('File watcher error:', error)
+                eventSource.close()
+                set({ fileWatcher: null, watchingWorkspace: null })
+            }
+
+            set({
+                currentFiles: files,
+                fileWatcher: eventSource,
+                watchingWorkspace: workspaceId
+            })
+        } catch (error) {
+            console.error('Failed to start file watching:', error)
+        }
+    },
+
+    refreshContextFiles: async (workspaceId: string) => {
+        try {
+            const response = await fetch(`/api/workspace/${workspaceId}/context/files`)
+            if (!response.ok) throw new Error('Failed to fetch context files')
+            const files = await response.json()
+            set({ currentFiles: files })
+        } catch (error) {
+            console.error('Failed to refresh context files:', error)
+        }
+    },
+
+    stopWatchingFiles: () => {
+        const { fileWatcher } = get()
+        if (fileWatcher) {
+            fileWatcher.close()
+            set({
+                fileWatcher: null,
+                watchingWorkspace: null,
+                currentFiles: []
+            })
+        }
+    },
+
+    updateContextFiles: (files: ContextFile[]) => {
+        set({ currentFiles: files })
+    },
+
+    // Modify existing loadWorkspace to include files
+    loadWorkspace: async (id: string) => {
+        set({ loading: true, error: undefined })
+        try {
+            const response = await fetch(`/api/workspace/${id}`)
+            if (!response.ok) {
+                const data = await response.json()
+                throw new Error(data.error || 'Failed to load workspace')
+            }
+
+            const workspace = await response.json()
+            set({
+                currentWorkspace: workspace,
+                loading: false,
+                error: undefined
+            })
+
+            // Start watching files when workspace loads
+            await get().startWatchingFiles(id)
+
+            await get().refreshServerStatuses()
+        } catch (error) {
+            set({
+                currentWorkspace: undefined,
+                error: (error as Error).message,
+                loading: false
+            })
         }
     },
 
@@ -121,33 +232,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
         } catch (error) {
             set({ error: (error as Error).message, loading: false })
             throw error
-        }
-    },
-
-    loadWorkspace: async (id: string) => {
-        set({ loading: true, error: undefined })
-        try {
-            const response = await fetch(`/api/workspace/${id}`)
-
-            // Handle response before trying to parse it
-            if (!response.ok) {
-                const data = await response.json()
-                throw new Error(data.error || 'Failed to load workspace')
-            }
-
-            const workspace = await response.json()
-            set({
-                currentWorkspace: workspace,
-                loading: false,
-                error: undefined
-            })
-            await get().refreshServerStatuses()
-        } catch (error) {
-            set({
-                currentWorkspace: undefined,
-                error: (error as Error).message,
-                loading: false
-            })
         }
     },
 

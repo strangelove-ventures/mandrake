@@ -1,106 +1,155 @@
-// components/workspace/model-config.tsx
-'use client'
-
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useWorkspaceStore } from '@/lib/stores/workspace'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Settings } from 'lucide-react'
 import type { ModelsConfig } from '@mandrake/types'
 
-export function ModelConfig() {
-    const { currentWorkspace, updateModels, loading } = useWorkspaceStore()
-    const [config, setConfig] = useState<ModelsConfig>({
-        provider: '',
-        maxTokens: 16000,
-        temperature: 0.7,
-        baseURL: '',
-        apiKey: ''
-    })
-
-    useEffect(() => {
-        if (currentWorkspace?.config?.models) {
-            setConfig(currentWorkspace.config.models)
+const PROVIDERS = [
+    {
+        id: 'anthropic',
+        name: 'Anthropic (Claude)',
+        defaults: {
+            maxTokens: 4096,
+            temperature: 0.7,
+            baseURL: undefined,
+            apiKey: ''
         }
-    }, [currentWorkspace?.config?.models])
+    },
+    {
+        id: 'deepseek',
+        name: 'Deepseek',
+        defaults: {
+            maxTokens: 4096,
+            temperature: 0.7,
+            baseURL: 'https://api.deepseek.com/v1',
+            apiKey: ''
+        }
+    }
+] as const
+
+function ModelEditForm({ config, onSubmit, loading }: {
+    config: ModelsConfig
+    onSubmit: (config: ModelsConfig) => Promise<void>
+    loading: boolean
+}) {
+    const [formData, setFormData] = useState(config)
+
+    const handleProviderChange = (providerId: string) => {
+        const provider = PROVIDERS.find(p => p.id === providerId)
+        if (!provider) return
+
+        setFormData({
+            ...provider.defaults,
+            provider: providerId,
+            apiKey: formData.apiKey // Preserve existing API key
+        })
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault()
-        if (!currentWorkspace?.id) return
+        await onSubmit(formData)
+    }
 
+    return (
+        <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="space-y-2">
+                <Label>Provider</Label>
+                <Select
+                    value={formData.provider}
+                    onValueChange={handleProviderChange}
+                >
+                    <SelectTrigger>
+                        <SelectValue placeholder="Select a provider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        {PROVIDERS.map(provider => (
+                            <SelectItem key={provider.id} value={provider.id}>
+                                {provider.name}
+                            </SelectItem>
+                        ))}
+                    </SelectContent>
+                </Select>
+            </div>
+
+            <div className="space-y-2">
+                <Label>API Key</Label>
+                <Input
+                    type="password"
+                    value={formData.apiKey || ''}
+                    onChange={e => setFormData(prev => ({ ...prev, apiKey: e.target.value }))}
+                    placeholder={formData.provider === 'anthropic' ? 'sk-...' : 'ds-...'}
+                />
+            </div>
+
+            <Button type="submit" disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Save Changes
+            </Button>
+        </form>
+    )
+}
+
+export function ModelConfig() {
+    const [editOpen, setEditOpen] = useState(false)
+    const { currentWorkspace, updateModels, loading } = useWorkspaceStore()
+    const modelConfig = currentWorkspace?.config?.models
+
+    const handleSubmit = async (config: ModelsConfig) => {
+        if (!currentWorkspace?.id) return
         try {
             await updateModels(currentWorkspace.id, config)
+            setEditOpen(false)
         } catch (error) {
             console.error('Failed to update model config:', error)
         }
     }
 
+    const currentProvider = PROVIDERS.find(p => p.id === modelConfig?.provider)
+
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Model Configuration</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                    <span>Model Configuration</span>
+                    <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                        <DialogTrigger asChild>
+                            <Button variant="outline" size="sm">
+                                <Settings className="h-4 w-4 mr-2" />
+                                Edit
+                            </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                            <DialogHeader>
+                                <DialogTitle>Edit Model Configuration</DialogTitle>
+                            </DialogHeader>
+                            {modelConfig && (
+                                <ModelEditForm
+                                    config={modelConfig}
+                                    onSubmit={handleSubmit}
+                                    loading={loading}
+                                />
+                            )}
+                        </DialogContent>
+                    </Dialog>
+                </CardTitle>
             </CardHeader>
             <CardContent>
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <div className="space-y-2">
-                        <Label>Provider</Label>
-                        <Input
-                            value={config.provider}
-                            onChange={e => setConfig(prev => ({ ...prev, provider: e.target.value }))}
-                            placeholder="anthropic"
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label>API Key</Label>
-                        <Input
-                            type="password"
-                            value={config.apiKey || ''}
-                            onChange={e => setConfig(prev => ({ ...prev, apiKey: e.target.value }))}
-                            placeholder="sk-..."
-                        />
-                    </div>
-
-                    <div className="space-y-2">
-                        <Label>Base URL (Optional)</Label>
-                        <Input
-                            value={config.baseURL || ''}
-                            onChange={e => setConfig(prev => ({ ...prev, baseURL: e.target.value }))}
-                            placeholder="https://api.anthropic.com"
-                        />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-2">
-                            <Label>Max Tokens</Label>
-                            <Input
-                                type="number"
-                                value={config.maxTokens}
-                                onChange={e => setConfig(prev => ({ ...prev, maxTokens: parseInt(e.target.value) }))}
-                                min="1"
-                                max="100000"
-                            />
-                        </div>
-                        <div className="space-y-2">
-                            <Label>Temperature</Label>
-                            <Input
-                                type="number"
-                                value={config.temperature}
-                                onChange={e => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
-                                step="0.1"
-                                min="0"
-                                max="2"
-                            />
-                        </div>
-                    </div>
-
-                    <Button type="submit" disabled={loading}>
-                        {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-                        Save Changes
-                    </Button>
-                </form>
+                <div className="flex items-center space-x-2">
+                    <Badge variant="outline">
+                        {currentProvider?.name || 'No provider set'}
+                    </Badge>
+                    {modelConfig?.apiKey && (
+                        <Badge variant="secondary">
+                            Configured
+                        </Badge>
+                    )}
+                </div>
             </CardContent>
         </Card>
     )

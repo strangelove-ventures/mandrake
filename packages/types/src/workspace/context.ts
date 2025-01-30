@@ -1,6 +1,7 @@
 import path from 'path'
 import fs from 'fs/promises'
-import { readContextConfig, readContextFiles } from './files'
+import { readContextConfig, readContextFiles, getWorkspacePath } from './files'
+import { getWorkspacesDir } from './core'
 
 export interface ContextFile {
   name: string
@@ -24,6 +25,11 @@ export async function getContextFiles(workspacePath: string): Promise<ContextFil
   }
 
   return contextFiles
+}
+
+export async function readContextFile(workspaceName: string, fileName: string): Promise<string> {
+  const filePath = path.join(getWorkspacesDir(), workspaceName, 'context', 'files', fileName)
+  return fs.readFile(filePath, 'utf-8')
 }
 
 export async function addContextFile(workspacePath: string, sourcePath: string) {
