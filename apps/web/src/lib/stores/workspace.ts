@@ -25,15 +25,11 @@ interface WorkspaceState {
 
 
     serverStatuses: Record<string, string>
-    // List operations
     refreshServerStatuses: () => Promise<void>
     loadWorkspaces: () => Promise<void>
     createWorkspace: (name: string, description?: string) => Promise<void>
     deleteWorkspace: (id: string) => Promise<void>
-
-    // Single workspace operations
     loadWorkspace: (id: string) => Promise<void>
-    // Config operations
     updateTools: (id: string, config: ToolsConfig) => Promise<void>
     updateModels: (id: string, config: ModelsConfig) => Promise<void>
     updateContext: (id: string, config: ContextConfig) => Promise<void>
@@ -41,7 +37,6 @@ interface WorkspaceState {
     stopWatchingFiles: () => void
     refreshContextFiles: (workspaceId: string) => Promise<void>
     updateContextFiles: (files: ContextFile[]) => void
-
     updateSystemPrompt: (id: string, prompt: string) => Promise<void>
 }
 
