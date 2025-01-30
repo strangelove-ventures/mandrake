@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@mandrake/storage';
+import { prisma } from '@/lib/db'
 import { dbInitialized } from '@/lib/init';
 
 export async function GET() {

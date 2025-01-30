@@ -1,7 +1,7 @@
 import fs from 'fs/promises';
-import { DockerMCPService } from '../service';
+import { DockerMCPService } from '../docker';
 import { ServerConfig } from '@mandrake/types';
-import { logger } from '../../logger';
+import { logger } from '../logger';
 
 export const testLogger = logger.child({ service: 'test' });
 

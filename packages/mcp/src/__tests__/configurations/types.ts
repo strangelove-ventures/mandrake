@@ -1,5 +1,5 @@
 import { ServerConfig } from '@mandrake/types';
-import { DockerMCPService } from '../../service';
+import { DockerMCPService } from '../../docker';
 
 export interface ServerTestHooks {
     beforeAll?: () => Promise<void>;    // One-time setup

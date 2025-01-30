@@ -12,6 +12,8 @@ export class DockerMCPServer implements MCPServer {
   private client?: Client;
   private transport?: DockerTransport;
   private serverLogger: Logger;
+  private _cleaned = false;  // Add this flag
+
 
 
   constructor(
@@ -74,12 +76,26 @@ export class DockerMCPServer implements MCPServer {
   }
 
   private isReady(): boolean {
+    // Check our cleaned flag first
+    if (this._cleaned) {
+      return false;
+    }
     return !!(this.client && this.transport);
   }
 
+
   private async cleanup(): Promise<void> {
+    // Set cleaned flag first to prevent any new operations
+    this._cleaned = true;
+
     if (this.client) {
-      await this.client.close().catch(() => { });
+      await this.client.close().catch((err) => {
+        this.serverLogger.error('Error closing client', { error: err });
+      });
+
+      // Give a small grace period for cleanup
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       this.client = undefined;
       this.transport = undefined;
     }
@@ -94,6 +110,7 @@ export class DockerMCPServer implements MCPServer {
       }
     });
   }
+
   private async ensureContainer(): Promise<void> {
     try {
       const info = await this.container.inspect();

@@ -76,8 +76,8 @@ export class DockerMCPService implements MCPService {
 
   async cleanup(): Promise<void> {
     try {
-      // First stop all containers before removing
-      for (const server of this.servers.values()) {
+      // First stop all containers and collect cleanup promises
+      const cleanupPromises = Array.from(this.servers.values()).map(async (server) => {
         try {
           const container = await server.getInfo();
           if (container.State.Running) {
@@ -89,30 +89,35 @@ export class DockerMCPService implements MCPService {
             this.serviceLogger.error('Error stopping container', { error: err });
           }
         }
-      }
+      });
 
+      // Wait for all cleanup operations to complete
+      await Promise.all(cleanupPromises);
+
+      // Add a small delay to allow for cleanup
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      // Now clear the maps
       this.servers.clear();
+      this.toolMappings.clear();
 
-      // Then look for any orphaned containers
+      // Finally look for orphaned containers
       const containers = await this.docker.listContainers({
         all: true,
         filters: { label: [DockerMCPService.MANAGED_LABEL] }
       });
 
-      for (const c of containers) {
+      await Promise.all(containers.map(async (c) => {
         try {
           const container = this.docker.getContainer(c.Id);
-          // Force stop first
-          await container.stop().catch(() => { });
-          // Then remove
+          await container.stop().catch(() => { }); // Force stop
           await container.remove({ force: true });
         } catch (err: any) {
-          // Only log non-404 errors
           if (err?.statusCode !== 404) {
             this.serviceLogger.error('Error cleaning up container', { error: err });
           }
         }
-      }
+      }));
     } catch (err) {
       this.serviceLogger.error('Cleanup error', { error: err });
     }

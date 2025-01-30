@@ -3,7 +3,7 @@ import type { ServerConfig } from '../'
 
 export async function getWorkspaceTools(workspacePath: string): Promise<ServerConfig[]> {
   const config = await readToolsConfig(workspacePath)
-  return config
+  return config.tools
 }
 
 export async function addWorkspaceTool(workspacePath: string, tool: ServerConfig) {
@@ -15,7 +15,7 @@ export async function addWorkspaceTool(workspacePath: string, tool: ServerConfig
   }
 
   tools.push(tool)
-  await writeToolsConfig(workspacePath, tools)
+  await writeToolsConfig(workspacePath, { tools })
 }
 
 export async function updateWorkspaceTool(workspacePath: string, toolId: string, updates: Partial<ServerConfig>) {
@@ -27,7 +27,7 @@ export async function updateWorkspaceTool(workspacePath: string, toolId: string,
   }
 
   tools[index] = { ...tools[index], ...updates }
-  await writeToolsConfig(workspacePath, tools)
+  await writeToolsConfig(workspacePath, {tools})
 }
 
 export async function removeWorkspaceTool(workspacePath: string, toolId: string) {
@@ -38,7 +38,7 @@ export async function removeWorkspaceTool(workspacePath: string, toolId: string)
     throw new Error(`Tool ${toolId} not found`)
   }
 
-  await writeToolsConfig(workspacePath, filtered)
+  await writeToolsConfig(workspacePath, { tools: filtered })
 }
 
 // Helper to replace {workspacePath} in volume configs

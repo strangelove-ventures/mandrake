@@ -2,8 +2,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useWorkspaceStore } from '@/lib/stores/workspace'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -14,14 +15,36 @@ import {
   SheetHeader,
   SheetTitle,
   SheetTrigger,
+  SheetFooter,
 } from '@/components/ui/sheet'
-import { Plus } from 'lucide-react'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { Plus, Loader2, Trash2 } from 'lucide-react'
 
 export default function HomePage() {
-  const { workspaces, loading, error, loadWorkspaces, createWorkspace } = useWorkspaceStore()
+  const router = useRouter()
+  const {
+    workspaces,
+    loading,
+    error,
+    loadWorkspaces,
+    createWorkspace,
+    deleteWorkspace
+  } = useWorkspaceStore()
+
   const [newName, setNewName] = useState('')
   const [newDescription, setNewDescription] = useState('')
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [workspaceToDelete, setWorkspaceToDelete] = useState<string | null>(null)
 
   useEffect(() => {
     loadWorkspaces()
@@ -34,8 +57,24 @@ export default function HomePage() {
       setNewDescription('')
       setSheetOpen(false)
     } catch (error) {
+      // Error is handled by store and shown in UI
       console.error('Failed to create workspace:', error)
     }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteWorkspace(id)
+      setDeleteDialogOpen(false)
+      setWorkspaceToDelete(null)
+    } catch (error) {
+      console.error('Failed to delete workspace:', error)
+    }
+  }
+
+  const confirmDelete = (id: string) => {
+    setWorkspaceToDelete(id)
+    setDeleteDialogOpen(true)
   }
 
   return (
@@ -52,7 +91,11 @@ export default function HomePage() {
             onClick={() => loadWorkspaces()}
             disabled={loading}
           >
-            Refresh
+            {loading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              'Refresh'
+            )}
           </Button>
 
           <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -93,15 +136,21 @@ export default function HomePage() {
                     onChange={e => setNewDescription(e.target.value)}
                   />
                 </div>
+              </div>
 
+              <SheetFooter className="mt-6">
                 <Button
-                  className="w-full mt-6"
                   onClick={handleCreate}
                   disabled={loading || !newName}
+                  className="w-full"
                 >
-                  Create Workspace
+                  {loading ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : (
+                    'Create Workspace'
+                  )}
                 </Button>
-              </div>
+              </SheetFooter>
             </SheetContent>
           </Sheet>
         </div>
@@ -120,7 +169,10 @@ export default function HomePage() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {workspaces.map(workspace => (
-            <Card key={workspace.id} className="hover:shadow-lg transition-shadow">
+            <Card
+              key={workspace.id}
+              className="hover:shadow-lg transition-shadow"
+            >
               <CardHeader>
                 <CardTitle>{workspace.name}</CardTitle>
               </CardHeader>
@@ -128,14 +180,51 @@ export default function HomePage() {
                 {workspace.description && (
                   <p className="text-muted-foreground mb-4">{workspace.description}</p>
                 )}
-                <div className="flex justify-between items-center text-sm text-muted-foreground">
-                  <span>Created {new Date(workspace.created).toLocaleDateString()}</span>
+                <div className="text-sm text-muted-foreground">
+                  Created {new Date(workspace.created).toLocaleDateString()}
                 </div>
               </CardContent>
+              <CardFooter className="flex justify-between">
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push(`/workspace/${workspace.id}`)}
+                >
+                  Open
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-destructive hover:text-destructive/90"
+                  onClick={() => confirmDelete(workspace.id)}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </CardFooter>
             </Card>
           ))}
         </div>
       )}
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the
+              workspace and all its data.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => workspaceToDelete && handleDelete(workspaceToDelete)}
+              className="bg-destructive hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </main>
   )
 }

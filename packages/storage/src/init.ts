@@ -1,15 +1,13 @@
-import { PrismaClient } from '@prisma/client';
+import { createWorkspace } from '@mandrake/types'
+import { PrismaClient } from '@prisma/client'
 
-// Create prisma instance for this file
-const prisma = new PrismaClient();
+const prisma = new PrismaClient()
 
 export async function ensureDefaultWorkspace() {
     // Try to find existing default workspace
     let workspace = await prisma.workspace.findFirst({
-        where: {
-            name: 'default'
-        }
-    });
+        where: { name: 'default' }
+    })
 
     // Create if it doesn't exist
     if (!workspace) {
@@ -19,9 +17,12 @@ export async function ensureDefaultWorkspace() {
                 description: 'Default workspace',
                 config: {}
             }
-        });
-        console.log('Created default workspace:', workspace.id);
+        })
+        console.log('Created default workspace:', workspace.id)
+
+        // Create filesystem structure
+        await createWorkspace('default', workspace.id, 'Default workspace')
     }
 
-    return workspace;
+    return workspace
 }

@@ -17,8 +17,9 @@ import {
 export class DockerTransport implements Transport {
   private stream?: NodeJS.ReadWriteStream;
   private _closed = false;
+  private _closing = false; // Add this flag to track cleanup state
   private messageBuffer = '';
-  private transportLogger: Logger
+  private transportLogger: Logger;
 
   onclose?: () => void;
   onerror?: (error: Error) => void;
@@ -56,35 +57,42 @@ export class DockerTransport implements Transport {
     }
   }
 
-  // Simpler stream setup with consistent error handling
-  private setupStream(stream: NodeJS.ReadWriteStream): void {
-    const handleData = (chunk: Buffer) => {
-      // Skip non-stdout messages
-      if (chunk[0] !== 1) return;
+  private handleData = (chunk: Buffer) => {
+    // Skip non-stdout messages and ignore if we're closing
+    if (chunk[0] !== 1 || this._closed || this._closing) return;
 
-      this.messageBuffer += chunk.slice(8).toString();
-      const messages = this.messageBuffer.split('\n');
-      this.messageBuffer = messages.pop() || '';
+    this.messageBuffer += chunk.slice(8).toString();
+    const messages = this.messageBuffer.split('\n');
+    this.messageBuffer = messages.pop() || '';
 
-      for (const msg of messages) {
-        if (!msg) continue;
-        try {
-          const parsed = this.validateAndParseMessage(msg);
+    for (const msg of messages) {
+      if (!msg) continue;
+      try {
+        const parsed = this.validateAndParseMessage(msg);
+        // Double-check we haven't started closing
+        if (!this._closed && !this._closing) {
           this.onmessage?.(parsed);
-        } catch (err) {
+        }
+      } catch (err) {
+        if (!this._closed && !this._closing) {
           this.onerror?.(err as Error);
         }
       }
-    };
+    }
+  };
 
-    stream.on('data', handleData);
+  // Simpler stream setup with consistent error handling
+  private setupStream(stream: NodeJS.ReadWriteStream): void {
+    stream.on('data', this.handleData);
     stream.on('end', () => {
       this._closed = true;
       this.onclose?.();
     });
     stream.on('error', (err) => {
-      this.transportLogger.error('Stream error', { error: err });
-      this.onerror?.(new McpError(ErrorCode.InternalError, err.message));
+      if (!this._closed && !this._closing) {
+        this.transportLogger.error('Stream error', { error: err });
+        this.onerror?.(new McpError(ErrorCode.InternalError, err.message));
+      }
     });
   }
 
@@ -145,13 +153,38 @@ export class DockerTransport implements Transport {
   }
 
   async close(): Promise<void> {
-    if (this._closed) return;
-    this._closed = true;
+    if (this._closed || this._closing) return;
+
+    this._closing = true; // Set closing flag first
 
     if (this.stream) {
-      this.stream.end();
+      // Remove our listeners first
+      this.stream.removeListener('data', this.handleData);
+
+      // End the stream and wait for it to finish
+      await new Promise<void>((resolve) => {
+        if (!this.stream) {
+          resolve();
+          return;
+        }
+
+        // Set up one-time end listener
+        this.stream.once('end', () => {
+          resolve();
+        });
+
+        // Set up error handler that still resolves
+        this.stream.once('error', (err) => {
+          this.transportLogger.error('Error during stream close', { error: err });
+          resolve();
+        });
+
+        // Start the stream closing
+        this.stream.end();
+      });
     }
 
+    this._closed = true;
     this.onclose?.();
   }
 }

@@ -8,20 +8,36 @@ export interface Workspace {
   created: string
 }
 
-export interface WorkspaceConfig {
+// These represent the individual JSON files
+export interface ToolsConfig {
   tools: ServerConfig[]
-  models: LLMProviderConfig
-  context: {
-    refresh: {
-      [toolId: string]: {
-        enabled: boolean
-        interval?: string
-        onDemand?: boolean
-      }
+}
+
+export interface ModelsConfig {
+  provider: string  // or whatever specific fields you need
+  apiKey?: string
+  baseURL?: string
+  maxTokens: number
+  temperature: number
+}
+
+export interface ContextConfig {
+  refresh: {
+    [toolId: string]: {
+      enabled: boolean
+      interval?: string
+      onDemand?: boolean
     }
   }
 }
 
+// Then for API/internal use, we can have an aggregate type
+export interface WorkspaceFullConfig {
+  tools: ToolsConfig
+  models: ModelsConfig
+  context: ContextConfig
+  systemPrompt: string
+}
 export class WorkspaceError extends Error {
   constructor(message: string) {
     super(message)

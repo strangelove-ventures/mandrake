@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server'
-import { prisma, sessionNotifier } from '@mandrake/storage'
+import { sessionNotifier } from '@mandrake/storage'
+import { prisma } from '@/lib/db'
 export async function GET(
     req: NextRequest,
     { params }: { params: Promise<{ sessionId: string }> }

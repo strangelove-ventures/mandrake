@@ -6,17 +6,22 @@ import { initWorkspaceConfig } from './config'
 import type { Workspace } from './types'
 import { WorkspaceError } from './types'
 
-export const MANDRAKE_DIR = path.join(os.homedir(), '.mandrake')
-export const WORKSPACES_DIR = path.join(MANDRAKE_DIR, 'workspaces')
+let mandrakeDir: string | undefined
 
-export function getMandrakeDir(): string {
-  // Always append .mandrake to whatever base directory we're using
-  const baseDir = process.env.MANDRAKE_DIR || os.homedir()
-  return path.join(baseDir, '.mandrake')
+export function resetMandrakeDir() {
+  mandrakeDir = undefined
 }
 
-export const getWorkspacesDir = () => path.join(getMandrakeDir(), 'workspaces')
+export function getMandrakeDir(): string {
+  if (mandrakeDir) return mandrakeDir
+  const baseDir = process.env.MANDRAKE_DIR || os.homedir()
+  mandrakeDir = path.join(baseDir, '.mandrake')
+  return mandrakeDir
+}
 
+export function getWorkspacesDir(): string {
+  return path.join(getMandrakeDir(), 'workspaces')
+}
 export async function initMandrakeDir() {
   await ensureDir(getMandrakeDir())
   await ensureDir(getWorkspacesDir())
@@ -30,11 +35,14 @@ export async function listWorkspaces(): Promise<Workspace[]> {
   await initMandrakeDir()
 
   const workspaces: Workspace[] = []
-  const workspaceDirs = await fs.readdir(getWorkspacesDir())
+  const workspacesDir = getWorkspacesDir()
+
+  const workspaceDirs = await fs.readdir(workspacesDir)
 
   for (const dir of workspaceDirs) {
     try {
-      const workspace = await readWorkspaceConfig(path.join(getWorkspacesDir(), dir))
+      const fullPath = path.join(workspacesDir, dir)
+      const workspace = await readWorkspaceConfig(dir)
       workspaces.push(workspace)
     } catch (error) {
       console.warn(`Failed to read workspace ${dir}:`, error)
@@ -44,9 +52,10 @@ export async function listWorkspaces(): Promise<Workspace[]> {
   return workspaces
 }
 
+// packages/types/src/workspace/core.ts
 export async function createWorkspace(
   name: string,
-  id: string,  // Required ID from database
+  id: string,
   description?: string
 ): Promise<Workspace> {
   if (!validateWorkspaceName(name)) {
@@ -55,11 +64,9 @@ export async function createWorkspace(
 
   const workspacePath = path.join(getWorkspacesDir(), name)
 
-  // First ensure parent directories exist
   await ensureDir(getWorkspacesDir())
 
   try {
-    // Try to create the workspace directory - this is atomic
     await fs.mkdir(workspacePath)
   } catch (error: any) {
     if (error.code === 'EEXIST') {
@@ -68,7 +75,6 @@ export async function createWorkspace(
     throw error
   }
 
-  // Now create workspace structure and config
   const workspace = {
     id,
     name,
@@ -76,15 +82,17 @@ export async function createWorkspace(
     created: new Date().toISOString()
   }
 
-  // Create subdirs and config files
   await Promise.all([
     ensureDir(path.join(workspacePath, 'config')),
     ensureDir(path.join(workspacePath, 'context', 'files')),
     ensureDir(path.join(workspacePath, 'src'))
   ])
 
-  // Write the workspace config
-  await writeWorkspaceConfig(workspacePath, workspace)
+  // Write configs with just the name
+  await Promise.all([
+    writeWorkspaceConfig(name, workspace),
+    initWorkspaceConfig(name)
+  ])
 
   return workspace
 }
