@@ -156,7 +156,7 @@ describe('workspace creation and config', () => {
 
         // Verify config content matches defaults
         const fullConfig = await readFullWorkspaceConfig('test-workspace')
-        const defaultConfig = await getDefaultConfig()
+        const defaultConfig = await getDefaultConfig('test-workspace')
 
         // Strip dynamic values (like timestamps) before comparing
         const cleanConfig = {

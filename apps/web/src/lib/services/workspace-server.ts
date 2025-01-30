@@ -11,19 +11,26 @@ class WorkspaceServerManager {
     async switchWorkspace(id: string, config: WorkspaceFullConfig) {
         serverLogger.info('Switching workspace servers', {
             newWorkspace: id,
-            currentWorkspace: this.activeWorkspace
+            currentWorkspace: this.activeWorkspace,
+            toolsConfig: config.tools // Log full config
         });
 
-        // Different workspace? Clean up old one
         if (this.activeWorkspace && this.activeWorkspace !== id) {
-            serverLogger.info('Cleaning up old workspace servers', { workspace: this.activeWorkspace });
+            serverLogger.info('Cleaning up old workspace servers');
             await this.mcpService.cleanup();
         }
 
-        // Only initialize if this is a new workspace or we need to refresh
+        if (!config.tools?.tools?.length) {
+            serverLogger.warn('No tools configured for workspace');
+            return;
+        }
+
         if (this.activeWorkspace !== id) {
             this.activeWorkspace = id;
-            serverLogger.info('Initializing new workspace servers', { workspace: id });
+            serverLogger.info('Initializing new workspace servers', {
+                workspace: id,
+                toolCount: config.tools.tools.length
+            });
             await this.mcpService.initialize(config.tools.tools);
         }
     }

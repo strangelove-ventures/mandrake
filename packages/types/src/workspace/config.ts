@@ -11,7 +11,9 @@ async function ensureConfigDirs(workspacePath: string) {
 }
 
 const DEFAULT_SYSTEM_PROMPT = `You are a helpful AI assistant.`
-export async function getDefaultConfig(): Promise<WorkspaceFullConfig> {
+export async function getDefaultConfig(workspaceName: string): Promise<WorkspaceFullConfig> {
+  const workspacePath = path.join(getWorkspacesDir(), workspaceName)
+
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     tools: {
@@ -19,11 +21,11 @@ export async function getDefaultConfig(): Promise<WorkspaceFullConfig> {
         {
           id: 'filesystem',
           name: `filesystem-${Date.now()}`,
-          image: 'mandrake/mcp-filesystem:latest',
+          image: 'mandrake-test/mcp-filesystem:latest',
           command: ['/workspace'],
           execCommand: ['/app/dist/index.js', '/workspace'],
           volumes: [{
-            source: '{workspacePath}',
+            source: workspacePath,
             target: '/workspace',
             mode: 'rw'
           }]
@@ -31,11 +33,11 @@ export async function getDefaultConfig(): Promise<WorkspaceFullConfig> {
       {
         id: 'git',
         name: `git-${Date.now()}`,
-        image: 'mandrake/mcp-git:latest',
+        image: 'mandrake-test/mcp-git:latest',
         command: [],
         execCommand: ['mcp-server-git'],
         volumes: [{
-          source: '{workspacePath}',
+          source: workspacePath,
           target: '/workspace',
           mode: 'rw'
         }]
@@ -43,7 +45,7 @@ export async function getDefaultConfig(): Promise<WorkspaceFullConfig> {
       {
         id: 'fetch',
         name: `fetch-${Date.now()}`,
-        image: 'mandrake/mcp-fetch:latest',
+        image: 'mandrake-test/mcp-fetch:latest',
         command: [],
         execCommand: ['mcp-server-fetch']
       }
@@ -67,7 +69,7 @@ export async function getDefaultConfig(): Promise<WorkspaceFullConfig> {
 export async function initWorkspaceConfig(workspaceName: string) {
   const workspacePath = path.join(getWorkspacesDir(), workspaceName)
   await ensureConfigDirs(workspacePath)
-  const config = await getDefaultConfig()
+  const config = await getDefaultConfig(workspaceName)
 
   await Promise.all([
     writeToolsConfig(workspaceName, config.tools),
