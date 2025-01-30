@@ -8,6 +8,9 @@ class WorkspaceServerManager {
     private mcpService = new DockerMCPService(serverLogger);
     private activeWorkspace?: string;
 
+    async getServer(id: string) {
+        return this.mcpService.getServer(id);
+    }
     async switchWorkspace(id: string, config: WorkspaceFullConfig) {
         serverLogger.info('Switching workspace servers', {
             newWorkspace: id,
