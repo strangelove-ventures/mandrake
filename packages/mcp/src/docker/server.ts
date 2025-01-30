@@ -12,9 +12,8 @@ export class DockerMCPServer implements MCPServer {
   private client?: Client;
   private transport?: DockerTransport;
   private serverLogger: Logger;
-  private _cleaned = false;  // Add this flag
-
-
+  private _cleaned = false;
+  private cleanupPromise?: Promise<void>;
 
   constructor(
     private config: ServerConfig,
@@ -76,39 +75,44 @@ export class DockerMCPServer implements MCPServer {
   }
 
   private isReady(): boolean {
-    // Check our cleaned flag first
-    if (this._cleaned) {
-      return false;
-    }
-    return !!(this.client && this.transport);
+    return !this._cleaned && !this.cleanupPromise && !!this.client && !!this.transport;
   }
 
-
   private async cleanup(): Promise<void> {
-    // Set cleaned flag first to prevent any new operations
-    this._cleaned = true;
-
-    if (this.client) {
-      await this.client.close().catch((err) => {
-        this.serverLogger.error('Error closing client', { error: err });
-      });
-
-      // Give a small grace period for cleanup
-      await new Promise(resolve => setTimeout(resolve, 100));
-
-      this.client = undefined;
-      this.transport = undefined;
+    if (this.cleanupPromise) {
+      return this.cleanupPromise;
     }
 
-    await retryDockerOperation(async () => {
-      try {
-        await this.container.remove({ force: true });
-      } catch (err) {
-        if (!isContainerNotFoundError(err) && !isContainerConflictError(err)) {
-          throw err;
+    this._cleaned = true;
+
+    this.cleanupPromise = (async () => {
+      if (this.client) {
+        // First close the client which will clear all protocol state
+        await this.client.close().catch((err) => {
+          this.serverLogger.error('Error closing client', { error: err });
+        });
+
+        // Now we can safely remove transport handlers
+        if (this.transport) {
+          await this.transport.detachHandlers();
         }
+
+        this.client = undefined;
+        this.transport = undefined;
       }
-    });
+
+      await retryDockerOperation(async () => {
+        try {
+          await this.container.remove({ force: true });
+        } catch (err) {
+          if (!isContainerNotFoundError(err) && !isContainerConflictError(err)) {
+            throw err;
+          }
+        }
+      });
+    })();
+
+    await this.cleanupPromise;
   }
 
   private async ensureContainer(): Promise<void> {

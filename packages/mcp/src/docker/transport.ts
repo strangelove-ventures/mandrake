@@ -17,19 +17,51 @@ import {
 export class DockerTransport implements Transport {
   private stream?: NodeJS.ReadWriteStream;
   private _closed = false;
-  private _closing = false; // Add this flag to track cleanup state
+  private _closing = false;
   private messageBuffer = '';
   private transportLogger: Logger;
+  private boundHandleData: (chunk: Buffer) => void;
 
-  onclose?: () => void;
-  onerror?: (error: Error) => void;
-  onmessage?: (message: JSONRPCMessage) => void;
+
+  onclose?: () => void | undefined;
+  onerror?: (error: Error) => void | undefined;
+  onmessage?: (message: JSONRPCMessage) => void | undefined;
 
   constructor(
     private container: Docker.Container,
-    serverLogger : Logger,
+    serverLogger: Logger,
     private execCommand?: string[]
-  ) { this.transportLogger = serverLogger.child({ service: 'transport' });  }
+  ) {
+    this.transportLogger = serverLogger.child({ service: 'transport' });
+    // Bind handleData once in constructor
+    this.boundHandleData = this.handleData.bind(this);
+  }
+
+  private handleData(chunk: Buffer) {
+    // Don't process any data if we're closing/closed
+    if (chunk[0] !== 1 || this._closed || this._closing) return;
+
+    this.messageBuffer += chunk.slice(8).toString();
+    const messages = this.messageBuffer.split('\n');
+    this.messageBuffer = messages.pop() || '';
+
+    // Only process messages if we're still active
+    if (!this._closed && !this._closing) {
+      for (const msg of messages) {
+        if (!msg) continue;
+        try {
+          const parsed = this.validateAndParseMessage(msg);
+          if (this.onmessage && !this._closed && !this._closing) {
+            this.onmessage(parsed);
+          }
+        } catch (err) {
+          if (this.onerror && !this._closed && !this._closing) {
+            this.onerror(err as Error);
+          }
+        }
+      }
+    }
+  }
 
   // Single message validation method used for both send/receive
   private validateAndParseMessage(data: string): JSONRPCMessage {
@@ -57,36 +89,14 @@ export class DockerTransport implements Transport {
     }
   }
 
-  private handleData = (chunk: Buffer) => {
-    // Skip non-stdout messages and ignore if we're closing
-    if (chunk[0] !== 1 || this._closed || this._closing) return;
-
-    this.messageBuffer += chunk.slice(8).toString();
-    const messages = this.messageBuffer.split('\n');
-    this.messageBuffer = messages.pop() || '';
-
-    for (const msg of messages) {
-      if (!msg) continue;
-      try {
-        const parsed = this.validateAndParseMessage(msg);
-        // Double-check we haven't started closing
-        if (!this._closed && !this._closing) {
-          this.onmessage?.(parsed);
-        }
-      } catch (err) {
-        if (!this._closed && !this._closing) {
-          this.onerror?.(err as Error);
-        }
-      }
-    }
-  };
-
-  // Simpler stream setup with consistent error handling
   private setupStream(stream: NodeJS.ReadWriteStream): void {
-    stream.on('data', this.handleData);
+    this.stream = stream;
+    stream.on('data', this.boundHandleData);
     stream.on('end', () => {
-      this._closed = true;
-      this.onclose?.();
+      if (!this._closed && !this._closing) {
+        this._closed = true;
+        this.onclose?.();
+      }
     });
     stream.on('error', (err) => {
       if (!this._closed && !this._closing) {
@@ -95,6 +105,23 @@ export class DockerTransport implements Transport {
       }
     });
   }
+
+  async detachHandlers(): Promise<void> {
+    this._closing = true;
+
+    if (this.stream) {
+      this.stream.removeListener('data', this.boundHandleData);
+      this.stream.removeAllListeners('end');
+      this.stream.removeAllListeners('error');
+    }
+
+    // Clear callbacks after removing listeners
+    this.onmessage = undefined;
+    this.onerror = undefined;
+    this.onclose = undefined;
+  }
+
+
 
   async start(): Promise<void> {
     if (this._closed) {
@@ -152,39 +179,29 @@ export class DockerTransport implements Transport {
     }
   }
 
+
   async close(): Promise<void> {
-    if (this._closed || this._closing) return;
+    if (this._closed) return;
 
-    this._closing = true; // Set closing flag first
+    // Only end stream if we haven't started closing yet
+    if (!this._closing) {
+      this._closing = true;
 
-    if (this.stream) {
-      // Remove our listeners first
-      this.stream.removeListener('data', this.handleData);
+      if (this.stream) {
+        // First end the stream
+        await new Promise<void>((resolve) => {
+          const cleanup = () => {
+            this.stream?.removeAllListeners();
+            resolve();
+          };
 
-      // End the stream and wait for it to finish
-      await new Promise<void>((resolve) => {
-        if (!this.stream) {
-          resolve();
-          return;
-        }
-
-        // Set up one-time end listener
-        this.stream.once('end', () => {
-          resolve();
+          this.stream?.once('end', cleanup);
+          this.stream?.once('error', cleanup);
+          this.stream?.end();
         });
-
-        // Set up error handler that still resolves
-        this.stream.once('error', (err) => {
-          this.transportLogger.error('Error during stream close', { error: err });
-          resolve();
-        });
-
-        // Start the stream closing
-        this.stream.end();
-      });
+      }
     }
 
     this._closed = true;
-    this.onclose?.();
   }
 }
