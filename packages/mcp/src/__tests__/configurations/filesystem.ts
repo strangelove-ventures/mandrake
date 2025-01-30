@@ -8,7 +8,7 @@ export const filesystemServerConfig: ServerTestConfig = {
         name: `filesystem-test-${Date.now()}`,
         image: 'mandrake-test/mcp-filesystem:latest',
         command: ['/data'],
-        execCommand: ['/app/dist/index.js', '/data']
+        execCommand: ['/app/dist/index.js','/data']
     },
     hooks: {
         beforeAll: async () => {

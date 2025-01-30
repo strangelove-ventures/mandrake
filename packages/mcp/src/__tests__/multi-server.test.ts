@@ -100,34 +100,41 @@ describe('Multi Server Tests', () => {
         }
     }, 60000);
 
-    it('should report correct server status', async () => {
+    it('should properly cleanup servers', async () => {
+        // First setup and validate servers
         service = new DockerMCPService(testLogger);
         await service.initialize(
             Object.values(serverConfigs).map(config => config.serverConfig)
         );
 
-        // Check each server
+        // Validate all servers are running
         for (const config of Object.values(serverConfigs)) {
             const server = service.getServer(config.id);
+            expect(server).toBeTruthy();
+
+            // We should be able to get container state
             if (!server) {
-                throw new Error(`Server ${config.id} not found`);
+                continue;
             }
-
-            // Should be able to list tools
-            const tools = await server.listTools();
-            expect(tools.length).toBeGreaterThan(0);
-
-            // Server should be accessible
-            await server.invokeTool(tools[0].name, {});
+            const info = await server.getInfo();
+            expect(info.State.Running).toBe(true);
         }
 
-        // After cleanup, tools should be inaccessible
+        // Cleanup
         await service.cleanup();
 
+        // After cleanup:
+        // 1. No servers should be accessible
         for (const config of Object.values(serverConfigs)) {
             const server = service.getServer(config.id);
-            if (!server) continue;
-            await expect(server.listTools()).rejects.toThrow();
+            expect(server).toBeUndefined();
         }
-    }, 60000);
+
+        // 2. No containers should be running
+        const containers = await service.docker.listContainers({
+            all: true,
+            filters: { label: ['mandrake.mcp.managed=true'] }
+        });
+        expect(containers.length).toBe(0);
+    });
 });

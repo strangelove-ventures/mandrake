@@ -14,7 +14,7 @@ interface ToolMapping {
 
 export class DockerMCPService implements MCPService {
   private static readonly MANAGED_LABEL = 'mandrake.mcp.managed=true';
-  private docker: Docker;
+  public docker: Docker;
   private servers: Map<string, DockerMCPServer>;
   private serviceLogger: Logger;
   private toolMappings: Map<string, ToolMapping> = new Map();
@@ -47,6 +47,17 @@ export class DockerMCPService implements MCPService {
       }
     }
   }
+
+  getServerStatuses(): Record<string, string> {
+    const statuses: Record<string, string> = {};
+
+    for (const [serverId, server] of this.servers.entries()) {
+      statuses[serverId] = server.getStatus();
+    }
+
+    return statuses;
+  }
+
   async getTools(): Promise<Tool[]> {
     // Use Array.from to convert Map values to array
     // Then use flatMap to get all tools from all server mappings

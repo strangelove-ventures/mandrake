@@ -3,40 +3,59 @@ import { MCPServer, ServerConfig, Tool, ToolResult, Logger } from '@mandrake/typ
 import Docker from 'dockerode';
 import { DockerTransport } from './transport';
 import { DockerMCPService } from './service';
-import { retryDockerOperation, isContainerNotFoundError, isContainerConflictError } from './docker-utils';
+import { retryDockerOperation, isContainerNotFoundError } from './docker-utils';
 import { SERVER_CONFIG } from './config';
-import { logger as mcpLogger } from '../logger';
 
+export enum ServerStatus {
+  STARTING = 'starting',
+  READY = 'ready',
+  STOPPING = 'stopping',
+  STOPPED = 'stopped',
+  ERROR = 'error'
+}
 
 export class DockerMCPServer implements MCPServer {
   private client?: Client;
   private transport?: DockerTransport;
   private serverLogger: Logger;
-  private _cleaned = false;
+  // private _cleaned = false;
+  private _cleanupStarted = false;
   private cleanupPromise?: Promise<void>;
+  private status: ServerStatus = ServerStatus.STOPPED;
 
+  
+  
   constructor(
     private config: ServerConfig,
     private container: Docker.Container,
     private service: DockerMCPService,
     serviceLogger: Logger
   ) { this.serverLogger = serviceLogger.child({service: this.config.id}); }
-
+  
   getId(): string {
     return this.config.id;
   }
-
+  getStatus(): ServerStatus {
+    return this.status;
+  }
   getName(): string {
     return this.config.name;
   }
 
   async start(): Promise<void> {
+    if (this.status !== ServerStatus.STOPPED) {
+      throw new Error('Server must be stopped before starting');
+    }
+
+    this.status = ServerStatus.STARTING;
     try {
       await this.ensureContainer();
       await this.ensureClient();
-      await this.client!.ping();  // Connection check
+      await this.client!.ping();
+      this.status = ServerStatus.READY;
     } catch (err) {
-      await this.cleanup();  // Ensure cleanup on any error
+      this.status = ServerStatus.ERROR;
+      await this.cleanup();
       throw err;
     }
   }
@@ -48,13 +67,16 @@ export class DockerMCPServer implements MCPServer {
   // Removing restart since it's just a composition that could live at service level
 
   async listTools(): Promise<Tool[]> {
+    // Block new operations during cleanup
+    if (this._cleanupStarted) {
+      throw new Error('Server is shutting down');
+    }
     if (!this.isReady()) {
       throw new Error('Server not ready');
     }
     const result = await this.client!.listTools();
     return result.tools;
   }
-
   async invokeTool(name: string, params: any): Promise<ToolResult> {
     if (!this.isReady()) {
       throw new Error('Server not ready');
@@ -75,44 +97,49 @@ export class DockerMCPServer implements MCPServer {
   }
 
   private isReady(): boolean {
-    return !this._cleaned && !this.cleanupPromise && !!this.client && !!this.transport;
+    return !this._cleanupStarted && !!this.client && !!this.transport;
   }
+  // in DockerMCPServer
 
   private async cleanup(): Promise<void> {
-    if (this.cleanupPromise) {
-      return this.cleanupPromise;
-    }
+    if (this.cleanupPromise) return this.cleanupPromise;
 
-    this._cleaned = true;
+    // Block any new operations immediately
+    this._cleanupStarted = true;
+    this.status = ServerStatus.STOPPING;
 
     this.cleanupPromise = (async () => {
+      // First kill the container to prevent more messages
+      try {
+        await this.container.kill().catch(() => { });
+      } catch (err) {
+        this.serverLogger.error('Error killing container', { error: err });
+      }
+
+      // Give a moment for any in-flight operations
+      await new Promise(resolve => setTimeout(resolve, 100));
+
       if (this.client) {
-        // First close the client which will clear all protocol state
-        await this.client.close().catch((err) => {
-          this.serverLogger.error('Error closing client', { error: err });
-        });
-
-        // Now we can safely remove transport handlers
-        if (this.transport) {
-          await this.transport.detachHandlers();
-        }
-
+        // Now let SDK clean up
+        await this.client.close();
         this.client = undefined;
         this.transport = undefined;
       }
 
+      // Finally cleanup container
       await retryDockerOperation(async () => {
         try {
           await this.container.remove({ force: true });
         } catch (err) {
-          if (!isContainerNotFoundError(err) && !isContainerConflictError(err)) {
+          if (!isContainerNotFoundError(err)) {
             throw err;
           }
         }
       });
     })();
-
-    await this.cleanupPromise;
+    
+    this.status = ServerStatus.STOPPED;
+    return this.cleanupPromise;
   }
 
   private async ensureContainer(): Promise<void> {
