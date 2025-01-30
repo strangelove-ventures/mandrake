@@ -1,80 +1,59 @@
-import { NextResponse } from 'next/server'
-import {
-    readFullWorkspaceConfig,
-    getWorkspacePath,
-    initWorkspaceConfig,
-    ensureDir
-} from '@mandrake/types'
-import { prisma } from '@/lib/db'
+// apps/web/src/app/api/workspace/[id]/route.ts
+import { NextResponse } from 'next/server';
+import { workspaceServerManager } from '@/lib/services/workspace-server';
+import { logger } from '@mandrake/types';
+import { prisma } from '@/lib/db';
+import { readFullWorkspaceConfig } from '@mandrake/types';
+
+const routeLogger = logger.child({ service: 'workspace' });
 
 export async function GET(
     request: Request,
     { params }: { params: { id: string } }
 ) {
-    const { id } = await params
-
+    let { id } = await params;
     try {
-        const dbWorkspace = await prisma.workspace.findUnique({
+        const workspace = await prisma.workspace.findUnique({
             where: { id }
-        })
+        });
 
-        if (!dbWorkspace) {
+        if (!workspace) {
             return NextResponse.json(
                 { error: 'Workspace not found' },
                 { status: 404 }
-            )
+            );
         }
 
-        // Get the workspace paths
-        const paths = getWorkspacePath(dbWorkspace.name)
-
-        // Ensure workspace structure exists
-        await Promise.all([
-            ensureDir(paths.config),
-            ensureDir(paths.contextFiles),
-            ensureDir(paths.src)
-        ])
-
-        // Check if config files exist, if not initialize them
-        try {
-            await readFullWorkspaceConfig(dbWorkspace.name)
-        } catch (error) {
-            // If any config files are missing, initialize defaults
-            await initWorkspaceConfig(paths.root)
-        }
-
-        // Now we can safely read the config
-        const config = await readFullWorkspaceConfig(dbWorkspace.name)
-
-        return NextResponse.json({
-            ...dbWorkspace,
+        // Read config from filesystem
+        const config = await readFullWorkspaceConfig(workspace.name);
+        routeLogger.debug('Read workspace config', {
+            workspace: workspace.id,
             config
-        })
-    } catch (error) {
-        console.error('Failed to get workspace:', error)
-        return NextResponse.json(
-            { error: 'Failed to get workspace configuration' },
-            { status: 500 }
-        )
-    }
-}
+        });
 
+        // When workspace loads, ensure servers are running
+        if (config?.tools?.tools) {
+            routeLogger.info('Initializing workspace servers', { workspace: id });
+            await workspaceServerManager.switchWorkspace(id, config);
+        }
 
-export async function DELETE(
-    request: Request,
-    { params }: { params: { id: string } }
-) {
-    try {
-        await prisma.workspace.delete({
-            where: { id: params.id }
-        })
-        // TODO: Implement filesystem cleanup
-        return NextResponse.json({ success: true })
+        const response = {
+            id: workspace.id,
+            name: workspace.name,
+            description: workspace.description,
+            config,
+            created: workspace.createdAt.toISOString()
+        };
+
+        return NextResponse.json(response);
     } catch (error) {
-        console.error('Failed to delete workspace:', error)
+        routeLogger.error('Failed to load workspace', {
+            workspace: id,
+            error
+        });
         return NextResponse.json(
-            { error: 'Failed to delete workspace' },
+            { error: 'Failed to load workspace' },
             { status: 500 }
-        )
+        );
     }
 }

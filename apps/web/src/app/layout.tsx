@@ -4,6 +4,7 @@ import "./globals.css"
 import { Navbar } from "@/components/layout/navbar"
 import '@/lib/mcp';
 
+
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
