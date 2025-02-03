@@ -91,7 +91,14 @@ npm run build
 
 2. Build Docker images for MCP services:
 ```bash
-cd packages/mcp
+cd
+git clone https://github.com/modelcontextprotocol/servers.git
+
+# replace this path if mandrake is stored somewhere other than home
+cd mandrake/packages/mcp
+
+#start docker desktop locally
+#replace /path/to/servers/repo
 npm run build:test-servers /path/to/servers/repo
 ```
 
@@ -100,7 +107,7 @@ npm run build:test-servers /path/to/servers/repo
 To start the development server:
 
 ```bash
-cd apps/web
+cd ../../apps/web
 npm run dev
 ```
 
