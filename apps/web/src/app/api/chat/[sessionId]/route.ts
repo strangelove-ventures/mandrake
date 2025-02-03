@@ -1,11 +1,11 @@
 import { NextResponse } from 'next/server';
-import { prisma } from '@mandrake/storage';
+import { prisma } from '@mandrake/storage/dist/browser';
 
 export async function GET(
   req: Request,
   { params }: { params: { sessionId: string } }
 ) {
-  const { sessionId } = await params;
+  const { sessionId } = params;
   try {
     const session = await prisma.session.findUnique({
       where: { id: sessionId },

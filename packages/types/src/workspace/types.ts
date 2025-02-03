@@ -1,5 +1,4 @@
 import type { ServerConfig } from '../'
-import type { LLMProviderConfig } from '@mandrake/langchain'
 
 export interface Workspace {
   id: string
@@ -14,7 +13,7 @@ export interface ToolsConfig {
 }
 
 export interface ModelsConfig {
-  provider: string  // or whatever specific fields you need
+  provider: string
   apiKey?: string
   baseURL?: string
   maxTokens: number
@@ -38,6 +37,7 @@ export interface WorkspaceFullConfig {
   context: ContextConfig
   systemPrompt: string
 }
+
 export class WorkspaceError extends Error {
   constructor(message: string) {
     super(message)

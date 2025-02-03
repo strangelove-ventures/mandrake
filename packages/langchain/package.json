@@ -12,7 +12,6 @@
     "lint": "eslint src/**/*.ts"
   },
   "dependencies": {
-    "@mandrake/types": "^0.0.1",
     "@langchain/core": "^0.1.5",
     "@langchain/anthropic": "^0.1.1",
     "@langchain/openai": "^0.0.14"

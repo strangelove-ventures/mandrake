@@ -1,8 +1,6 @@
-// apps/web/src/app/api/workspace/[id]/route.ts
 import { NextResponse } from 'next/server';
-import { workspaceServerManager } from '@/lib/services/workspace-server';
 import { logger } from '@mandrake/types';
-import { prisma } from '@/lib/db';
+import { prisma } from '@mandrake/storage/dist/browser';
 import { readFullWorkspaceConfig } from '@mandrake/types';
 
 const routeLogger = logger.child({ service: 'workspace' });
@@ -11,7 +9,7 @@ export async function GET(
     request: Request,
     { params }: { params: { id: string } }
 ) {
-    let { id } = await params;
+    const { id } = params;
     try {
         const workspace = await prisma.workspace.findUnique({
             where: { id }
@@ -30,12 +28,6 @@ export async function GET(
             workspace: workspace.id,
             config
         });
-
-        // When workspace loads, ensure servers are running
-        if (config?.tools?.tools) {
-            routeLogger.info('Initializing workspace servers', { workspace: id });
-            await workspaceServerManager.switchWorkspace(id, config);
-        }
 
         const response = {
             id: workspace.id,

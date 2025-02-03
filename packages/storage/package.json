@@ -2,6 +2,7 @@
   "name": "@mandrake/storage",
   "version": "0.0.1",
   "main": "./dist/index.js",
+  "browser": "./dist/browser.js",
   "types": "./dist/index.d.ts",
   "private": true,
   "type": "module",

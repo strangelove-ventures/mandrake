@@ -1,21 +1,21 @@
-import { NextRequest } from 'next/server'
-import { sessionNotifier } from '@mandrake/storage'
-import { prisma } from '@/lib/db'
+import { NextRequest } from 'next/server';
+import { sessionNotifier, prisma } from '@mandrake/storage/dist/browser';
+
 export async function GET(
     req: NextRequest,
-    { params }: { params: Promise<{ sessionId: string }> }
+    { params }: { params: { sessionId: string } }
 ) {
-    const { sessionId } = await params
+    const { sessionId } = params;
 
     return new Response(
         new ReadableStream({
             async start(controller) {
-                const encoder = new TextEncoder()
+                const encoder = new TextEncoder();
                 const send = (data: any) => {
                     controller.enqueue(
                         encoder.encode(`data: ${JSON.stringify(data)}\n\n`)
-                    )
-                }
+                    );
+                };
 
                 try {
                     // Send initial state
@@ -36,8 +36,8 @@ export async function GET(
                                 orderBy: { index: 'asc' }
                             }
                         }
-                    })
-                    send({ type: 'init', data: initial })
+                    });
+                    send({ type: 'init', data: initial });
 
                     // Subscribe to updates
                     const unsubscribe = await sessionNotifier.subscribe(sessionId, async (session) => {
@@ -59,19 +59,19 @@ export async function GET(
                                     orderBy: { index: 'asc' }
                                 }
                             }
-                        })
-                        send({ type: 'update', data: fullSession })
-                    })
+                        });
+                        send({ type: 'update', data: fullSession });
+                    });
 
                     // Cleanup on disconnect
                     req.signal.addEventListener('abort', () => {
-                        unsubscribe()
-                        controller.close()
-                    })
+                        unsubscribe();
+                        controller.close();
+                    });
 
                 } catch (error) {
-                    console.error('Session stream error:', error)
-                    controller.error(error)
+                    console.error('Session stream error:', error);
+                    controller.error(error);
                 }
             },
             cancel() {
@@ -85,5 +85,5 @@ export async function GET(
                 'Connection': 'keep-alive',
             }
         }
-    )
+    );
 }
