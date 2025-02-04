@@ -7,7 +7,6 @@ import { Plus } from 'lucide-react'
 import { useWorkspaceStore } from '@/lib/stores/workspace'
 import { AddDynamicContextDialog } from './AddDynamicContextDialog'
 import { DynamicContextCard } from './DynamicContextCard'
-import type { DynamicContextMethodConfig } from '@mandrake/types'
 
 interface Props {
     className?: string

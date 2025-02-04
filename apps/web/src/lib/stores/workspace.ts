@@ -7,7 +7,8 @@ import type {
     ContextConfig,
     ContextFile,
     WorkspaceFullConfig,
-    DynamicContextMethodConfig
+    DynamicContextMethodConfig,
+    Session
 } from '@mandrake/types'
 import { FileWatcherService, FileChangeEvent } from '../services/file-watcher'
 
@@ -26,6 +27,8 @@ interface WorkspaceState {
 
 
     serverStatuses: Record<string, string>
+    sessions: Session[];
+    loadWorkspaceSessions: (workspaceId: string) => Promise<void>;
     refreshServerStatuses: () => Promise<void>
     loadWorkspaces: () => Promise<void>
     createWorkspace: (name: string, description?: string) => Promise<void>
@@ -53,7 +56,51 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
     currentFiles: [],
     fileWatcher: null,
     watchingWorkspace: null,
+    sessions: [],
 
+    loadWorkspaceSessions: async (workspaceId: string) => {
+        try {
+            const response = await fetch(`/api/workspace/${workspaceId}/sessions`)
+            if (!response.ok) throw new Error('Failed to load sessions')
+
+            const sessions = await response.json()
+            set({ sessions })
+        } catch (error) {
+            console.error('Failed to load sessions:', error)
+        }
+    },
+
+    // Modify existing loadWorkspace to include sessions
+    loadWorkspace: async (id: string) => {
+        set({ loading: true, error: undefined })
+        try {
+            const response = await fetch(`/api/workspace/${id}`)
+            if (!response.ok) {
+                const data = await response.json()
+                throw new Error(data.error || 'Failed to load workspace')
+            }
+
+            const workspace = await response.json()
+            set({
+                currentWorkspace: workspace,
+                loading: false,
+                error: undefined
+            })
+
+            // Load everything needed for the workspace
+            await Promise.all([
+                get().startWatchingFiles(id),
+                get().loadWorkspaceSessions(id),
+                get().refreshServerStatuses()
+            ])
+        } catch (error) {
+            set({
+                currentWorkspace: undefined,
+                error: (error as Error).message,
+                loading: false
+            })
+        }
+    },
 
     refreshServerStatuses: async () => {
         const { currentWorkspace } = get()
@@ -134,36 +181,6 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
     updateContextFiles: (files: ContextFile[]) => {
         set({ currentFiles: files })
-    },
-
-    // Modify existing loadWorkspace to include files
-    loadWorkspace: async (id: string) => {
-        set({ loading: true, error: undefined })
-        try {
-            const response = await fetch(`/api/workspace/${id}`)
-            if (!response.ok) {
-                const data = await response.json()
-                throw new Error(data.error || 'Failed to load workspace')
-            }
-
-            const workspace = await response.json()
-            set({
-                currentWorkspace: workspace,
-                loading: false,
-                error: undefined
-            })
-
-            // Start watching files when workspace loads
-            await get().startWatchingFiles(id)
-
-            await get().refreshServerStatuses()
-        } catch (error) {
-            set({
-                currentWorkspace: undefined,
-                error: (error as Error).message,
-                loading: false
-            })
-        }
     },
 
     loadWorkspaces: async () => {
