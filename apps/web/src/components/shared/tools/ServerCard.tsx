@@ -1,21 +1,21 @@
+// apps/web/src/components/shared/tools/ServerCard.tsx
 import React, { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Loader2 } from 'lucide-react'
 import { useWorkspaceStore } from '@/lib/stores/workspace'
 import { ServerConfig, Tool } from '@mandrake/types'
-import { ToolDetails } from './tool-details'
-import { ToolsList } from './tools-list'
+import { ToolSelector } from './ToolSelector'
 
 interface ServerCardProps {
     config: ServerConfig
     status: string
+    onToolSelect?: (tool: Tool) => void
 }
 
-export function ServerCard({ config, status }: ServerCardProps) {
+export function ServerCard({ config, status, onToolSelect }: ServerCardProps) {
     const [isOpen, setIsOpen] = useState(false)
-    const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
     const [tools, setTools] = useState<Tool[]>([])
     const [loading, setLoading] = useState(false)
     const { currentWorkspace } = useWorkspaceStore()
@@ -25,12 +25,18 @@ export function ServerCard({ config, status }: ServerCardProps) {
         try {
             const response = await fetch(`/api/workspace/${currentWorkspace?.id}/tools/${config.id}`)
             const data = await response.json()
-            console.log('Loaded tools:', data)
             setTools(data.tools)
         } catch (error) {
             console.error('Failed to load tools:', error)
         } finally {
             setLoading(false)
+        }
+    }
+
+    const handleToolSelect = (tool: Tool) => {
+        if (onToolSelect) {
+            onToolSelect(tool)
+            setIsOpen(false)
         }
     }
 
@@ -55,17 +61,13 @@ export function ServerCard({ config, status }: ServerCardProps) {
                 open={isOpen}
                 onOpenChange={(open) => {
                     setIsOpen(open)
-                    if (!open) setSelectedTool(null)
                 }}
             >
                 <DialogContent className="max-h-[80vh] max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>
-                            {selectedTool ? selectedTool.name : config.id}
+                            Available Tools - {config.id}
                         </DialogTitle>
-                        <DialogDescription>
-                            {selectedTool ? 'Tool details and usage' : 'Available tools from this server'}
-                        </DialogDescription>
                     </DialogHeader>
 
                     <ScrollArea className="h-[60vh]">
@@ -73,16 +75,10 @@ export function ServerCard({ config, status }: ServerCardProps) {
                             <div className="flex justify-center p-4">
                                 <Loader2 className="h-6 w-6 animate-spin" />
                             </div>
-                        ) : selectedTool ? (
-                            <ToolDetails
-                                tool={selectedTool}
-                                config={config}
-                                onBack={() => setSelectedTool(null)}
-                            />
                         ) : (
-                            <ToolsList
+                            <ToolSelector
                                 tools={tools}
-                                onSelectTool={setSelectedTool}
+                                onSelect={handleToolSelect}
                             />
                         )}
                     </ScrollArea>

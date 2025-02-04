@@ -1,76 +1,125 @@
+// apps/web/src/components/workspace/dynamic-content/AddDynamicContextDialog.tsx
 'use client'
 
-import { useState } from 'react'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Button } from '@/components/ui/button'
 import { useWorkspaceStore } from '@/lib/stores/workspace'
-import { ServerMethodSelector } from './ServerMethodSelector'
-import { MethodConfigForm } from './MethodConfigForm'
-import type { DynamicContextMethodConfig } from '@mandrake/types'
+import { ServerCard } from '@/components/shared/tools/ServerCard'
+import { ToolConfigurationForm } from '@/components/shared/tools/ToolConfigurationForm'
+import { Button } from '@/components/ui/button'
+import { useState } from 'react'
+import type { Tool } from '@mandrake/types'
 
 interface Props {
     open: boolean
     onOpenChange: (open: boolean) => void
 }
 
-type Step = 'select-method' | 'configure-params'
+type ViewState = 'servers' | 'configure'
 
 export function AddDynamicContextDialog({ open, onOpenChange }: Props) {
-    const [step, setStep] = useState<Step>('select-method')
-    const [selectedServer, setSelectedServer] = useState<string>('')
-    const [selectedMethod, setSelectedMethod] = useState<string>('')
-    const { currentWorkspace, addDynamicContext } = useWorkspaceStore()
+    const { currentWorkspace, serverStatuses, addDynamicContext } = useWorkspaceStore()
+    const [viewState, setViewState] = useState<ViewState>('servers')
+    const [selectedServer, setSelectedServer] = useState<string | null>(null)
+    const [selectedTool, setSelectedTool] = useState<Tool | null>(null)
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
-    const handleServerMethodSelect = (serverId: string, method: string) => {
+    const servers = currentWorkspace?.config?.tools?.tools || []
+
+    const handleToolSelect = (serverId: string, tool: Tool) => {
         setSelectedServer(serverId)
-        setSelectedMethod(method)
-        setStep('configure-params')
+        setSelectedTool(tool)
+        setViewState('configure')
     }
 
-    const handleSubmit = async (params: Record<string, any>) => {
-        if (!currentWorkspace) return
+    const handleBack = () => {
+        setViewState('servers')
+        setSelectedTool(null)
+        setSelectedServer(null)
+    }
 
-        const config: Omit<DynamicContextMethodConfig, 'id'> = {
-            serverId: selectedServer,
-            methodName: selectedMethod,
-            params,
-            refresh: {
-                enabled: false
-            }
+    const handleSubmit = async (config: {
+        params: Record<string, any>,
+        refresh: {
+            enabled: boolean,
+            interval?: string
         }
+    }) => {
+        if (!currentWorkspace || !selectedServer || !selectedTool) return
 
-        await addDynamicContext(currentWorkspace.id, config)
-        onOpenChange(false)
-        // Reset state
-        setStep('select-method')
-        setSelectedServer('')
-        setSelectedMethod('')
+        setIsSubmitting(true)
+        try {
+            await addDynamicContext(currentWorkspace.id, {
+                // id: `${selectedServer}-${selectedTool.name}-${Date.now()}`, // Generate unique ID
+                serverId: selectedServer,
+                methodName: selectedTool.name,
+                params: config.params,
+                refresh: config.refresh,
+                // tokenCount: null, // Will be updated after first execution
+                // lastExecuted: null,
+            })
+            onOpenChange(false)
+        } catch (error) {
+            console.error('Failed to add dynamic context:', error)
+            // TODO: Show error toast
+        } finally {
+            setIsSubmitting(false)
+        }
+    }
+
+    const renderContent = () => {
+        switch (viewState) {
+            case 'servers':
+                return (
+                    <div className="space-y-4">
+                        {servers.map((server) => (
+                            <ServerCard
+                                key={server.id}
+                                config={server}
+                                status={serverStatuses[server.id] || 'initializing'}
+                                onToolSelect={(tool) => handleToolSelect(server.id, tool)}
+                            />
+                        ))}
+                    </div>
+                )
+
+            case 'configure':
+                return selectedTool && selectedServer && (
+                    <ToolConfigurationForm
+                        tool={selectedTool}
+                        serverId={selectedServer}
+                        onSubmit={handleSubmit}
+                        isSubmitting={isSubmitting}
+                    />
+                )
+        }
+    }
+
+    const titles = {
+        servers: 'Select a Tool',
+        configure: `Configure ${selectedTool?.name || 'Tool'}`
     }
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="sm:max-w-[425px]">
+            <DialogContent className="max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>
-                        {step === 'select-method'
-                            ? 'Select Method'
-                            : 'Configure Parameters'
-                        }
+                        {titles[viewState]}
                     </DialogTitle>
                 </DialogHeader>
 
-                {step === 'select-method' ? (
-                    <ServerMethodSelector
-                        onSelect={handleServerMethodSelect}
-                    />
-                ) : (
-                    <MethodConfigForm
-                        serverId={selectedServer}
-                        method={selectedMethod}
-                        onSubmit={handleSubmit}
-                        onBack={() => setStep('select-method')}
-                    />
+                {viewState !== 'servers' && (
+                    <Button
+                        variant="outline"
+                        onClick={handleBack}
+                        className="mb-4"
+                        disabled={isSubmitting}
+                    >
+                        Back
+                    </Button>
                 )}
+
+                {renderContent()}
             </DialogContent>
         </Dialog>
     )

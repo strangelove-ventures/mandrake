@@ -24,8 +24,6 @@ interface WorkspaceState {
     currentFiles: ContextFile[]
     fileWatcher: EventSource | null 
     watchingWorkspace: string | null
-
-
     serverStatuses: Record<string, string>
     sessions: Session[];
     loadWorkspaceSessions: (workspaceId: string) => Promise<void>;
