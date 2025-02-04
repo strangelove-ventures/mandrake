@@ -43,11 +43,6 @@ export async function removeContextFile(workspacePath: string, fileName: string)
   await fs.unlink(filePath)
 }
 
-export async function getContextRefreshPolicies(workspacePath: string) {
-  const config = await readContextConfig(workspacePath)
-  return config.refresh
-}
-
 export interface ContextStats {
   totalFiles: number
   totalSize: number

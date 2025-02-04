@@ -10,6 +10,7 @@ import { MCPServerStatus } from '@/components/workspace/mcp-status'
 import { SystemPromptEditor } from '@/components/workspace/system-prompt'
 import { ContextFiles } from '@/components/workspace/context-files'
 import { ModelConfig } from '@/components/workspace/model-config'
+import { DynamicContextList } from '@/components/workspace/dynamic-content/DynamicContentList'
 
 export default function WorkspacePage() {
     const { id } = useParams()
@@ -41,6 +42,9 @@ export default function WorkspacePage() {
 
                 {/* System Prompt */}
                 <SystemPromptEditor className="lg:col-span-2" />
+
+                {/* Dynamic Context */}
+                <DynamicContextList className="lg:col-span-2" />
 
                 {/* Context Files */}
                 <ContextFiles className="lg:col-span-2" />

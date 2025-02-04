@@ -57,10 +57,7 @@ export async function getDefaultConfig(workspaceName: string): Promise<Workspace
       provider: ''
     },
     context: {
-      refresh: {
-        git: { enabled: true, interval: '1h' },
-        filesystem: { enabled: true, onDemand: true }
-      }
+      dynamicContexts: []
     }
   }
 }

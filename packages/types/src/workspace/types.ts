@@ -21,14 +21,23 @@ export interface ModelsConfig {
   temperature: number
 }
 
-export interface ContextConfig {
+export interface DynamicContextMethodConfig {
+  id: string;           // Unique identifier for this config
+  serverId: string;     // Which MCP server this uses
+  methodName: string;   // Which method on that server
+  params: Record<string, any>;  // The params for the method
   refresh: {
-    [toolId: string]: {
-      enabled: boolean
-      interval?: string
-      onDemand?: boolean
-    }
-  }
+    enabled: boolean;
+    interval?: string;  // Cron or duration string
+    onDemand?: boolean;
+  };
+  tokenCount?: number;
+  lastExecuted?: string;
+  lastResult?: any;
+}
+
+export interface ContextConfig {
+  dynamicContexts: DynamicContextMethodConfig[];
 }
 
 // Then for API/internal use, we can have an aggregate type

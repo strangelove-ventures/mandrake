@@ -6,7 +6,8 @@ import type {
     ModelsConfig,
     ContextConfig,
     ContextFile,
-    WorkspaceFullConfig
+    WorkspaceFullConfig,
+    DynamicContextMethodConfig
 } from '@mandrake/types'
 import { FileWatcherService, FileChangeEvent } from '../services/file-watcher'
 
@@ -38,6 +39,11 @@ interface WorkspaceState {
     refreshContextFiles: (workspaceId: string) => Promise<void>
     updateContextFiles: (files: ContextFile[]) => void
     updateSystemPrompt: (id: string, prompt: string) => Promise<void>
+    addDynamicContext: (id: string, context: Omit<DynamicContextMethodConfig, 'id'>) => Promise<void>;
+    updateDynamicContext: (id: string, contextId: string, updates: Partial<DynamicContextMethodConfig>) => Promise<void>;
+    removeDynamicContext: (id: string, contextId: string) => Promise<void>;
+    testDynamicContext: (toolId: string, method: string, params: Record<string, any>) => Promise<any>;
+
 }
 
 export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
@@ -364,5 +370,150 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
             set({ error: (error as Error).message, loading: false })
             throw error
         }
+    },
+    addDynamicContext: async (id: string, context: Omit<DynamicContextMethodConfig, 'id'>) => {
+        set({ loading: true, error: undefined })
+        try {
+            const response = await fetch(`/api/workspace/${id}/dynamic`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(context)
+            })
+
+            if (!response.ok) {
+                const data = await response.json()
+                throw new Error(data.error || 'Failed to add dynamic context')
+            }
+
+            const newContext = await response.json()
+
+            // Update current workspace if loaded
+            const { currentWorkspace } = get()
+            if (currentWorkspace?.id === id && currentWorkspace.config) {
+                set({
+                    currentWorkspace: {
+                        ...currentWorkspace,
+                        config: {
+                            ...currentWorkspace.config,
+                            context: {
+                                ...currentWorkspace.config.context,
+                                dynamicContexts: [
+                                    ...(currentWorkspace.config.context.dynamicContexts || []),
+                                    newContext
+                                ]
+                            }
+                        }
+                    },
+                    loading: false
+                })
+            }
+        } catch (error) {
+            set({ error: (error as Error).message, loading: false })
+            throw error
+        }
+    },
+
+    updateDynamicContext: async (id: string, contextId: string, updates: Partial<DynamicContextMethodConfig>) => {
+        set({ loading: true, error: undefined })
+        try {
+            const response = await fetch(`/api/workspace/${id}/dynamic`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dynamicContextId: contextId, updates })
+            })
+
+            if (!response.ok) {
+                const data = await response.json()
+                throw new Error(data.error || 'Failed to update dynamic context')
+            }
+
+            const updatedContext = await response.json()
+
+            // Update current workspace if loaded
+            const { currentWorkspace } = get()
+            if (currentWorkspace?.id === id && currentWorkspace.config) {
+                const dynamicContexts = currentWorkspace.config.context.dynamicContexts || []
+                const contextIndex = dynamicContexts.findIndex(dc => dc.id === contextId)
+
+                if (contextIndex !== -1) {
+                    dynamicContexts[contextIndex] = updatedContext
+                    set({
+                        currentWorkspace: {
+                            ...currentWorkspace,
+                            config: {
+                                ...currentWorkspace.config,
+                                context: {
+                                    ...currentWorkspace.config.context,
+                                    dynamicContexts
+                                }
+                            }
+                        },
+                        loading: false
+                    })
+                }
+            }
+        } catch (error) {
+            set({ error: (error as Error).message, loading: false })
+            throw error
+        }
+    },
+
+    removeDynamicContext: async (id: string, contextId: string) => {
+        set({ loading: true, error: undefined })
+        try {
+            const response = await fetch(`/api/workspace/${id}/dynamic`, {
+                method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dynamicContextId: contextId })
+            })
+
+            if (!response.ok) {
+                const data = await response.json()
+                throw new Error(data.error || 'Failed to remove dynamic context')
+            }
+
+            // Update current workspace if loaded
+            const { currentWorkspace } = get()
+            if (currentWorkspace?.id === id && currentWorkspace.config) {
+                set({
+                    currentWorkspace: {
+                        ...currentWorkspace,
+                        config: {
+                            ...currentWorkspace.config,
+                            context: {
+                                ...currentWorkspace.config.context,
+                                dynamicContexts: (currentWorkspace.config.context.dynamicContexts || [])
+                                    .filter(dc => dc.id !== contextId)
+                            }
+                        }
+                    },
+                    loading: false
+                })
+            }
+        } catch (error) {
+            set({ error: (error as Error).message, loading: false })
+            throw error
+        }
+    },
+
+    testDynamicContext: async (toolId: string, method: string, params: Record<string, any>) => {
+        try {
+            const response = await fetch(`/api/workspace/${toolId}/tools/${toolId}/${method}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(params)
+            })
+
+            if (!response.ok) {
+                const data = await response.json()
+                throw new Error(data.error || 'Failed to test dynamic context')
+            }
+
+            return await response.json()
+        } catch (error) {
+            console.error('Failed to test dynamic context:', error)
+            throw error
+        }
     }
+
 }))
