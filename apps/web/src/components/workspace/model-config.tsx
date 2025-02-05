@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useWorkspaceStore } from '@/lib/stores/workspace'
-import { Loader2, Settings } from 'lucide-react'
+import { Loader2, Settings, ChevronDown, ChevronRight } from 'lucide-react'
 import type { ModelsConfig } from '@mandrake/types'
 
 const PROVIDERS = [
@@ -95,8 +95,9 @@ function ModelEditForm({ config, onSubmit, loading }: {
     )
 }
 
-export function ModelConfig() {
+export function ModelConfig({ className }: { className?: string }) {
     const [editOpen, setEditOpen] = useState(false)
+    const [isExpanded, setIsExpanded] = useState(false)
     const { currentWorkspace, updateModels, loading } = useWorkspaceStore()
     const modelConfig = currentWorkspace?.config?.models
 
@@ -113,44 +114,54 @@ export function ModelConfig() {
     const currentProvider = PROVIDERS.find(p => p.id === modelConfig?.provider)
 
     return (
-        <Card>
-            <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                    <span>Model Configuration</span>
-                    <Dialog open={editOpen} onOpenChange={setEditOpen}>
-                        <DialogTrigger asChild>
-                            <Button variant="outline" size="sm">
-                                <Settings className="h-4 w-4 mr-2" />
-                                Edit
-                            </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                            <DialogHeader>
-                                <DialogTitle>Edit Model Configuration</DialogTitle>
-                            </DialogHeader>
-                            {modelConfig && (
-                                <ModelEditForm
-                                    config={modelConfig}
-                                    onSubmit={handleSubmit}
-                                    loading={loading}
-                                />
-                            )}
-                        </DialogContent>
-                    </Dialog>
-                </CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="flex items-center space-x-2">
-                    <Badge variant="outline">
-                        {currentProvider?.name || 'No provider set'}
-                    </Badge>
-                    {modelConfig?.apiKey && (
-                        <Badge variant="secondary">
-                            Configured
-                        </Badge>
-                    )}
+        <Card className={className}>
+            <CardHeader
+                className="flex flex-row items-center justify-between cursor-pointer"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                <div className="flex items-center gap-2">
+                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    <CardTitle>Model Configuration</CardTitle>
                 </div>
-            </CardContent>
+                <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                    <DialogTrigger asChild>
+                        <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <Settings className="h-4 w-4 mr-2" />
+                            Edit
+                        </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                        <DialogHeader>
+                            <DialogTitle>Edit Model Configuration</DialogTitle>
+                        </DialogHeader>
+                        {modelConfig && (
+                            <ModelEditForm
+                                config={modelConfig}
+                                onSubmit={handleSubmit}
+                                loading={loading}
+                            />
+                        )}
+                    </DialogContent>
+                </Dialog>
+            </CardHeader>
+            {isExpanded && (
+                <CardContent>
+                    <div className="flex items-center space-x-2">
+                        <Badge variant="outline">
+                            {currentProvider?.name || 'No provider set'}
+                        </Badge>
+                        {modelConfig?.apiKey && (
+                            <Badge variant="secondary">
+                                Configured
+                            </Badge>
+                        )}
+                    </div>
+                </CardContent>
+            )}
         </Card>
     )
 }

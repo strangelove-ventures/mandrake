@@ -1,11 +1,9 @@
-'use client'
-
 import { useState, useEffect } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useWorkspaceStore } from '@/lib/stores/workspace'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ChevronDown, ChevronRight } from 'lucide-react'
 
 interface Props {
     className?: string
@@ -14,6 +12,7 @@ interface Props {
 export function SystemPromptEditor({ className }: Props) {
     const [prompt, setPrompt] = useState('')
     const [isSaving, setIsSaving] = useState(false)
+    const [isExpanded, setIsExpanded] = useState(false)
     const { currentWorkspace, updateSystemPrompt } = useWorkspaceStore()
 
     // Sync with workspace config
@@ -24,7 +23,8 @@ export function SystemPromptEditor({ className }: Props) {
     }, [currentWorkspace?.config?.systemPrompt])
 
     // Handle save
-    const handleSave = async () => {
+    const handleSave = async (e: React.MouseEvent) => {
+        e.stopPropagation()
         if (!currentWorkspace?.id) return
 
         setIsSaving(true)
@@ -42,28 +42,38 @@ export function SystemPromptEditor({ className }: Props) {
 
     return (
         <Card className={className}>
-            <CardHeader>
-                <CardTitle>System Prompt</CardTitle>
-            </CardHeader>
-            <CardContent>
-                <div className="space-y-4">
-                    <Textarea
-                        value={prompt}
-                        onChange={(e) => setPrompt(e.target.value)}
-                        placeholder="Enter system prompt..."
-                        rows={10}
-                    />
-                    <Button
-                        onClick={handleSave}
-                        disabled={isSaving}
-                    >
-                        {isSaving && (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        )}
-                        Save Changes
-                    </Button>
+            <CardHeader
+                className="flex flex-row items-center justify-between cursor-pointer"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                <div className="flex items-center gap-2">
+                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    <CardTitle>System Prompt</CardTitle>
                 </div>
-            </CardContent>
+                <Button
+                    size="sm"
+                    onClick={handleSave}
+                    disabled={isSaving}
+                >
+                    {isSaving && (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    )}
+                    Save Changes
+                </Button>
+            </CardHeader>
+            {isExpanded && (
+                <CardContent>
+                    <div className="space-y-4">
+                        <Textarea
+                            value={prompt}
+                            onChange={(e) => setPrompt(e.target.value)}
+                            placeholder="Enter system prompt..."
+                            className="font-mono whitespace-pre overflow-x-auto"
+                            rows={10}
+                        />
+                    </div>
+                </CardContent>
+            )}
         </Card>
     )
 }

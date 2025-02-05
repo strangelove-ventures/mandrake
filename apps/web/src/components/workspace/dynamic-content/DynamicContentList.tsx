@@ -10,7 +10,7 @@ import { DynamicContextCard } from './DynamicContextCard'
 
 export function DynamicContentList() {
     const [dialogOpen, setDialogOpen] = useState(false)
-    const [isExpanded, setIsExpanded] = useState(true)
+    const [isExpanded, setIsExpanded] = useState(false)
     const { currentWorkspace } = useWorkspaceStore()
 
     const dynamicContexts = currentWorkspace?.config?.context?.dynamicContexts || []

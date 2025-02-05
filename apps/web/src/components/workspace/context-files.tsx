@@ -1,22 +1,18 @@
-// apps/web/src/components/workspace/context-files.tsx
-'use client'
-
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { ScrollArea } from '@/components/ui/scroll-area'
-import { FileText, Upload, File, FileJson, FileImage } from 'lucide-react'
+import { FileText, Upload, File, FileJson, FileImage, ChevronDown, ChevronRight, Plus } from 'lucide-react'
 import { useWorkspaceStore } from '@/lib/stores/workspace'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import ReactMarkdown from 'react-markdown'
-import { useState } from 'react'
 import type { ContextFile } from '@mandrake/types'
 
-// File viewer component
+// FileViewer component remains the same...
 function FileViewer({ content, fileType }: { content: string, fileType: string }) {
-    // Handle text files with proper escaping
-    const displayContent = content.trim() // Remove any trailing whitespace
+    const displayContent = content.trim()
 
     if (fileType === 'md' || fileType === 'markdown') {
         return (
@@ -64,13 +60,13 @@ function FileViewer({ content, fileType }: { content: string, fileType: string }
 
     // Plain text fallback
     return (
-        <pre className="p-4 text-sm bg-muted rounded-md whitespace-pre font-mono">
+        <pre className="p-4 text-sm bg-muted rounded-md whitespace-pre-wrap font-mono">
             {displayContent}
         </pre>
     )
 }
 
-// Helper to format file size
+// Helpers remain the same...
 function formatSize(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`
     const kb = bytes / 1024
@@ -79,7 +75,6 @@ function formatSize(bytes: number): string {
     return `${mb.toFixed(1)} MB`
 }
 
-// Helper to get appropriate icon
 function FileIcon({ type }: { type: string }) {
     switch (type.toLowerCase()) {
         case 'md':
@@ -97,10 +92,80 @@ function FileIcon({ type }: { type: string }) {
     }
 }
 
+// New AddFileDialog component
+function AddFileDialog() {
+    const { currentWorkspace } = useWorkspaceStore()
+    const [isOpen, setIsOpen] = useState(false)
+    const [fileName, setFileName] = useState('')
+    const [content, setContent] = useState('')
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        if (!currentWorkspace?.id || !fileName) return
+
+        try {
+            const response = await fetch(`/api/workspace/${currentWorkspace.id}/context/files/${encodeURIComponent(fileName)}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ content }),
+            })
+
+            if (response.ok) {
+                setIsOpen(false)
+                setFileName('')
+                setContent('')
+            }
+        } catch (error) {
+            console.error('Failed to create file:', error)
+        }
+    }
+
+    return (
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
+            <DialogTrigger asChild>
+                <Button size="sm" variant="outline">
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add File
+                </Button>
+            </DialogTrigger>
+            <DialogContent>
+                <DialogHeader>
+                    <DialogTitle>Create New File</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleSubmit} className="space-y-4">
+                    <div>
+                        <Input
+                            placeholder="File name (with extension)"
+                            value={fileName}
+                            onChange={(e) => setFileName(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div>
+                        <textarea
+                            className="w-full h-64 p-2 border rounded-md overflow-x-auto whitespace-pre font-mono"
+                            placeholder="File content"
+                            value={content}
+                            onChange={(e) => setContent(e.target.value)}
+                            required
+                        />
+                    </div>
+                    <div className="flex justify-end">
+                        <Button type="submit">Create File</Button>
+                    </div>
+                </form>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
 export function ContextFiles({ className }: { className?: string }) {
     const { currentWorkspace, currentFiles, startWatchingFiles, stopWatchingFiles } = useWorkspaceStore()
     const [selectedFile, setSelectedFile] = useState<ContextFile | null>(null)
     const [fileContent, setFileContent] = useState<string>('')
+    const [isExpanded, setIsExpanded] = useState(false)
 
     useEffect(() => {
         if (currentWorkspace?.id) {
@@ -140,9 +205,16 @@ export function ContextFiles({ className }: { className?: string }) {
 
     return (
         <Card className={className}>
-            <CardHeader className="flex flex-row items-center justify-between">
-                <CardTitle>Context Files</CardTitle>
-                <div>
+            <CardHeader
+                className="flex flex-row items-center justify-between cursor-pointer"
+                onClick={() => setIsExpanded(!isExpanded)}
+            >
+                <div className="flex items-center gap-2">
+                    {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                    <CardTitle>Context Files</CardTitle>
+                </div>
+                <div className="flex gap-2" onClick={e => e.stopPropagation()}>
+                    <AddFileDialog />
                     <input
                         type="file"
                         id="file-upload"
@@ -150,31 +222,33 @@ export function ContextFiles({ className }: { className?: string }) {
                         multiple
                         onChange={handleFileUpload}
                     />
-                    <Button size="sm" onClick={() => document.getElementById('file-upload')?.click()}>
+                    <Button size="sm" variant="outline" onClick={() => document.getElementById('file-upload')?.click()}>
                         <Upload className="w-4 h-4 mr-2" />
                         Upload Files
                     </Button>
                 </div>
             </CardHeader>
-            <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {currentFiles.map(file => (
-                        <Card
-                            key={file.name}
-                            className="p-4 hover:shadow-md cursor-pointer transition-shadow"
-                            onClick={() => handleFileClick(file)}
-                        >
-                            <FileIcon type={file.type} />
-                            <p className="text-sm font-medium mt-2 truncate" title={file.name}>
-                                {file.name}
-                            </p>
-                            <p className="text-xs text-muted-foreground">
-                                {formatSize(file.size)}
-                            </p>
-                        </Card>
-                    ))}
-                </div>
-            </CardContent>
+            {isExpanded && (
+                <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {currentFiles.map(file => (
+                            <Card
+                                key={file.name}
+                                className="p-4 hover:shadow-md cursor-pointer transition-shadow"
+                                onClick={() => handleFileClick(file)}
+                            >
+                                <FileIcon type={file.type} />
+                                <p className="text-sm font-medium mt-2 truncate" title={file.name}>
+                                    {file.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                    {formatSize(file.size)}
+                                </p>
+                            </Card>
+                        ))}
+                    </div>
+                </CardContent>
+            )}
 
             {/* File Preview Dialog */}
             <Dialog open={!!selectedFile} onOpenChange={() => setSelectedFile(null)}>
