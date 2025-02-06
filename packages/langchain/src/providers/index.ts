@@ -1,18 +1,15 @@
-import { LLMProvider, LLMProviderConfig } from "./base";
-import { AnthropicProvider } from "./anthropic";
-import { DeepseekProvider } from "./deepseek";
+export * from './base';
+export * from './anthropic';
 
-export type ProviderType = "anthropic" | "deepseek";
+import { ProviderConfig } from './base';
+import { AnthropicProvider } from './anthropic';
 
-export function createProvider(type: ProviderType, config: LLMProviderConfig): LLMProvider {
-    switch (type) {
-        case "anthropic":
-            return new AnthropicProvider(config);
-        case "deepseek":
-            return new DeepseekProvider(config);
-        default:
-            throw new Error(`Unknown provider type: ${type}`);
-    }
+// Factory function
+export function createProvider(config: ProviderConfig & { provider: string }) {
+  switch (config.provider) {
+    case 'anthropic':
+      return new AnthropicProvider(config);
+    default:
+      throw new Error(`Unsupported provider: ${config.provider}`);
+  }
 }
-
-export { LLMProvider, LLMProviderConfig } from "./base";

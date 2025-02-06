@@ -11,14 +11,16 @@
     "test": "jest",
     "lint": "eslint src/**/*.ts"
   },
-  "dependencies": {
-    "@mandrake/types": "^0.0.1",
-    "@langchain/core": "^0.1.5",
-    "@langchain/anthropic": "^0.1.1",
-    "@langchain/openai": "^0.0.14"
-  },
   "devDependencies": {
     "@types/jest": "^29.5.0",
     "@types/node": "^20.0.0"
+  },
+  "dependencies": {
+    "@langchain/anthropic": "^0.3.13",
+    "@langchain/core": "^0.3.38",
+    "@langchain/openai": "^0.3.17",
+    "@mandrake/mcp": "^0.0.1",
+    "@mandrake/types": "^0.0.1",
+    "dotenv": "^16.4.7"
   }
 }

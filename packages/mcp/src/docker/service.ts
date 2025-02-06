@@ -1,4 +1,7 @@
 import { MCPService, ServerConfig, MCPServer, Logger } from '@mandrake/types';
+import { RunnableConfig } from "@langchain/core/runnables";
+import { StructuredToolInterface } from "@langchain/core/tools";
+import { z } from "zod";
 import Docker from 'dockerode';
 import { DockerMCPServer } from './server';
 import { prepareContainerConfig } from './docker-utils';
@@ -57,6 +60,18 @@ export class DockerMCPService implements MCPService {
 
     return statuses;
   }
+  async getToolsForModel(): Promise<Record<string, unknown>[]> {
+    const tools = await this.getTools();
+    return tools.map(tool => ({
+      type: "function",
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.inputSchema
+      }
+    }));
+  }
+
 
   async getTools(): Promise<Tool[]> {
     // Use Array.from to convert Map values to array

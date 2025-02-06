@@ -1,24 +1,33 @@
-import { ChatAnthropic } from "@langchain/anthropic";
-import { BaseMessage } from "@langchain/core/messages";
-import { LLMProvider, LLMProviderConfig } from "./base";
+import {
+  BaseMessage
+} from "@langchain/core/messages";
+import { CallbackManagerForLLMRun } from "@langchain/core/callbacks/manager";
+import { ChatAnthropic, ChatAnthropicCallOptions } from "@langchain/anthropic";
+import { ChatResult } from "@langchain/core/outputs";
+import { BaseProvider, ProviderConfig } from "./base";
 
-export class AnthropicProvider implements LLMProvider {
-    private llm: ChatAnthropic;
+export class AnthropicProvider extends BaseProvider {
+  private client: ChatAnthropic;
+  public _llmType(): string {
+    return "anthropic";
+  }
 
-    constructor(config: LLMProviderConfig) {
-        this.llm = new ChatAnthropic({
-            modelName: "claude-3-5-sonnet-20241022",
-            streaming: true,
-            maxTokens: config.maxTokens || 4096,
-            temperature: config.temperature || 0.7,
-            anthropicApiKey: config.apiKey
-        });
-    }
+  constructor(config: ProviderConfig) {
+    super(config);
+    this.client = new ChatAnthropic({
+      modelName: config.model,
+      temperature: config.temperature,
+      maxTokens: config.maxTokens,
+      streaming: config.streaming,
+      anthropicApiKey: config.apiKey,
+    });
+  }
 
-    async *stream(messages: BaseMessage[]) {
-        const stream = await this.llm.stream(messages);
-        for await (const chunk of stream) {
-            yield chunk;
-        }
-    }
+  async _generate(
+    messages: BaseMessage[],
+    options: this["ParsedCallOptions"],
+    runManager?: CallbackManagerForLLMRun
+  ): Promise<ChatResult> {
+    return this.client._generate(messages, options as any, runManager);
+  }
 }

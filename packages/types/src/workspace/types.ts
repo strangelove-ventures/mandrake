@@ -1,5 +1,4 @@
 import type { ServerConfig } from '../'
-import type { LLMProviderConfig } from '@mandrake/langchain'
 
 export interface Workspace {
   id: string

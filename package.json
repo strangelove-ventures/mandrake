@@ -54,7 +54,8 @@
     "inflight": "latest"
   },
   "dependencies": {
-    "@langchain/core": "^0.3.32",
+    "@langchain/anthropic": "^0.3.13",
+    "@langchain/core": "^0.3.38",
     "@langchain/openai": "^0.3.17",
     "date-fns": "^4.1.0",
     "react-markdown": "^9.0.3",
