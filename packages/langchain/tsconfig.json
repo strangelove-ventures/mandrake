@@ -9,6 +9,7 @@
   "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "../types" },
-    { "path": "../mcp" }
+    { "path": "../mcp" },
+    { "path": "../storage" }
   ]
 }

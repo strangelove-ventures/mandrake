@@ -1,6 +1,6 @@
 import { setupTestServer } from './test-utils';
 import { serverConfigs } from './configurations';
-import { DockerMCPService } from '../service';
+import { DockerMCPService } from '../docker/service';
 
 const serverName = process.env.TEST_SERVER;
 if (!serverName) {

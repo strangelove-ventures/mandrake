@@ -20,6 +20,7 @@
     "@langchain/core": "^0.3.38",
     "@langchain/openai": "^0.3.17",
     "@mandrake/mcp": "^0.0.1",
+    "@mandrake/storage": "^0.0.1",
     "@mandrake/types": "^0.0.1",
     "dotenv": "^16.4.7"
   }

@@ -1,6 +1,5 @@
 import pkg from 'pg';
 const { Client } = pkg;
-import { prisma } from './index'
 import { PrismaClient } from '@prisma/client'
 import { DbConfig, devConfig } from './db'
 
@@ -107,6 +106,3 @@ export class SessionNotifier {
         }
     }
 }
-
-// Export default instance
-export const sessionNotifier = new SessionNotifier(devConfig, prisma)

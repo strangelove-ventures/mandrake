@@ -1,76 +1,134 @@
-import { test, expect, jest, describe, beforeAll, afterAll } from '@jest/globals';
 import { PrismaClient } from '@prisma/client';
 import { DockerMCPService } from '@mandrake/mcp';
+import path from 'path';
 import { SessionCoordinator } from '../session/coordinator';
 import { AnthropicProvider } from '../providers/anthropic';
+import { DbConfig, DatabaseManager } from '@mandrake/storage';
+
+// Define test setup locally
+async function setupTestDatabase() {
+  const config = new DbConfig(
+    'mandrake-postgres-test',
+    'postgres:14-alpine',
+    'postgres',
+    'password',
+    'mandrake_test',
+    '5433',
+    path.join(process.cwd(), 'testdb')
+  );
+
+  const dbManager = new DatabaseManager(config);
+  await dbManager.startContainer();
+
+  const testPrisma = new PrismaClient({
+    datasources: {
+      db: {
+        url: `postgresql://${config.user}:${config.password}@localhost:${config.port}/${config.database}`
+      }
+    }
+  });
+
+  return {
+    prisma: testPrisma,
+    cleanup: async () => {
+      await dbManager.cleanDb();
+    }
+  };
+}
 
 describe('Session with Tools', () => {
-  let prisma: PrismaClient;
+  let testPrisma: PrismaClient;
   let mcpService: DockerMCPService;
   let coordinator: SessionCoordinator;
+  let cleanup: () => Promise<void>;
+  let workspaceId: string;
 
   beforeAll(async () => {
-    prisma = new PrismaClient();
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY is required for tests');
+    }
 
-    // Initialize MCP Service with a test tool
+    // Set up test database
+    const db = await setupTestDatabase();
+    if (!db.prisma) {
+      throw new Error('Failed to set up test database');
+    }
+    testPrisma = db.prisma;
+    cleanup = db.cleanup;
+
+    // Create test workspace
+    const workspace = await testPrisma.workspace.create({
+      data: {
+        name: 'Test Workspace',
+        description: 'Workspace for testing'
+      }
+    });
+    workspaceId = workspace.id;
+
+    // Initialize MCP Service with fetch tool
     mcpService = new DockerMCPService();
     await mcpService.initialize([{
       id: 'fetch',
       name: `fetch-${Date.now()}`,
-      image: 'ghcr.io/strangelove-ventures/mcp/fetch:latest',  // TODO: use production image
+      image: 'ghcr.io/strangelove-ventures/mcp/fetch:latest',
       command: [],
       execCommand: ['mcp-server-fetch']
-      // No volumes needed for fetch server
     }]);
 
-    // Create session coordinator
+    // Create session coordinator with real Anthropic provider
     const provider = new AnthropicProvider({
       model: 'claude-3-opus-20240229',
-      apiKey: process.env.ANTHROPIC_API_KEY!,
+      apiKey: process.env.ANTHROPIC_API_KEY,
       streaming: true
     });
 
-    coordinator = new SessionCoordinator(prisma, {
-      workspaceId: 'test-workspace',
-      systemPrompt: 'You are a helpful assistant that uses tools when appropriate.',
+    coordinator = new SessionCoordinator(testPrisma, {
+      workspaceId,
+      systemPrompt: 'You are a helpful assistant. When asked about websites or URLs, use the fetch tool to get the content.',
       provider
     });
-  });
+  }, 30000);
 
   afterAll(async () => {
     await mcpService.cleanup();
-    await prisma.$disconnect();
-  });
+    await testPrisma.$disconnect();
+    await cleanup();
+  }, 30000);
 
   test('conversation with tool usage', async () => {
-    // Create a new session
     const session = await coordinator.createSession('Tool Test Session');
 
-    // First message to initialize conversation
     const round1 = await coordinator.sendMessage(
       session.id,
-      "Can you help me read the test data?",
+      "What's on the homepage of example.com?",
       mcpService
     );
 
-    // Verify turns were created that include tool usage
-    const response1 = await prisma.response.findUnique({
+    const response1 = await testPrisma.response.findUnique({
       where: { id: round1.responseId },
-      include: { turns: true }
+      include: {
+        turns: {
+          orderBy: { index: 'asc' }
+        }
+      }
     });
 
     expect(response1?.turns).toBeDefined();
+    expect(response1?.turns.length).toBeGreaterThan(0);
 
-    // There should be at least one tool call
+    // Verify tool interaction occurred
     const toolCall = response1?.turns.find(t => t.toolCall);
     expect(toolCall).toBeDefined();
+    if (toolCall && toolCall.toolCall) {
+      expect((toolCall.toolCall as any).server).toBe('fetch');
+    }
 
-    // And subsequently a tool result
+    // Should have a tool result
     const toolResult = response1?.turns.find(t => t.toolResult);
     expect(toolResult).toBeDefined();
 
-    // The final turn should be content using the tool result
-    const lastTurn = response1?.turns[response1.turns.length - 1];
-    expect(lastTurn?.content).toBeDefined();
-  });
+    // Should have content that uses the fetched data
+    const contentTurns = response1?.turns.filter(t => t.content);
+    expect(contentTurns?.length).toBeGreaterThan(0);
+  }, 60000); // Increased timeout for real API call
 });

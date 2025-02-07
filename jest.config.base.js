@@ -3,6 +3,7 @@ export default {
   preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
+  setupFiles: ['dotenv/config'],
   moduleNameMapper: {
     '^@mandrake/(.*)$': '<rootDir>/../$1/src',
     '^(\\.{1,2}/.*)\\.js$': '$1'

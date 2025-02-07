@@ -1,4 +1,3 @@
-// packages/storage/src/index.ts
 import { PrismaClient } from '@prisma/client'
 
 // Create Prisma client with Pulse extension
@@ -24,7 +23,5 @@ export type {
 
 // Export all operations
 export * from './operations';
-export * from './mapping';
 export * from './init';
-export * from './notifications';
 export * from './db';
