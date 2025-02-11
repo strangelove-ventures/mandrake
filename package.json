@@ -1,0 +1,31 @@
+{
+  "name": "mandrake",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "bun run build:packages && bun run build:web",
+    "build:packages": "bun run build --cwd packages/*",
+    "build:web": "cd apps/web && bun run build",
+    "test": "bun run test:packages && bun run test:web",
+    "test:packages": "bun run test --cwd packages/*",
+    "test:web": "cd apps/web && bun run test",
+    "test:utils": "cd packages/utils && bun run test",
+    "test:workspace": "cd packages/workspace && bun run test",
+    "test:mcp": "cd packages/mcp && bun run test",
+    "test:provider": "cd packages/provider && bun run test",
+    "test:session": "cd packages/session && bun run test",
+    "dev": "cd apps/web && bun run dev",
+    "lint": "bun run lint:packages && bun run lint:web",
+    "lint:packages": "bun run lint --cwd packages/*",
+    "lint:web": "cd apps/web && bun run lint"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}
