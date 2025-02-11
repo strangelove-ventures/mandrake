@@ -29,6 +29,62 @@
         "typescript": "^5",
       },
     },
+    "packages/mcp": {
+      "name": "@mandrake/mcp",
+      "version": "0.0.1",
+      "dependencies": {
+        "@mandrake/utils": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "latest",
+        "typescript": "^5.0.0",
+      },
+    },
+    "packages/provider": {
+      "name": "@mandrake/provider",
+      "version": "0.0.1",
+      "dependencies": {
+        "@mandrake/mcp": "workspace:*",
+        "@mandrake/utils": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "latest",
+        "typescript": "^5.0.0",
+      },
+    },
+    "packages/session": {
+      "name": "@mandrake/session",
+      "version": "0.0.1",
+      "dependencies": {
+        "@mandrake/mcp": "workspace:*",
+        "@mandrake/provider": "workspace:*",
+        "@mandrake/utils": "workspace:*",
+        "@mandrake/workspace": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "latest",
+        "typescript": "^5.0.0",
+      },
+    },
+    "packages/utils": {
+      "name": "@mandrake/utils",
+      "version": "0.0.1",
+      "devDependencies": {
+        "@types/node": "latest",
+        "typescript": "^5.0.0",
+      },
+    },
+    "packages/workspace": {
+      "name": "@mandrake/workspace",
+      "version": "0.0.1",
+      "dependencies": {
+        "@mandrake/utils": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/node": "latest",
+        "typescript": "^5.0.0",
+      },
+    },
   },
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
@@ -58,6 +114,16 @@
     "@jridgewell/sourcemap-codec": ["@jridgewell/sourcemap-codec@1.5.0", "", {}, "sha512-gv3ZRaISU3fjPAgNsriBRqGWQL6quFx04YMPW/zD8XMLsU32mhCCbfbO6KZFLjvYpCZ8zyDEgqsgf+PwPaM7GQ=="],
 
     "@jridgewell/trace-mapping": ["@jridgewell/trace-mapping@0.3.25", "", { "dependencies": { "@jridgewell/resolve-uri": "^3.1.0", "@jridgewell/sourcemap-codec": "^1.4.14" } }, "sha512-vNk6aEwybGtawWmy/PzwnGDOjCkLWSD2wqvjGGAgOAwCGWySYXfYoxt00IJkTF+8Lb57DwOb3Aa0o9CApepiYQ=="],
+
+    "@mandrake/mcp": ["@mandrake/mcp@workspace:packages/mcp"],
+
+    "@mandrake/provider": ["@mandrake/provider@workspace:packages/provider"],
+
+    "@mandrake/session": ["@mandrake/session@workspace:packages/session"],
+
+    "@mandrake/utils": ["@mandrake/utils@workspace:packages/utils"],
+
+    "@mandrake/workspace": ["@mandrake/workspace@workspace:packages/workspace"],
 
     "@next/env": ["@next/env@14.1.0", "", {}, "sha512-Py8zIo+02ht82brwwhTg36iogzFqGLPXlRGKQw5s+qP/kMNc4MAyDeEwBKDijk6zTIbegEgu8Qy7C1LboslQAw=="],
 
