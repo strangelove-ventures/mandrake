@@ -178,8 +178,8 @@ packages/[package-name]/
 
 3. Web Application Setup
    - [x] Initialize Next.js application
-   - [ ] Configure Vitest
-   - [ ] Set up initial pages structure
+   - [x] Configure Vitest
+   - [x] Set up initial pages structure
 
 4. Development Scripts
    - [ ] Implement build scripts
