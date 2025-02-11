@@ -39,6 +39,12 @@ export function prepareContainerConfig(config: ServerConfig): Docker.ContainerCr
             AutoRemove: false,
             Binds: config.volumes?.map(v => `${v.source}:${v.target}:${v.mode || 'rw'}`),
             ...config.hostConfig,
+        },
+        Healthcheck: {
+            Test: ["CMD", "ps", "aux"],
+            Interval: 1000000000, // 1s in nanoseconds
+            Timeout: 1000000000,
+            Retries: 3
         }
     };
 }

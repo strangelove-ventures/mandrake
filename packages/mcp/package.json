@@ -6,16 +6,13 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsc --build",
-    "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo",
-    "test": "NODE_OPTIONS='--no-warnings --experimental-vm-modules' jest __tests__/multi-server.test.ts",
-    "test:server": "jest packages/mcp/src/docker/__tests__/single-server.test.ts",
-    "build:test-servers": "node scripts/build-test-servers.js",
-    "lint": "eslint src/**/*.ts"
+    "build": "bun build ./src/index.ts --outdir ./dist --target node",
+    "test": "bun test src/__tests__/multi-server.test.ts",
+    "test:single": "TEST_SERVER=$SERVER bun test src/__tests__/single-server.test.ts",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo"
   },
   "dependencies": {
-    "@langchain/core": "^0.3.38",
-    "@mandrake/types": "^0.0.1",
+    "@mandrake/types": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.1.1",
     "dockerode": "^4.0.3",
     "eventsource-parser": "^1.1.1",

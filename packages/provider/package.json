@@ -1,5 +1,5 @@
 {
-  "name": "@mandrake/langchain",
+  "name": "@mandrake/provider",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -8,20 +8,16 @@
   "scripts": {
     "build": "tsc --build",
     "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo",
-    "test": "jest",
+    "test": "NODE_OPTIONS='--no-warnings --experimental-vm-modules' jest",
     "lint": "eslint src/**/*.ts"
   },
-  "devDependencies": {
-    "@types/jest": "^29.5.0",
-    "@types/node": "^20.0.0"
-  },
   "dependencies": {
-    "@langchain/anthropic": "^0.3.13",
-    "@langchain/core": "^0.3.38",
-    "@langchain/openai": "^0.3.17",
+    "@mandrake/types": "^0.0.1",
+    "cline": "github:cline/cline",
     "@mandrake/mcp": "^0.0.1",
     "@mandrake/storage": "^0.0.1",
-    "@mandrake/types": "^0.0.1",
-    "dotenv": "^16.4.7"
+    "@anthropic-ai/sdk": "^0.4.3",
+    "eventsource-parser": "^1.1.1",
+    "zod": "^3.22.4"
   }
 }

@@ -1,4 +1,4 @@
-// packages/mcp/src/docker/__tests__/multi-server.test.ts
+import { describe, expect, beforeAll, afterAll, it, afterEach } from "bun:test";
 import { DockerMCPService } from '../docker';
 import { serverConfigs } from './configurations';
 import { testLogger } from './test-utils';
@@ -43,7 +43,7 @@ describe('Multi Server Tests', () => {
             testLogger.info(`Validating ${config.id} server`);
             await config.hooks.validate?.(service);
         }
-    }, 60000);
+    }, { timeout: 60000 });
 
     it('should handle server restarts', async () => {
         // First initialization
@@ -69,7 +69,7 @@ describe('Multi Server Tests', () => {
         for (const config of Object.values(serverConfigs)) {
             await config.hooks.validate?.(service);
         }
-    }, 60000);
+    }, { timeout: 60000 });
 
     it('should handle partial failures', async () => {
         service = new DockerMCPService(testLogger);
@@ -98,7 +98,7 @@ describe('Multi Server Tests', () => {
         for (const config of Object.values(serverConfigs)) {
             await config.hooks.validate?.(service);
         }
-    }, 60000);
+    }, { timeout: 60000 });
 
     it('should properly cleanup servers', async () => {
         // First setup and validate servers
@@ -136,5 +136,5 @@ describe('Multi Server Tests', () => {
             filters: { label: ['mandrake.mcp.managed=true'] }
         });
         expect(containers.length).toBe(0);
-    });
+    }, { timeout: 60000 });
 });

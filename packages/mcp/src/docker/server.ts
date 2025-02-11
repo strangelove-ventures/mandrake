@@ -178,7 +178,7 @@ export class DockerMCPServer implements MCPServer {
         });
 
         if (!info.State.Running) {
-          // Add this to see why container exited
+          // Log container output if it's not running
           const logs = await this.container.logs({
             stdout: true,
             stderr: true,
@@ -187,36 +187,25 @@ export class DockerMCPServer implements MCPServer {
           this.serverLogger.debug('Container logs', {
             id: this.config.id,
             logs: logs.toString()
-          });        }
-
-        // Check both running state and health check if available
-        if (info.State.Running &&
-          (!info.State.Health || info.State.Health.Status === 'healthy')) {
-
-          // Try a test exec to verify container is ready
-          const exec = await this.container.exec({
-            AttachStderr: true,
-            AttachStdout: true,
-            Cmd: ['true'] // Simple command just to test exec
           });
-
-          // Start exec just to verify it works
-          const stream = await exec.start({
-            hijack: true,
-          });
-
-          // Clean up test exec
-          stream.destroy();
-
-          return;
+          throw new Error('Container not running');
         }
+
+        // If container has health checks, wait for healthy status
+        if (info.State.Health && info.State.Health.Status !== 'healthy') {
+          throw new Error(`Container health check: ${info.State.Health.Status}`);
+        }
+
+        // Container is running and healthy (or has no health checks)
+        return;
+
       } catch (err: any) {
         this.serverLogger.error('Container ready check failed', {
           id: this.config.id,
           error: err
         });
 
-        // Add logs here to see what's happening when we get errors
+        // Add logs here to debug what's happening when we get errors
         try {
           const logs = await this.container.logs({
             stdout: true,

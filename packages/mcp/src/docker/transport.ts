@@ -9,23 +9,17 @@ import {
   JSONRPC_VERSION,
 } from '@modelcontextprotocol/sdk/types.js';
 
-/**
- * Transport implementation that connects to a Docker container using
- * container.attach and implements the MCP protocol over the attached
- * stream.
- */
 export class DockerTransport implements Transport {
-  public stream?: NodeJS.ReadWriteStream;
-  private _closed = false;
-  private _closing = false;
+  private decoder = new TextDecoder();
+  private encoder = new TextEncoder();
+  private nodeStream?: NodeJS.ReadWriteStream;
   private messageBuffer = '';
   private transportLogger: Logger;
-  public boundHandleData: (chunk: Buffer) => void;
-  private messageHandlers: Set<(chunk: Buffer) => void> = new Set();
+  private _closed = false;
 
-  onclose?: () => void | undefined;
-  onerror?: (error: Error) => void | undefined;
-  onmessage?: (message: JSONRPCMessage) => void | undefined;
+  onclose?: () => void;
+  onerror?: (error: Error) => void;
+  onmessage?: (message: JSONRPCMessage) => void;
 
   constructor(
     private container: Docker.Container,
@@ -33,232 +27,162 @@ export class DockerTransport implements Transport {
     private execCommand?: string[]
   ) {
     this.transportLogger = serverLogger.child({ service: 'transport' });
-    this.boundHandleData = this.handleData.bind(this);
-    this.messageHandlers.add(this.boundHandleData);
-  }
-
-  private handleData(chunk: Buffer) {
-    const state = {
-      chunkSize: chunk.length,
-      firstByte: chunk[0],
-      isClosed: this._closed,
-      isClosing: this._closing,
-      hasOnMessage: !!this.onmessage,
-      hasStream: !!this.stream,
-      handlersCount: this.messageHandlers.size,
-      messageBufferSize: this.messageBuffer.length
-    };
-
-    this.transportLogger.debug('Handle data entry', state);
-
-    // Immediately check state
-    if (this._closed || this._closing) {
-      this.transportLogger.debug('HandleData called while closed/closing', state);
-      return;
-    }
-
-    // Skip non-stdout messages
-    if (chunk[0] !== 1) {
-      this.transportLogger.debug('Skipping non-stdout message', state);
-      return;
-    }
-
-    // Extract message content
-    const messageContent = chunk.slice(8).toString();
-    this.messageBuffer += messageContent;
-
-    const messages = this.messageBuffer.split('\n');
-    this.messageBuffer = messages.pop() || '';
-
-    for (const msg of messages) {
-      if (!msg) {
-        this.transportLogger.debug('Skipping empty message');
-        continue;
-      }
-
-      const msgState = {
-        ...state,
-        messageLength: msg.length,
-        messageStart: msg.slice(0, 50)
-      };
-      this.transportLogger.debug('Processing message', msgState);
-
-      try {
-        // Triple-check state before parsing
-        if (this._closed || this._closing) {
-          this.transportLogger.debug('State changed during message processing', msgState);
-          return;
-        }
-
-        const parsed = this.validateAndParseMessage(msg);
-
-        // Log parsed message details
-        this.transportLogger.debug('Message parsed', {
-          ...msgState,
-          messageType: 'method' in parsed ? 'request' : 'response',
-          hasId: 'id' in parsed
-        });
-
-        // Final state check before callback
-        if (this.onmessage && !this._closed && !this._closing) {
-          const finalState = {
-            ...msgState,
-            stillHasOnMessage: !!this.onmessage,
-            stillNotClosed: !this._closed,
-            stillNotClosing: !this._closing
-          };
-          this.transportLogger.debug('Pre-callback state check', finalState);
-
-          this.onmessage(parsed);
-
-          this.transportLogger.debug('Message callback completed successfully');
-        } else {
-          this.transportLogger.debug('Skipping callback due to state', {
-            hasCallback: !!this.onmessage,
-            isClosed: this._closed,
-            isClosing: this._closing
-          });
-        }
-      } catch (err) {
-        this.transportLogger.error('Message processing error', {
-          error: err,
-          messageContent: msg,
-          state: msgState
-        });
-
-        if (this.onerror && !this._closed && !this._closing) {
-          this.onerror(err as Error);
-        }
-      }
-    }
-  }
-
-  private validateAndParseMessage(data: string): JSONRPCMessage {
-    try {
-      const parsed = JSON.parse(data);
-      const message = JSONRPCMessageSchema.parse(parsed);
-
-      if ('jsonrpc' in message && message.jsonrpc !== JSONRPC_VERSION) {
-        throw new McpError(
-          ErrorCode.InvalidRequest,
-          `Unsupported JSON-RPC version: ${message.jsonrpc}`
-        );
-      }
-
-      return message;
-    } catch (err) {
-      if (err instanceof SyntaxError) {
-        throw new McpError(ErrorCode.ParseError, 'Failed to parse JSON message');
-      }
-      if (err instanceof McpError) {
-        throw err;
-      }
-      throw new McpError(ErrorCode.InvalidRequest, 'Invalid message format');
-    }
-  }
-
-  private setupStream(stream: NodeJS.ReadWriteStream): void {
-    this.transportLogger.debug('Setting up stream handlers');
-    this.stream = stream;
-
-    stream.on('data', this.boundHandleData);
-
-    stream.on('end', () => {
-      this.transportLogger.debug('Stream end event received');
-      if (!this._closed && !this._closing) {
-        this._closed = true;
-        if (this.onclose) {
-          this.transportLogger.debug('Calling onclose callback');
-          this.onclose();
-        }
-      } else {
-        this.transportLogger.debug('Stream end ignored due to state', {
-          isClosed: this._closed,
-          isClosing: this._closing
-        });
-      }
-    });
-
-    stream.on('error', (err) => {
-      this.transportLogger.debug('Stream error event', { error: err });
-      if (!this._closed && !this._closing) {
-        this.transportLogger.error('Stream error while active', { error: err });
-        if (this.onerror) {
-          this.onerror(new McpError(ErrorCode.InternalError, err.message));
-        }
-      } else {
-        this.transportLogger.debug('Stream error ignored due to state', {
-          isClosed: this._closed,
-          isClosing: this._closing,
-          error: err
-        });
-      }
-    });
-
-    this.transportLogger.debug('Stream setup complete', {
-      hasDataHandlers: stream.listenerCount('data'),
-      hasEndHandlers: stream.listenerCount('end'),
-      hasErrorHandlers: stream.listenerCount('error')
-    });
   }
 
   async start(): Promise<void> {
-    this.transportLogger.debug('Starting transport');
-    if (this._closed) {
-      throw new McpError(ErrorCode.ConnectionClosed, 'Transport closed');
-    }
+    this.transportLogger.info('DockerTransport.start() called');
 
     try {
-      this.transportLogger.debug('Creating exec session');
+      // Create exec instance
+      this.transportLogger.info('Creating exec instance', { cmd: this.execCommand });
       const exec = await this.container.exec({
-        AttachStderr: true,
-        AttachStdout: true,
         AttachStdin: true,
+        AttachStdout: true,
+        AttachStderr: true,
         Tty: false,
-        Cmd: this.execCommand,
+        Cmd: this.execCommand
       });
+      this.transportLogger.info('Exec instance created', { execId: exec.id });
 
-      this.transportLogger.debug('Starting exec session');
-      this.stream = await exec.start({
+      const opts = {
+        Detach: false,
+        Tty: false,
+        stdin: true,
         hijack: true,
-        stdin: true
+        stdout: true,
+        stderr: true
+      } as Docker.ExecStartOptions;
+
+      this.transportLogger.info('Starting exec session');
+
+      this.nodeStream = await Promise.race([
+        exec.start(opts),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('Exec start timeout after 5s')), 5000);
+        })
+      ]);
+
+      this.transportLogger.info('Exec session started successfully');
+
+      // Set up data handling
+      this.nodeStream.on('data', (chunk: Buffer) => {
+        this.transportLogger.debug('Stream data received', {
+          chunkLength: chunk.length,
+          firstByte: chunk[0],
+          preview: chunk.toString('hex').slice(0, 32)
+        });
+        this.handleData(chunk);
       });
 
-      this.transportLogger.debug('Setting up stream');
-      this.setupStream(this.stream);
-      this.transportLogger.debug('Transport start complete');
+      this.nodeStream.on('end', () => {
+        this.transportLogger.info('Stream end event received');
+        this.cleanup('Stream ended');
+      });
+
+      this.nodeStream.on('error', (err) => {
+        this.transportLogger.error('Stream error event', { error: err });
+        this.cleanup(err.message);
+      });
+
+      this.nodeStream.on('close', () => {
+        this.transportLogger.info('Stream close event received');
+      });
+
+      // Verify stream is readable/writable
+      this.transportLogger.info('Stream setup complete', {
+        readable: this.nodeStream.readable,
+        writable: this.nodeStream.writable,
+        dataListeners: this.nodeStream.listenerCount('data'),
+        errorListeners: this.nodeStream.listenerCount('error')
+      });
+
     } catch (err) {
-      this.transportLogger.error('Transport start failed', { error: err });
-      throw new McpError(
-        ErrorCode.InternalError,
-        `Failed to create exec: ${(err as Error).message}`
-      );
+      this.transportLogger.error('Transport start failed', {
+        error: err,
+        stack: (err as Error).stack
+      });
+      throw err;
+    }
+  }
+
+  private handleData(chunk: Buffer): void {
+    try {
+      // Skip non-stdout frames
+      if (chunk[0] !== 1) {
+        this.transportLogger.debug('Skipping non-stdout frame', {
+          frameType: chunk[0]
+        });
+        return;
+      }
+
+      // Process docker stream frame (skip 8-byte header)
+      const content = this.decoder.decode(chunk.slice(8));
+      this.messageBuffer += content;
+
+      const messages = this.messageBuffer.split('\n');
+      this.messageBuffer = messages.pop() || '';
+
+      for (const msg of messages) {
+        if (!msg.trim()) continue;
+
+        try {
+          this.transportLogger.debug('Processing message', {
+            messageLength: msg.length,
+            messagePreview: msg.slice(0, 100)
+          });
+
+          const parsed = JSONRPCMessageSchema.parse(JSON.parse(msg));
+
+          if ('jsonrpc' in parsed && parsed.jsonrpc !== JSONRPC_VERSION) {
+            throw new McpError(
+              ErrorCode.InvalidRequest,
+              `Invalid JSON-RPC version: ${parsed.jsonrpc}`
+            );
+          }
+
+          if (this.onmessage && !this._closed) {
+            this.transportLogger.debug('Dispatching message to handler');
+            this.onmessage(parsed);
+          }
+        } catch (err) {
+          this.transportLogger.error('Message processing failed', {
+            error: err,
+            message: msg
+          });
+          if (this.onerror && !this._closed) {
+            this.onerror(err as Error);
+          }
+        }
+      }
+    } catch (err) {
+      this.transportLogger.error('Data handling failed', {
+        error: err,
+        chunk: chunk.toString('hex')
+      });
+      if (this.onerror && !this._closed) {
+        this.onerror(err as Error);
+      }
     }
   }
 
   async send(message: JSONRPCMessage): Promise<void> {
-    const state = {
-      isClosed: this._closed,
-      isClosing: this._closing,
-      hasStream: !!this.stream,
-      messageType: 'method' in message ? 'request' : 'response'
-    };
-    this.transportLogger.debug('Send called', state);
-
-    if (this._closed || this._closing || !this.stream) {
-      this.transportLogger.debug('Send rejected due to state', state);
+    if (this._closed || !this.nodeStream) {
       throw new McpError(ErrorCode.ConnectionClosed, 'Transport closed');
     }
 
     try {
-      this.validateAndParseMessage(JSON.stringify(message));
-      const payload = JSON.stringify(message) + '\n';
+      const payload = this.encoder.encode(JSON.stringify(message) + '\n');
+
+      this.transportLogger.debug('Sending message', {
+        payloadLength: payload.length,
+        messageType: 'method' in message ? 'request' : 'response'
+      });
 
       await new Promise<void>((resolve, reject) => {
-        this.stream!.write(Buffer.from(payload), (err) => {
+        this.nodeStream!.write(payload, (err) => {
           if (err) {
-            this.transportLogger.error('Write error', { error: err });
-            reject(new McpError(ErrorCode.InternalError, err.message));
+            this.transportLogger.error('Write failed', { error: err });
+            reject(err);
           } else {
             this.transportLogger.debug('Write successful');
             resolve();
@@ -266,83 +190,40 @@ export class DockerTransport implements Transport {
         });
       });
     } catch (err) {
-      this.transportLogger.error('Send error', { error: err });
-      if (err instanceof McpError) throw err;
-      throw new McpError(ErrorCode.InvalidRequest, 'Invalid message format');
+      this.transportLogger.error('Send failed', { error: err });
+      throw new McpError(
+        ErrorCode.InternalError,
+        `Send failed: ${(err as Error).message}`
+      );
     }
   }
 
+  private cleanup(reason: string): void {
+    if (this._closed) return;
+
+    this.transportLogger.info('Starting cleanup', { reason });
+    this._closed = true;
+
+    if (this.nodeStream) {
+      this.transportLogger.debug('Cleaning up stream');
+      this.nodeStream.removeAllListeners();
+      this.nodeStream.end();
+      this.nodeStream = undefined;
+    }
+
+    if (this.onclose) {
+      this.transportLogger.debug('Calling onclose handler');
+      this.onclose();
+    }
+
+    this.onmessage = undefined;
+    this.onerror = undefined;
+    this.onclose = undefined;
+    this.transportLogger.info('Cleanup complete');
+  }
+
   async close(): Promise<void> {
-    const state = {
-      isClosed: this._closed,
-      isClosing: this._closing,
-      hasStream: !!this.stream,
-      handlersCount: this.messageHandlers.size
-    };
-    this.transportLogger.debug('Close called', state);
-
-    if (this._closed || this._closing) {
-      this.transportLogger.debug('Already closed or closing', state);
-      return;
-    }
-
-    this._closing = true;
-    this.transportLogger.debug('Set closing state');
-
-    try {
-      if (this.stream) {
-        // Clear all handlers first
-        this.transportLogger.debug('Removing stream handlers', {
-          beforeDataHandlers: this.stream.listenerCount('data'),
-          beforeEndHandlers: this.stream.listenerCount('end'),
-          beforeErrorHandlers: this.stream.listenerCount('error')
-        });
-
-        // Remove our tracked handlers
-        this.messageHandlers.forEach(handler => {
-          this.stream?.removeListener('data', handler);
-        });
-        this.messageHandlers.clear();
-
-        // Remove any other listeners
-        this.stream.removeAllListeners('end');
-        this.stream.removeAllListeners('error');
-
-        // Clear callbacks before ending stream
-        this.onmessage = undefined;
-        this.onerror = undefined;
-        this.onclose = undefined;
-
-        // End the stream
-        await new Promise<void>((resolve) => {
-          const cleanup = () => {
-            this.transportLogger.debug('Stream end/error during close');
-            this.stream?.removeAllListeners();
-            resolve();
-          };
-
-          this.stream?.once('end', cleanup);
-          this.stream?.once('error', cleanup);
-
-          this.transportLogger.debug('Ending stream');
-          this.stream?.end();
-        });
-
-        this.transportLogger.debug('Stream cleanup complete');
-      }
-
-      this._closed = true;
-      this.transportLogger.debug('Close complete', {
-        finalState: {
-          isClosed: this._closed,
-          isClosing: this._closing,
-          hasStream: !!this.stream,
-          handlersCount: this.messageHandlers.size
-        }
-      });
-    } catch (err) {
-      this.transportLogger.error('Error during close', { error: err });
-      throw err;
-    }
+    this.transportLogger.info('Close called');
+    this.cleanup('Explicit close called');
   }
 }

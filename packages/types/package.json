@@ -1,17 +1,14 @@
 {
   "name": "@mandrake/types",
   "version": "0.0.1",
-  "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
   "private": true,
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "scripts": {
     "build": "tsc --build",
-    "test": "jest",
-    "clean": "rm -rf dist coverage .turbo tsconfig.tsbuildinfo"
-  },
-  "devDependencies": {
-    "typescript": "^5.3.3"
+    "test": "bun test",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo", 
   },
   "dependencies": {
     "winston": "^3.17.0"

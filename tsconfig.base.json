@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "target": "es2020",
-    "lib": ["es2020", "dom"],
+    "lib": [
+      "es2020",
+      "dom"
+    ],
     "module": "esnext",
     "moduleResolution": "bundler",
     "esModuleInterop": true,
@@ -15,8 +18,16 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@mandrake/*": ["packages/*/dist"]
-    }
+      "@mandrake/*": [
+        "packages/*/dist"
+      ]
+    },
+    "types": [
+      "bun-types"
+    ]
   },
-  "exclude": ["**/node_modules", "**/.next"]
+  "exclude": [
+    "**/node_modules",
+    "**/.next"
+  ]
 }

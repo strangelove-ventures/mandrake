@@ -6,7 +6,7 @@ export const filesystemServerConfig: ServerTestConfig = {
     serverConfig: {
         id: 'filesystem',
         name: `filesystem-test-${Date.now()}`,
-        image: 'mandrake-test/mcp-filesystem:latest',
+        image: 'ghcr.io/strangelove-ventures/mcp/filesystem:latest',
         command: ['/data'],
         execCommand: ['/app/dist/index.js','/data']
     },

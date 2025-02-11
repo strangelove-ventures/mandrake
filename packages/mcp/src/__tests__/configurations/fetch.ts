@@ -5,7 +5,7 @@ export const fetchServerConfig: ServerTestConfig = {
     serverConfig: {
         id: 'fetch',
         name: `fetch-test-${Date.now()}`,
-        image: 'mandrake-test/mcp-fetch:latest',
+        image: 'ghcr.io/strangelove-ventures/mcp/fetch:latest',
         command: [],
         execCommand: ['mcp-server-fetch']
     },

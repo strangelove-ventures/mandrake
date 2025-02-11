@@ -6,10 +6,8 @@
   "references": [
     { "path": "packages/types" },
     { "path": "packages/mcp" },
-    { "path": "packages/storage" }
-  ],
-  "include": [
-    "src/**/*"
+    { "path": "packages/storage" },
+    { "path": "packages/provider" }
   ],
   "files": []
 }
