@@ -1,5 +1,5 @@
 import { BaseConfigManager } from './base';
-import { type ModelsConfig, modelsConfigSchema } from '../types/schemas/models';
+import { type ModelsConfig, modelsConfigSchema } from '../types';
 
 export class ModelsManager extends BaseConfigManager<ModelsConfig> {
   constructor(path: string) {

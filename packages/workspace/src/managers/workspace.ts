@@ -6,7 +6,7 @@ import { PromptManager } from './prompt';
 import { DynamicContextManager } from './dynamic';
 import { BaseConfigManager } from './base';
 import { getWorkspacePath, type WorkspacePaths } from '../utils/paths';
-import { workspaceSchema, type Workspace } from '../types/schemas';
+import { workspaceSchema, type Workspace } from '../types';
 
 export class WorkspaceManager extends BaseConfigManager<Workspace> {
   public readonly paths: WorkspacePaths;

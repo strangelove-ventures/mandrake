@@ -7,7 +7,7 @@ import { ModelsManager } from './models';
 import { PromptManager } from './prompt';
 import { getMandrakePaths, type MandrakePaths } from '../utils/paths';
 import { BaseConfigManager } from './base';
-import { mandrakeConfigSchema, type MandrakeConfig } from '../types/schemas';
+import { mandrakeConfigSchema, type MandrakeConfig } from '../types';
 import { validateWorkspaceName } from '../utils/validation';
 import { WorkspaceManager } from './workspace';
 

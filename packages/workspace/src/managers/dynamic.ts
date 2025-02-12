@@ -2,7 +2,7 @@ import { BaseConfigManager } from './base';
 import { 
   type DynamicContextMethodConfig, 
   contextConfigSchema 
-} from '../types/schemas/dynamic';
+} from '../types';
 
 export class DynamicContextManager extends BaseConfigManager<DynamicContextMethodConfig[]> {
   constructor(path: string) {

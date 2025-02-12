@@ -2,7 +2,7 @@ import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import { join } from 'path';
 import { DynamicContextManager } from '../../src/managers/dynamic';
 import { createTestDirectory, type TestDirectory } from '../utils';
-import type { DynamicContextMethodConfig } from '../../src/types/schemas';
+import type { DynamicContextMethodConfig } from '../../src/types/workspace';
 
 describe('DynamicContextManager', () => {
   let testDir: TestDirectory;

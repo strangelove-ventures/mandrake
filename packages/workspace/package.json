@@ -12,9 +12,12 @@
   },
   "dependencies": {
     "@mandrake/utils": "workspace:*",
+    "better-sqlite3": "^9.4.0",
+    "knex": "^3.1.0",
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.9",
     "@types/node": "latest",
     "typescript": "^5.0.0"
   }

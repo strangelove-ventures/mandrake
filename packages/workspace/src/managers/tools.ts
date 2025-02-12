@@ -1,5 +1,5 @@
 import { BaseConfigManager } from './base';
-import { type ServerConfig, toolsConfigSchema } from '../types/schemas/tools';
+import { type ServerConfig, toolsConfigSchema } from '../types';
 
 export class ToolsManager extends BaseConfigManager<ServerConfig[]> {
   constructor(path: string) {

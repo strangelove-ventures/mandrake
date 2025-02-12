@@ -2,7 +2,7 @@ import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import { join } from 'path';
 import { ModelsManager } from '../../src/managers/models';
 import { createTestDirectory, type TestDirectory } from '../utils';
-import type { ModelsConfig } from '../../src/types/schemas';
+import type { ModelsConfig } from '../../src/types/workspace';
 
 describe('ModelsManager', () => {
   let testDir: TestDirectory;
