@@ -320,4 +320,3 @@ The application should have the following pages available to the user. Each page
 - Focus on clean interface definitions
 - Check documentation (brave_search, fetch), best practices and tests for usage patterns
 - Use concrete examples from codebases when proposing solutions
-

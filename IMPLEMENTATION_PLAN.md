@@ -182,9 +182,9 @@ packages/[package-name]/
    - [x] Set up initial pages structure
 
 4. Development Scripts
-   - [ ] Implement build scripts
-   - [ ] Set up test runners
-   - [ ] Configure lint tooling
+   - [x] Implement build scripts
+   - [x] Set up test runners
+   - [x] Configure lint tooling
 
 ## Testing Plan
 
