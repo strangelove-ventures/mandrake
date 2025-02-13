@@ -15,16 +15,12 @@ export async function createTestDb(dbName = 'test.db'): Promise<TestDb> {
   const manager = new SessionManager(dbName);
 
   await manager.init();
-  
+
   return {
     path: dbName,
     manager,
     cleanup: async () => {
-      await manager.close();
-      await Bun.file(dbName).delete();
-      // Also remove WAL files
-      await Bun.file(dbName + '-shm').delete().catch(() => { });
-      await Bun.file(dbName + '-wal').delete().catch(() => { });
+      await manager.delete();
     }
   };
 }

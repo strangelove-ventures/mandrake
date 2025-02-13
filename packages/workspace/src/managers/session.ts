@@ -329,6 +329,22 @@ export class SessionManager {
 
     // Close database connection
     async close(): Promise<void> {
-        this.sqlite.close();
+        if (this.initialized) {
+            this.sqlite.close();
+            this.initialized = false;
+        }
+    }
+
+    // Delete the database file
+    async delete(): Promise<void> {
+        // Close first if open
+        if (this.initialized) {
+            await this.close();
+        }
+
+        // Remove database files
+        await Bun.file(this.dbPath).delete().catch(() => { });
+        await Bun.file(this.dbPath + '-shm').delete().catch(() => { });
+        await Bun.file(this.dbPath + '-wal').delete().catch(() => { });
     }
 }
