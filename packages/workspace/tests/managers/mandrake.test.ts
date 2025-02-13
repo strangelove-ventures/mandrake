@@ -2,7 +2,7 @@ import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import { join } from 'path';
 import { readdir, mkdir } from 'fs/promises';
 import { MandrakeManager } from '../../src/managers/mandrake';
-import { createTestDirectory, type TestDirectory } from '../utils';
+import { createTestDirectory, type TestDirectory } from '../utils/utils';
 
 describe('MandrakeManager', () => {
   let testDir: TestDirectory;

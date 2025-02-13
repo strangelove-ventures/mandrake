@@ -2,7 +2,7 @@ import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import { join } from 'path';
 import { readdir, readFile } from 'fs/promises';
 import { WorkspaceManager } from '../../src/managers/workspace';
-import { createTestDirectory, type TestDirectory } from '../utils';
+import { createTestDirectory, type TestDirectory } from '../utils/utils';
 
 describe('WorkspaceManager', () => {
   let testDir: TestDirectory;

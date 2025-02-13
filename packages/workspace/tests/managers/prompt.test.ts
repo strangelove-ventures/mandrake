@@ -1,7 +1,7 @@
 import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import { join } from 'path';
 import { PromptManager } from '../../src/managers/prompt';
-import { createTestDirectory, type TestDirectory } from '../utils';
+import { createTestDirectory, type TestDirectory } from '../utils/utils';
 
 describe('PromptManager', () => {
   let testDir: TestDirectory;

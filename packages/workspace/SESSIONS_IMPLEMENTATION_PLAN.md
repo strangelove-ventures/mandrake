@@ -11,7 +11,7 @@ The session management system handles chat interactions in both workspaces and t
 
 ## Directory Structure
 
-```
+```sh
 workspace/
 ├── src/
 │   ├── types/

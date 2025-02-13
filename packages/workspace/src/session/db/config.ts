@@ -1,6 +1,5 @@
 import { createLogger } from '@mandrake/utils';
-import Database from 'better-sqlite3';
-import { knex, type Knex } from 'knex';
+import { Database } from 'bun:sqlite';
 
 const logger = createLogger('workspace').child({
   meta: { component: 'session-db' }
@@ -10,43 +9,16 @@ export interface DatabaseConfig {
   path: string;
 }
 
-// Initialize Knex with SQLite and better-sqlite3
-export function createKnexInstance(config: DatabaseConfig): Knex {
-  return knex({
-    client: 'better-sqlite3',
-    connection: {
-      filename: config.path
-    },
-    useNullAsDefault: true,
-    // SQLite-specific configuration
-    pool: {
-      afterCreate: (conn: Database, done: Function) => {
-        // Enable foreign keys
-        conn.exec('PRAGMA foreign_keys = ON;');
-        // Enable WAL mode for better concurrency
-        conn.exec('PRAGMA journal_mode = WAL;');
-        done();
-      },
-      min: 1,
-      max: 1
-    },
-    debug: false,
-    // Optional logging
-    log: {
-      warn(message) {
-        logger.warn(message);
-      },
-      error(message) {
-        logger.error(message);
-      },
-      deprecate(message) {
-        logger.warn(message);
-      },
-      debug(message) {
-        logger.debug(message);
-      },
-    }
-  });
+// Initialize Database with SQLite
+export function createDatabase(config: DatabaseConfig): Database {
+  const db = new Database(config.path);
+  
+  // Enable foreign keys
+  db.exec('PRAGMA foreign_keys = ON;');
+  // Enable WAL mode for better concurrency
+  db.exec('PRAGMA journal_mode = WAL;');
+
+  return db;
 }
 
 // SQL for creating tables
@@ -109,9 +81,9 @@ CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id);
 `;
 
 // Initialize database with schema
-export async function initializeDatabase(db: Knex): Promise<void> {
+export function initializeDatabase(db: Database): void {
   logger.info('Initializing database schema');
-  await db.raw(schema);
+  db.exec(schema);
   logger.info('Database schema initialized');
 }
 
