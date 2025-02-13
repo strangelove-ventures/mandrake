@@ -7,6 +7,7 @@ import { ModelsManager } from './models';
 import { PromptManager } from './prompt';
 import { getMandrakePaths, type MandrakePaths } from '../utils/paths';
 import { BaseConfigManager } from './base';
+import { SessionManager } from './session';
 import { mandrakeConfigSchema, type MandrakeConfig } from '../types';
 import { validateWorkspaceName } from '../utils/validation';
 import { WorkspaceManager } from './workspace';
@@ -16,6 +17,8 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
   public readonly tools: ToolsManager;
   public readonly models: ModelsManager;
   public readonly prompt: PromptManager;
+
+  public readonly sessions: SessionManager;
 
   constructor(root: string) {
     const paths = getMandrakePaths(root);
@@ -31,6 +34,7 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
     this.tools = new ToolsManager(paths.tools);
     this.models = new ModelsManager(paths.models);
     this.prompt = new PromptManager(paths.prompt);
+    this.sessions = new SessionManager(paths.db);
   }
 
   async init(): Promise<void> {
@@ -41,6 +45,9 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
       mkdir(this.paths.root, { recursive: true }),
       mkdir(join(this.paths.root, 'workspaces'), { recursive: true })
     ]);
+    
+    // Initialize sessions
+    await this.sessions.init();
 
     // Ensure default config exists
     const config = await this.getConfig();

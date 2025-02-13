@@ -3,8 +3,8 @@ import { sqliteTable, text, integer } from 'drizzle-orm/sqlite-core';
 
 export const responses = sqliteTable('responses', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`CURRENT_TIMESTAMP`)
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: integer('updatedAt', { mode: 'timestamp_ms' }).notNull().default(sql`CURRENT_TIMESTAMP`)
 });
 
 export type Response = typeof responses.$inferSelect;

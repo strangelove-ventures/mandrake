@@ -6,6 +6,7 @@ import { PromptManager } from './prompt';
 import { DynamicContextManager } from './dynamic';
 import { BaseConfigManager } from './base';
 import { getWorkspacePath, type WorkspacePaths } from '../utils/paths';
+import { SessionManager } from './session';
 import { workspaceSchema, type Workspace } from '../types';
 
 export class WorkspaceManager extends BaseConfigManager<Workspace> {
@@ -14,6 +15,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
   public readonly models: ModelsManager;
   public readonly prompt: PromptManager;
   public readonly dynamic: DynamicContextManager;
+  public readonly sessions: SessionManager;
 
   constructor(workspaceDir: string, name: string) {
     const paths = getWorkspacePath(workspaceDir, name);
@@ -35,6 +37,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
     this.models = new ModelsManager(paths.models);
     this.prompt = new PromptManager(paths.systemPrompt);
     this.dynamic = new DynamicContextManager(paths.context);
+    this.sessions = new SessionManager(paths.db);
   }
 
   /**
@@ -51,6 +54,9 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
       mkdir(this.paths.src, { recursive: true }),
       mkdir(this.paths.mcpdata, { recursive: true })
     ]);
+
+    // Initialize sessions
+    await this.sessions.init();
 
     // Write initial workspace config
     const config: Workspace = {

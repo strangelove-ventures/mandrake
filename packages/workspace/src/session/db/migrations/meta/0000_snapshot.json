@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "sqlite",
-  "id": "74531f05-69fd-402f-88cc-941855b56038",
+  "id": "4671e99c-967b-44c7-90da-f4bfbe03db5f",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "sessions": {
@@ -28,8 +28,8 @@
           "notNull": false,
           "autoincrement": false
         },
-        "workspace_id": {
-          "name": "workspace_id",
+        "workspaceId": {
+          "name": "workspaceId",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -43,16 +43,16 @@
           "autoincrement": false,
           "default": "'{}'"
         },
-        "created_at": {
-          "name": "created_at",
+        "createdAt": {
+          "name": "createdAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
           "default": "CURRENT_TIMESTAMP"
         },
-        "updated_at": {
-          "name": "updated_at",
+        "updatedAt": {
+          "name": "updatedAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -61,10 +61,10 @@
         }
       },
       "indexes": {
-        "idx_sessions_workspace_id": {
-          "name": "idx_sessions_workspace_id",
+        "idx_sessions_workspaceId": {
+          "name": "idx_sessions_workspaceId",
           "columns": [
-            "workspace_id"
+            "workspaceId"
           ],
           "isUnique": false
         }
@@ -83,22 +83,22 @@
           "notNull": true,
           "autoincrement": false
         },
-        "session_id": {
-          "name": "session_id",
+        "sessionId": {
+          "name": "sessionId",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "request_id": {
-          "name": "request_id",
+        "requestId": {
+          "name": "requestId",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "response_id": {
-          "name": "response_id",
+        "responseId": {
+          "name": "responseId",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -111,16 +111,16 @@
           "notNull": true,
           "autoincrement": false
         },
-        "created_at": {
-          "name": "created_at",
+        "createdAt": {
+          "name": "createdAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
           "default": "CURRENT_TIMESTAMP"
         },
-        "updated_at": {
-          "name": "updated_at",
+        "updatedAt": {
+          "name": "updatedAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -129,43 +129,43 @@
         }
       },
       "indexes": {
-        "rounds_request_id_unique": {
-          "name": "rounds_request_id_unique",
+        "rounds_requestId_unique": {
+          "name": "rounds_requestId_unique",
           "columns": [
-            "request_id"
+            "requestId"
           ],
           "isUnique": true
         },
-        "rounds_response_id_unique": {
-          "name": "rounds_response_id_unique",
+        "rounds_responseId_unique": {
+          "name": "rounds_responseId_unique",
           "columns": [
-            "response_id"
+            "responseId"
           ],
           "isUnique": true
         },
-        "idx_rounds_session_id": {
-          "name": "idx_rounds_session_id",
+        "idx_rounds_sessionId": {
+          "name": "idx_rounds_sessionId",
           "columns": [
-            "session_id"
+            "sessionId"
           ],
           "isUnique": false
         },
-        "idx_rounds_session_index": {
-          "name": "idx_rounds_session_index",
+        "idx_rounds_sessionIndex": {
+          "name": "idx_rounds_sessionIndex",
           "columns": [
-            "session_id",
+            "sessionId",
             "index"
           ],
           "isUnique": false
         }
       },
       "foreignKeys": {
-        "rounds_session_id_sessions_id_fk": {
-          "name": "rounds_session_id_sessions_id_fk",
+        "rounds_sessionId_sessions_id_fk": {
+          "name": "rounds_sessionId_sessions_id_fk",
           "tableFrom": "rounds",
           "tableTo": "sessions",
           "columnsFrom": [
-            "session_id"
+            "sessionId"
           ],
           "columnsTo": [
             "id"
@@ -173,12 +173,12 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "rounds_request_id_requests_id_fk": {
-          "name": "rounds_request_id_requests_id_fk",
+        "rounds_requestId_requests_id_fk": {
+          "name": "rounds_requestId_requests_id_fk",
           "tableFrom": "rounds",
           "tableTo": "requests",
           "columnsFrom": [
-            "request_id"
+            "requestId"
           ],
           "columnsTo": [
             "id"
@@ -186,12 +186,12 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "rounds_response_id_responses_id_fk": {
-          "name": "rounds_response_id_responses_id_fk",
+        "rounds_responseId_responses_id_fk": {
+          "name": "rounds_responseId_responses_id_fk",
           "tableFrom": "rounds",
           "tableTo": "responses",
           "columnsFrom": [
-            "response_id"
+            "responseId"
           ],
           "columnsTo": [
             "id"
@@ -220,16 +220,16 @@
           "notNull": true,
           "autoincrement": false
         },
-        "created_at": {
-          "name": "created_at",
+        "createdAt": {
+          "name": "createdAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
           "default": "CURRENT_TIMESTAMP"
         },
-        "updated_at": {
-          "name": "updated_at",
+        "updatedAt": {
+          "name": "updatedAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -252,16 +252,16 @@
           "notNull": true,
           "autoincrement": false
         },
-        "created_at": {
-          "name": "created_at",
+        "createdAt": {
+          "name": "createdAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
           "default": "CURRENT_TIMESTAMP"
         },
-        "updated_at": {
-          "name": "updated_at",
+        "updatedAt": {
+          "name": "updatedAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -284,8 +284,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "response_id": {
-          "name": "response_id",
+        "responseId": {
+          "name": "responseId",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -298,8 +298,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "raw_response": {
-          "name": "raw_response",
+        "rawResponse": {
+          "name": "rawResponse",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -312,8 +312,8 @@
           "notNull": true,
           "autoincrement": false
         },
-        "tool_calls": {
-          "name": "tool_calls",
+        "toolCalls": {
+          "name": "toolCalls",
           "type": "text",
           "primaryKey": false,
           "notNull": true,
@@ -327,87 +327,87 @@
           "autoincrement": false,
           "default": "'streaming'"
         },
-        "stream_start_time": {
-          "name": "stream_start_time",
+        "streamStartTime": {
+          "name": "streamStartTime",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "stream_end_time": {
-          "name": "stream_end_time",
+        "streamEndTime": {
+          "name": "streamEndTime",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "current_tokens": {
-          "name": "current_tokens",
+        "currentTokens": {
+          "name": "currentTokens",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
           "default": 0
         },
-        "expected_tokens": {
-          "name": "expected_tokens",
+        "expectedTokens": {
+          "name": "expectedTokens",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "input_tokens": {
-          "name": "input_tokens",
+        "inputTokens": {
+          "name": "inputTokens",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "output_tokens": {
-          "name": "output_tokens",
+        "outputTokens": {
+          "name": "outputTokens",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "cache_read_tokens": {
-          "name": "cache_read_tokens",
+        "cacheReadTokens": {
+          "name": "cacheReadTokens",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "cache_write_tokens": {
-          "name": "cache_write_tokens",
+        "cacheWriteTokens": {
+          "name": "cacheWriteTokens",
           "type": "integer",
           "primaryKey": false,
           "notNull": false,
           "autoincrement": false
         },
-        "input_cost": {
-          "name": "input_cost",
+        "inputCost": {
+          "name": "inputCost",
           "type": "real",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "output_cost": {
-          "name": "output_cost",
+        "outputCost": {
+          "name": "outputCost",
           "type": "real",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
         },
-        "created_at": {
-          "name": "created_at",
+        "createdAt": {
+          "name": "createdAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false,
           "default": "CURRENT_TIMESTAMP"
         },
-        "updated_at": {
-          "name": "updated_at",
+        "updatedAt": {
+          "name": "updatedAt",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,
@@ -416,37 +416,37 @@
         }
       },
       "indexes": {
-        "idx_turns_response_id": {
-          "name": "idx_turns_response_id",
+        "idx_turns_responseId": {
+          "name": "idx_turns_responseId",
           "columns": [
-            "response_id"
+            "responseId"
           ],
           "isUnique": false
         },
-        "idx_turns_response_index": {
-          "name": "idx_turns_response_index",
+        "idx_turns_responseIndex": {
+          "name": "idx_turns_responseIndex",
           "columns": [
-            "response_id",
+            "responseId",
             "index"
           ],
           "isUnique": false
         },
-        "idx_active_streams": {
-          "name": "idx_active_streams",
+        "idx_activeStreams": {
+          "name": "idx_activeStreams",
           "columns": [
-            "response_id"
+            "responseId"
           ],
           "isUnique": false,
           "where": "status = 'streaming'"
         }
       },
       "foreignKeys": {
-        "turns_response_id_responses_id_fk": {
-          "name": "turns_response_id_responses_id_fk",
+        "turns_responseId_responses_id_fk": {
+          "name": "turns_responseId_responses_id_fk",
           "tableFrom": "turns",
           "tableTo": "responses",
           "columnsFrom": [
-            "response_id"
+            "responseId"
           ],
           "columnsTo": [
             "id"

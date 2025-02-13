@@ -6,18 +6,18 @@ import { responses } from './responses';
 
 export const rounds = sqliteTable('rounds', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
-  sessionId: text('session_id').notNull()
+  sessionId: text('sessionId').notNull()
     .references(() => sessions.id, { onDelete: 'cascade' }),
-  requestId: text('request_id').unique().notNull()
+  requestId: text('requestId').unique().notNull()
     .references(() => requests.id),
-  responseId: text('response_id').unique().notNull()
+  responseId: text('responseId').unique().notNull()
     .references(() => responses.id),
   index: integer('index').notNull(),
-  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`CURRENT_TIMESTAMP`),
-  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`CURRENT_TIMESTAMP`)
+  createdAt: integer('createdAt', { mode: 'timestamp_ms' }).notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: integer('updatedAt', { mode: 'timestamp_ms' }).notNull().default(sql`CURRENT_TIMESTAMP`)
 }, (table) => ({
-  sessionIdIdx: index('idx_rounds_session_id').on(table.sessionId),
-  sessionIndexIdx: index('idx_rounds_session_index').on(table.sessionId, table.index)
+  sessionIdIdx: index('idx_rounds_sessionId').on(table.sessionId),
+  sessionIndexIdx: index('idx_rounds_sessionIndex').on(table.sessionId, table.index)
 }));
 
 export type Round = typeof rounds.$inferSelect;
