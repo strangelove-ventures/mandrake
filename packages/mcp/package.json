@@ -1,6 +1,6 @@
 {
   "name": "@mandrake/mcp",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -8,13 +8,15 @@
   "scripts": {
     "build": "tsc",
     "test": "bun test",
+    "lint": "eslint src/**/*.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@mandrake/utils": "workspace:*"
+    "@mandrake/utils": "workspace:*",
+    "dockerode": "^4.0.0"
   },
   "devDependencies": {
-    "@types/node": "latest",
+    "@types/dockerode": "^3.3.23",
     "typescript": "^5.0.0"
   }
 }

@@ -69,6 +69,9 @@ export class ConsoleLogger implements Logger {
   }
 }
 
+// Export ConsoleLogger as the default logger implementation
+export const DefaultLogger = ConsoleLogger;
+
 // Factory function to create loggers for different packages
 export function createLogger(packageName: string, options: LoggerOptions = {}): Logger {
   return new ConsoleLogger({
