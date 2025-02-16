@@ -1,4 +1,4 @@
-import { FastMCP } from 'fastmcp'
+import { FastMCP, UserError } from 'fastmcp'
 import { z } from 'zod'
 
 const server = new FastMCP({
@@ -39,7 +39,7 @@ server.addTool({
         message: z.string().optional()
     }),
     execute: async (args) => {
-        throw new Error(args.message || 'Test error')
+        throw new UserError(args.message || 'Test error')
     }
 })
 

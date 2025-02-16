@@ -7,7 +7,7 @@ describe('MCP Integration', () => {
     const config: ServerConfig = {
         name: 'test',
         command: 'node',
-        args: ['./tests/server/index.js']
+        args: ['./tests/server/dist/index.js']
     }
 
     describe('MCPServerImpl', () => {
@@ -34,14 +34,14 @@ describe('MCP Integration', () => {
         test('invokes add tool', async () => {
             await server.start()
             const result = await server.invokeTool('add', { a: 1, b: 2 })
-            expect(result.content).toBe('3')
+            expect((result.content as any)[0].text).toBe('3')
         })
 
         test('handles tool errors', async () => {
             await server.start()
             await expect(server.invokeTool('error', {}))
                 .rejects
-                .toThrow('Test error')
+                .toMatchObject({ message: 'Test error' })
         })
     })
 
@@ -70,7 +70,7 @@ describe('MCP Integration', () => {
             await manager.startServer(config)
             
             const result = await manager.invokeTool('test', 'add', { a: 1, b: 2 })
-            expect(result.content).toBe('3')
+            expect((result.content as any)[0].text).toBe('3')
         })
     })
 })

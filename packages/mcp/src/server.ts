@@ -123,14 +123,21 @@ export class MCPServerImpl implements MCPServer {
     }
 
     try {
-      const result = await this.client.callTool({ 
+      const result = await this.client.callTool({
         name: method,
-        arguments: args 
+        arguments: args
       })
+
+      // Check if result indicates an error and throw it
+      if (result.isError) {
+        // result.content is [{type: 'text', text: 'Test error'}]  
+        throw new Error((result.content as any)[0].text)
+      }
+
       this.logBuffer.append(`Tool call successful: ${method}`)
       return result
     } catch (error) {
-      const errorMsg = `Tool call failed: ${method} - ${(error as Error).message}`
+      const errorMsg = `${(error as Error).message}`
       this.logBuffer.append(errorMsg)
       throw new Error(errorMsg)
     }
