@@ -12,11 +12,9 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@mandrake/utils": "workspace:*",
-    "dockerode": "^4.0.0"
+    "@mandrake/utils": "workspace:*"
   },
   "devDependencies": {
-    "@types/dockerode": "^3.3.23",
     "typescript": "^5.0.0"
   }
 }
