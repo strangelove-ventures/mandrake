@@ -5,7 +5,6 @@ import type { ServerConfig } from '../src/types'
 
 describe('MCP Integration', () => {
     const config: ServerConfig = {
-        name: 'test',
         command: 'node',
         args: ['./tests/server/dist/index.js']
     }
@@ -14,7 +13,7 @@ describe('MCP Integration', () => {
         let server: MCPServerImpl
 
         beforeEach(() => {
-            server = new MCPServerImpl(config)
+            server = new MCPServerImpl("test", config)
         })
 
         afterEach(async () => {
@@ -57,17 +56,15 @@ describe('MCP Integration', () => {
         })
 
         test('starts multiple servers', async () => {
-            const config2 = { ...config, name: 'test2' }
-            
-            await manager.startServer(config)
-            await manager.startServer(config2)
+            await manager.startServer('test1', config)
+            await manager.startServer('test2', config)
 
             const tools = await manager.listAllTools()
             expect(tools.length).toBe(6) // 3 tools from each server
         })
 
         test('invokes tools across servers', async () => {
-            await manager.startServer(config)
+            await manager.startServer('test', config)
             
             const result = await manager.invokeTool('test', 'add', { a: 1, b: 2 })
             expect((result.content as any)[0].text).toBe('3')

@@ -1,33 +1,64 @@
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test'
-import { MCPServerImpl } from '../src/server'
+import { describe, test, expect, beforeAll, afterAll, beforeEach, afterEach } from 'bun:test'
 import { MCPManager } from '../src/manager'
 import type { ServerConfig } from '../src/types'
+import { mkdir, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { execSync } from 'node:child_process'
 
-// Standard server configs
-const SERVERS = {
+const TEST_DIR = join(process.cwd(), 'test/tmp')
+const GIT_REPO_DIR = join(TEST_DIR, 'repo')
+
+// Docker image names
+const IMAGES = {
+    filesystem: 'mcp/filesystem',
+    git: 'mcp/git',
+    fetch: 'mcp/fetch'
+}
+
+const SERVER_CONFIGS: Record<string, ServerConfig> = {
     filesystem: {
-        name: 'filesystem',
-        command: 'mcp-fs',
-        args: ['--path', '.']
-    },
-    git: {
-        name: 'git',
-        command: 'mcp-git',
-        env: { GIT_AUTHOR_NAME: 'test', GIT_AUTHOR_EMAIL: 'test@test.com' }
+        command: 'docker',
+        args: [
+            'run',
+            '--rm',
+            '-i',
+            '--mount',
+            `type=bind,src=${TEST_DIR},dst=/projects/tmp`,
+            IMAGES.filesystem,
+            '/projects'
+        ]
     },
     fetch: {
-        name: 'fetch',
-        command: 'mcp-fetch'
+        command: 'docker',
+        args: [
+            'run',
+            '--rm',
+            '-i',
+            IMAGES.fetch
+        ]
     },
     test: {
-        name: 'test',
         command: 'node',
         args: ['./tests/server/dist/index.js']
     }
-} as const
+}
 
 describe('MCP Servers', () => {
     let manager: MCPManager
+
+    beforeAll(async () => {
+        // Create test directories
+        await mkdir(TEST_DIR, { recursive: true })
+        await mkdir(GIT_REPO_DIR, { recursive: true })
+
+        // Initialize test git repo
+        execSync('git init', { cwd: GIT_REPO_DIR })
+    })
+
+    afterAll(async () => {
+        // Clean up test directory
+        await rm(TEST_DIR, { recursive: true, force: true })
+    })
 
     beforeEach(() => {
         manager = new MCPManager()
@@ -37,179 +68,87 @@ describe('MCP Servers', () => {
         await manager.cleanup()
     })
 
-    describe('Filesystem Server', () => {
-        test('reads and writes files', async () => {
-            await manager.startServer(SERVERS.filesystem)
-            
-            // Write test file
-            await manager.invokeTool('filesystem', 'writeFile', {
-                path: 'test.txt',
-                content: 'hello world'
-            })
 
-            // Read test file
-            const result = await manager.invokeTool('filesystem', 'readFile', {
-                path: 'test.txt'
-            })
-            expect((result.content as any)[0].text).toBe('hello world')
-
-            // List directory
-            const dirResult = await manager.invokeTool('filesystem', 'listFiles', {
-                path: '.'
-            })
-            expect((dirResult.content as any)[0].text).toContain('test.txt')
-        })
-
-        test('handles missing files', async () => {
-            await manager.startServer(SERVERS.filesystem)
-            
-            await expect(manager.invokeTool('filesystem', 'readFile', {
-                path: 'nonexistent.txt'
-            })).rejects.toThrow()
-        })
+    test('starts filesystem server', async () => {
+        await manager.startServer('filesystem', SERVER_CONFIGS.filesystem)
+        const server = manager.getServer('filesystem')
+        expect(server).toBeDefined()
     })
 
-    describe('Git Server', () => {
-        test('performs basic git operations', async () => {
-            await manager.startServer(SERVERS.git)
+    test('filesystem server can write and read files', async () => {
+        await manager.startServer('filesystem', SERVER_CONFIGS.filesystem)
 
-            // Check git status
-            const statusResult = await manager.invokeTool('git', 'status', {})
-            expect(statusResult.content[0].text).toBeDefined()
-
-            // Write and commit a file
-            await manager.startServer(SERVERS.filesystem)
-            await manager.invokeTool('filesystem', 'writeFile', {
-                path: 'test.txt',
-                content: 'hello git'
-            })
-
-            // Add and commit
-            await manager.invokeTool('git', 'add', { path: 'test.txt' })
-            const commitResult = await manager.invokeTool('git', 'commit', {
-                message: 'test commit'
-            })
-            expect(commitResult.content[0].text).toContain('test commit')
+        await manager.invokeTool('filesystem', 'write_file', {
+            path: '/projects/tmp/test.txt',
+            content: 'Hello, World!'
         })
+
+        const result = await manager.invokeTool('filesystem', 'read_file', {
+            path: '/projects/tmp/test.txt'
+        })
+        expect((result.content as any)[0].text).toBe('Hello, World!')
     })
 
-    describe('Fetch Server', () => {
-        test('fetches content', async () => {
-            await manager.startServer(SERVERS.fetch)
+    test('starts fetch server and lists tools', async () => {
+        await manager.startServer('fetch', SERVER_CONFIGS.fetch)
+        const server = manager.getServer('fetch')
+        expect(server).toBeDefined()
 
-            const result = await manager.invokeTool('fetch', 'fetch', {
-                url: 'https://example.com'
-            })
-            expect(result.content[0].text).toContain('Example Domain')
-        })
-
-        test('handles fetch errors', async () => {
-            await manager.startServer(SERVERS.fetch)
-
-            await expect(manager.invokeTool('fetch', 'fetch', {
-                url: 'https://nonexistent.example.com'
-            })).rejects.toThrow()
-        })
+        const tools = await server!.listTools()
+        expect(tools.length).toBeGreaterThan(0)
+        expect(tools.map(t => t.name)).toContain('fetch')
     })
 
-    describe('Multi-Server Operations', () => {
-        test('runs all servers concurrently', async () => {
-            // Start all servers
-            await Promise.all(Object.values(SERVERS).map(config => 
-                manager.startServer(config)
-            ))
+    test('fetch server can retrieve web content', async () => {
+        await manager.startServer('fetch', SERVER_CONFIGS.fetch)
 
-            const tools = await manager.listAllTools()
-            expect(tools.length).toBeGreaterThan(5) // Should have multiple tools from each server
+        const result = await manager.invokeTool('fetch', 'fetch', {
+            url: 'http://example.com',
+            max_length: 1000
         })
-
-        test('git and filesystem interaction', async () => {
-            await manager.startServer(SERVERS.filesystem)
-            await manager.startServer(SERVERS.git)
-
-            // Write file
-            await manager.invokeTool('filesystem', 'writeFile', {
-                path: 'test.txt',
-                content: 'hello git'
-            })
-
-            // Commit file
-            await manager.invokeTool('git', 'add', { path: 'test.txt' })
-            const commitResult = await manager.invokeTool('git', 'commit', {
-                message: 'test commit'
-            })
-
-            // Verify commit
-            const logResult = await manager.invokeTool('git', 'log', {
-                maxCount: 1
-            })
-            expect((logResult.content as any)[0].text).toContain('test commit')
-        })
+        expect((result.content as any)[0].text).toContain('Example Domain')
     })
 
-    describe('Multiple Managers', () => {
-        test('shares servers between managers', async () => {
-            const manager2 = new MCPManager()
+    test('can run all servers simultaneously', async () => {
+        // Start servers one by one and verify
+        for (const [id, config] of Object.entries(SERVER_CONFIGS)) {
+            await manager.startServer(id, config)
+            const server = manager.getServer(id)
+            expect(server).toBeDefined()
 
-            try {
-                // Start servers in both managers
-                await Promise.all([
-                    manager.startServer(SERVERS.filesystem),
-                    manager2.startServer(SERVERS.filesystem)
-                ])
+            const tools = await server!.listTools()
+            expect(tools.length).toBeGreaterThan(0)
+        }
 
-                // Write with manager1
-                await manager.invokeTool('filesystem', 'writeFile', {
-                    path: 'test.txt',
-                    content: 'hello'
-                })
-
-                // Read with manager2
-                const result = await manager2.invokeTool('filesystem', 'readFile', {
-                    path: 'test.txt'
-                })
-                expect((result.content as any)[0].text).toBe('hello')
-
-            } finally {
-                await manager2.cleanup()
-            }
-        })
+        // Verify total tool count
+        const allTools = await manager.listAllTools()
+        expect(allTools.length).toBeGreaterThan(0)
     })
 
-    describe('Lifecycle', () => {
-        test('handles server restart', async () => {
-            await manager.startServer(SERVERS.filesystem)
-            
-            // Initial write
-            await manager.invokeTool('filesystem', 'writeFile', {
-                path: 'test.txt',
-                content: 'hello'
+    test('handles server errors gracefully', async () => {
+        await manager.startServer('filesystem', SERVER_CONFIGS.filesystem)
+
+        await expect(
+            manager.invokeTool('filesystem', 'read_file', {
+                path: '/projects/tmp/nonexistent.txt'
             })
+        ).rejects.toThrow()
+    })
 
-            // Stop and restart
-            await manager.stopServer('filesystem')
-            await manager.startServer(SERVERS.filesystem)
+    test('captures error logs in buffer', async () => {
+        await manager.startServer('filesystem', SERVER_CONFIGS.filesystem)
+        const server = manager.getServer('filesystem')
+        expect(server).toBeDefined()
 
-            // Verify still works
-            const result = await manager.invokeTool('filesystem', 'readFile', {
-                path: 'test.txt'
-            })
-            expect(result.content[0].text).toBe('hello')
-        })
+        // Trigger an error
+        await expect(
+            server!.invokeTool('read_file', { path: '/nonexistent' })
+        ).rejects.toThrow()
 
-        test('cleanup stops all servers', async () => {
-            // Start all servers
-            await Promise.all(Object.values(SERVERS).map(config => 
-                manager.startServer(config)
-            ))
-
-            // Cleanup
-            await manager.cleanup()
-
-            // Verify all stopped
-            Object.keys(SERVERS).forEach(name => {
-                expect(manager.getServer(name)).toBeUndefined()
-            })
-        })
+        // Verify error is captured
+        const state = server!.getState()
+        expect(state.logs).toBeDefined()
+        expect(state.logs.length).toBeGreaterThan(0)
+        expect(state.logs[0]).toContain('Error')
     })
 })

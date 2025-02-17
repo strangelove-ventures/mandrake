@@ -8,14 +8,19 @@ export class MCPManager {
     this.servers = new Map()
   }
 
-  async startServer(config: ServerConfig) {
-    if (this.servers.has(config.name)) {
-      throw new Error(`Server ${config.name} already exists`)
+  async startServer(id: string, config: ServerConfig) {
+    if (this.servers.has(id)) {
+      throw new Error(`Server ${id} already exists`)
     }
 
-    const server = new MCPServerImpl(config)
-    await server.start()
-    this.servers.set(config.name, server)
+    try {
+      const server = new MCPServerImpl(id, config)
+      await server.start()
+      this.servers.set(id, server)
+    } catch (error) {
+      console.error(`Failed to start server ${id}:`, error)
+      throw error
+    }
   }
 
   async stopServer(name: string) {
@@ -28,25 +33,25 @@ export class MCPManager {
     this.servers.delete(name)
   }
 
-  async updateServer(name: string, config: ServerConfig) {
-    const server = this.servers.get(name)
+  async updateServer(id: string, config: ServerConfig) {
+    const server = this.servers.get(id)
     if (!server) {
-      throw new Error(`Server ${name} not found`)
+      throw new Error(`Server ${id} not found`)
     }
 
-    await this.stopServer(name)
-    await this.startServer(config)
+    await this.stopServer(id)
+    await this.startServer(id, config)
   }
 
   async listAllTools(): Promise<Array<MCPTool & { server: string }>> {
     const allTools: Array<MCPTool & { server: string }> = []
     
-    for (const [name, server] of this.servers) {
+    for (const [id, server] of this.servers) {
       if (!server.getConfig().disabled) {
         const tools = await server.listTools()
         allTools.push(...tools.map(tool => ({
           ...tool,
-          server: name
+          server: id
         })))
       }
     }
@@ -54,10 +59,10 @@ export class MCPManager {
     return allTools
   }
 
-  async invokeTool(serverName: string, method: string, args: Record<string, any>) {
-    const server = this.servers.get(serverName)
+  async invokeTool(id: string, method: string, args: Record<string, any>) {
+    const server = this.servers.get(id)
     if (!server) {
-      throw new Error(`Server ${serverName} not found`)
+      throw new Error(`Server ${id} not found`)
     }
 
     return server.invokeTool(method, args)
@@ -74,7 +79,7 @@ export class MCPManager {
   async cleanup() {
     const stopPromises = Array.from(this.servers.values())
       .map(server => server.stop())
-    
+
     await Promise.all(stopPromises)
     this.servers.clear()
   }

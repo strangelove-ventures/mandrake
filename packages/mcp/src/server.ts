@@ -18,7 +18,6 @@ const CLIENT_CONFIG = {
 
 export interface MCPServer {
   getId(): string
-  getName(): string
   start(): Promise<void>
   stop(): Promise<void>
   listTools(): Promise<MCPTool[]>
@@ -31,7 +30,11 @@ export class MCPServerImpl implements MCPServer {
   private logBuffer: LogBuffer
   private state: ServerState
   
-  constructor(private config: ServerConfig) {
+  constructor(
+    private id: string,
+    private config: ServerConfig
+  ) {
+    this.id = id
     this.logBuffer = new LogBuffer()
     this.state = {
       retryCount: 0,
@@ -40,11 +43,7 @@ export class MCPServerImpl implements MCPServer {
   }
 
   getId(): string {
-    return this.config.name
-  }
-
-  getName(): string {
-    return this.config.name
+    return this.id
   }
 
   async start() {
@@ -60,7 +59,16 @@ export class MCPServerImpl implements MCPServer {
 
       // Setup stderr logging if stdio transport
       if (this.transport instanceof StdioClientTransport) {
-        this.handleStderr(this.transport.stderr)
+        if (this.transport.stderr) {
+          this.transport.stderr.on('data', (data: Buffer) => {
+            const output = data.toString()
+            // Only append if it's an error
+            if (output.toLowerCase().includes('error')) {
+              this.logBuffer.append(output)
+              this.state.error = output
+            }
+          })
+        }
       }
 
       // Connect client with transport
@@ -69,7 +77,6 @@ export class MCPServerImpl implements MCPServer {
       // Reset state on successful connection
       this.state.retryCount = 0
       this.state.error = undefined
-      this.logBuffer.append('Server started successfully')
       
     } catch (error) {
       await this.handleStartError(error)
@@ -106,9 +113,11 @@ export class MCPServerImpl implements MCPServer {
       }
 
       this.logBuffer.append('Server stopped')
-      
+
     } catch (error) {
-      this.state.error = `Error stopping server: ${(error as Error).message}`
+      const msg = `Error stopping server: ${(error as Error).message}`
+      console.error(`Stop error for ${this.id}:`, msg)
+      this.state.error = msg
       this.logBuffer.append(this.state.error)
     }
   }

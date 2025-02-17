@@ -21,7 +21,6 @@ export interface MCPConnection {
 }
 
 export interface ServerConfig {
-  name: string
   command: string
   args?: string[]
   env?: Record<string, string>

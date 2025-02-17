@@ -4,7 +4,6 @@ import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 
 export class TransportFactory {
     static create(config: ServerConfig): StdioClientTransport | SSEClientTransport {
-        // If command includes 'http' or 'https', assume SSE
         if (config.command.startsWith('http')) {
             let foo = URL.parse("http://localhost:8080")
             if (!foo) {
@@ -14,6 +13,11 @@ export class TransportFactory {
         }
 
         // Otherwise use stdio
-        return new StdioClientTransport(config)
+        return new StdioClientTransport({
+            command: config.command,
+            args: config.args || [],
+            env: config.env,
+            stderr: 'pipe'
+        })
     }
 }
