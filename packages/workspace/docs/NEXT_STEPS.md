@@ -48,10 +48,10 @@
    - [ ] Restore functionality
    - [ ] Cloud storage sync options
 
-5. FilesManager - NEEDED FOR MVP
-   - [ ] File management system
-   - [ ] File tracking and indexing
-   - [ ] File change detection
+5. FilesManager
+   - [x] File management system
+   - [x] File tracking and indexing
+   - [x] File change detection
 
 ## Priorities
 
