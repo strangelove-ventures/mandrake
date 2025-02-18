@@ -1,13 +1,10 @@
 import { z } from 'zod';
+import type { ProviderType } from '@mandrake/utils';
 
-const providerTypeSchema = z.enum([
-  'anthropic',
-  'ollama',
-  'openai',
-  'grok',
-  'deepseek',
-  'openrouter',
-]);
+// Update provider types to match utils
+const providerTypeSchema = z.enum(
+  Object.values(ProviderType) as [string, ...string[]]
+);
 
 const providerConfigSchema = z.object({
   type: providerTypeSchema,
@@ -15,23 +12,16 @@ const providerConfigSchema = z.object({
   baseUrl: z.string().url().optional(),
 });
 
+// Model config needs maxTokens since provider needs it
 const modelConfigSchema = z.object({
   enabled: z.boolean(),
   providerId: z.string(),
   modelId: z.string(),
   config: z.object({
     temperature: z.number().min(0).max(1).optional(),
-    maxTokens: z.number().positive().int().optional(),
+    maxTokens: z.number().positive().int(), // Required now
   }),
 });
 
-export const modelsConfigSchema = z.object({
-  active: z.string(),
-  providers: z.record(z.string(), providerConfigSchema),
-  models: z.record(z.string(), modelConfigSchema),
-});
-
-export type ProviderType = z.infer<typeof providerTypeSchema>;
-export type ProviderConfig = z.infer<typeof providerConfigSchema>;
-export type ModelConfig = z.infer<typeof modelConfigSchema>;
-export type ModelsConfig = z.infer<typeof modelsConfigSchema>;
+// Re-export types
+export type { ProviderType } from '@mandrake/utils';

@@ -83,7 +83,8 @@ describe('OllamaProvider', () => {
     const limitedProvider = new OllamaProvider({
       modelId: MODEL,
       modelInfo: {
-        maxTokens: 10
+        maxTokens: 10,
+        contextWindow: 4096
       }
     });
 
