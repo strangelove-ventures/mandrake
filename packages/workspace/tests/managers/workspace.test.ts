@@ -54,9 +54,9 @@ describe('WorkspaceManager', () => {
 
       // Check models
       const models = await workspaceManager.models.getActive();
-      expect(models).toBe('');
+      expect(models).toBe('claude-3-5-sonnet-20241022');
       const providers = await workspaceManager.models.listProviders();
-      expect(Object.keys(providers)).toHaveLength(0);
+      expect(Object.keys(providers)).toHaveLength(1);
 
       // Rest stays the same
       const prompt = await workspaceManager.prompt.getConfig();

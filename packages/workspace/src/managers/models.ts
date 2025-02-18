@@ -1,10 +1,11 @@
 import { BaseConfigManager } from './base';
 import { 
-  type ModelsConfig,
-  type ProviderConfig,
   type ModelConfig,
-  modelsConfigSchema 
-} from '../types/workspace/models';
+  type ProviderConfig,
+  type ModelsConfig,
+  modelsConfigSchema,
+  getDefaultModel,
+} from '@mandrake/utils';
 
 export class ModelsManager extends BaseConfigManager<ModelsConfig> {
   constructor(path: string) {
@@ -166,12 +167,28 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
       active: id,
     });
   }
-
   protected getDefaults(): ModelsConfig {
+    const defaultProvider = 'anthropic';
+    const model = getDefaultModel(defaultProvider);
     return {
-      active: '',
-      providers: {},
-      models: {},
+      active: model,
+      providers: {
+        'anthropic': {
+          type: defaultProvider,
+          apiKey: "your-api-key-here",
+        }
+      },
+      models: {
+        "claude-3-5-sonnet-20241022": {
+          enabled: true,
+          providerId: defaultProvider,
+          modelId: model,
+          config: {
+            temperature: 0,
+            maxTokens: 8400,
+          }
+        }
+      }
     };
   }
 }

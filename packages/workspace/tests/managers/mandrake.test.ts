@@ -45,9 +45,9 @@ describe('MandrakeManager', () => {
 
       // Check models
       const models = await manager.models.getActive();
-      expect(models).toBe('');
+      expect(models).toBe('claude-3-5-sonnet-20241022');
       const providers = await manager.models.listProviders();
-      expect(Object.keys(providers)).toHaveLength(0);
+      expect(Object.keys(providers)).toHaveLength(1);
 
       // Check prompt
       await manager.prompt.init();

@@ -1,13 +1,11 @@
 import { z } from 'zod';
-import type { ProviderType } from '@mandrake/utils';
+import { ProviderType } from '@mandrake/utils';
 
 // Update provider types to match utils
-const providerTypeSchema = z.enum(
-  Object.values(ProviderType) as [string, ...string[]]
-);
+
 
 const providerConfigSchema = z.object({
-  type: providerTypeSchema,
+  type: ProviderType,
   apiKey: z.string().optional(),
   baseUrl: z.string().url().optional(),
 });
