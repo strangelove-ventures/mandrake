@@ -48,6 +48,11 @@
    - [ ] Restore functionality
    - [ ] Cloud storage sync options
 
+5. FilesManager - NEEDED FOR MVP
+   - [ ] File management system
+   - [ ] File tracking and indexing
+   - [ ] File change detection
+
 ## Priorities
 
 1. Core Features (P0)

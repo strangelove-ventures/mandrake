@@ -25,7 +25,7 @@ export interface WorkspacePaths {
   tools: string;         // ~/.mandrake/workspaces/{name}/config/tools.json
   models: string;        // ~/.mandrake/workspaces/{name}/config/models.json
   context: string;       // ~/.mandrake/workspaces/{name}/config/context.json
-  systemPrompt: string;  // ~/.mandrake/workspaces/{name}/config/system-prompt.md
+  systemPrompt: string;  // ~/.mandrake/workspaces/{name}/config/prompt.json
   files: string;         // ~/.mandrake/workspaces/{name}/files
   src: string;           // ~/.mandrake/workspaces/{name}/src
   mcpdata: string;       // ~/.mandrake/workspaces/{name}/mcpdata
@@ -54,7 +54,7 @@ export function getWorkspacePath(workspaceDir: string, name: string): WorkspaceP
     tools: join(config, 'tools.json'),
     models: join(config, 'models.json'),
     context: join(config, 'context.json'),
-    systemPrompt: join(config, 'system-prompt.md'),
+    systemPrompt: join(config, 'prompt.json'),
     files: join(root, 'files'),
     src: join(root, 'src'),
     mcpdata: join(root, 'mcpdata'),
