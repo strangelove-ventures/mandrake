@@ -1,113 +1,140 @@
-import { expect, test, describe, beforeEach, afterEach } from "bun:test";
+import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
+import { tmpdir } from 'os';
 import { ToolsManager } from '../../src/managers/tools';
-import { createTestDirectory, type TestDirectory } from '../utils/utils';
-import type { ServerConfig } from '../../src/types/workspace';
+import { ServerConfig, ToolConfig } from '../../src/types/workspace/tools';
 
 describe('ToolsManager', () => {
-  let testDir: TestDirectory;
+  let tmpDir: string;
+  let configPath: string;
   let manager: ToolsManager;
 
+  const testServer: ServerConfig = {
+    command: 'test-server',
+    args: ['--config', 'test.json'],
+    env: {
+      TEST_ENV: 'value',
+    },
+  };
+
+  const testToolConfig: ToolConfig = {
+    'test': testServer,
+  };
+
   beforeEach(async () => {
-    testDir = await createTestDirectory('tools-test-');
-    manager = new ToolsManager(join(testDir.path, 'tools.json'));
+    tmpDir = await mkdtemp(join(tmpdir(), 'tools-test-'));
+    configPath = join(tmpDir, 'tools.json');
+    manager = new ToolsManager(configPath);
   });
 
   afterEach(async () => {
-    await testDir.cleanup();
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
-  describe('Fresh State', () => {
-    test('should start with empty tool list', async () => {
-      const tools = await manager.list();
-      expect(tools).toEqual([]);
-    });
-  });
-
-  describe('Tool Management', () => {
-    const testTool: ServerConfig = {
-      id: 'test-tool',
-      name: 'Test Tool',
-      image: 'test-image:latest'
-    };
-
-    test('should add tool', async () => {
-      await manager.add(testTool);
-      const tools = await manager.list();
-      expect(tools).toEqual([testTool]);
+  describe('config set operations', () => {
+    test('lists default config set', async () => {
+      const sets = await manager.listConfigSets();
+      expect(sets).toContain('default');
     });
 
-    test('should prevent duplicate tool ids', async () => {
-      await manager.add(testTool);
-      await expect(manager.add(testTool)).rejects.toThrow();
+    test('adds and gets config set', async () => {
+      await manager.addConfigSet('custom', testToolConfig);
+      const config = await manager.getConfigSet('custom');
+      expect(config).toEqual(testToolConfig);
     });
 
-    test('should get tool by id', async () => {
-      await manager.add(testTool);
-      const tool = await manager.get(testTool.id);
-      expect(tool).toEqual(testTool);
-    });
-
-    test('should return undefined for non-existent tool', async () => {
-      const tool = await manager.get('non-existent');
-      expect(tool).toBeUndefined();
-    });
-
-    test('should update tool', async () => {
-      await manager.add(testTool);
-      await manager.update(testTool.id, { name: 'Updated Name' });
-      const tool = await manager.get(testTool.id);
-      expect(tool).toEqual({ ...testTool, name: 'Updated Name' });
-    });
-
-    test('should fail to update non-existent tool', async () => {
-      await expect(manager.update('non-existent', { name: 'New Name' }))
-        .rejects.toThrow();
-    });
-
-    test('should remove tool', async () => {
-      await manager.add(testTool);
-      await manager.remove(testTool.id);
-      const tools = await manager.list();
-      expect(tools).toEqual([]);
-    });
-
-    test('should fail to remove non-existent tool', async () => {
-      await expect(manager.remove('non-existent')).rejects.toThrow();
-    });
-  });
-
-  describe('File Handling', () => {
-    test('should persist tools across instances', async () => {
-      const testTool: ServerConfig = {
-        id: 'test-tool',
-        name: 'Test Tool',
-        image: 'test-image:latest'
+    test('updates config set', async () => {
+      await manager.addConfigSet('custom', testToolConfig);
+      const updates: Partial<ToolConfig> = {
+        'test': { ...testServer, disabled: true },
       };
-
-      await manager.add(testTool);
-
-      // Create new instance pointing to same file
-      const newManager = new ToolsManager(join(testDir.path, 'tools.json'));
-      const tools = await newManager.list();
-      expect(tools).toEqual([testTool]);
+      await manager.updateConfigSet('custom', updates);
+      const config = await manager.getConfigSet('custom');
+      expect(config['test'].disabled).toBe(true);
     });
 
-    test('should handle corrupted file', async () => {
-      const testTool: ServerConfig = {
-        id: 'test-tool',
-        name: 'Test Tool',
-        image: 'test-image:latest'
-      };
+    test('removes config set', async () => {
+      await manager.addConfigSet('custom', testToolConfig);
+      await manager.setActive('custom');
+      
+      await manager.removeConfigSet('custom');
+      
+      const sets = await manager.listConfigSets();
+      expect(sets).not.toContain('custom');
+      const active = await manager.getActive();
+      expect(active).toBe('default');
+    });
 
-      await manager.add(testTool);
+    test('throws on duplicate config set', async () => {
+      await manager.addConfigSet('custom', testToolConfig);
+      await expect(manager.addConfigSet('custom', testToolConfig))
+        .rejects.toThrow('Config set custom already exists');
+    });
+  });
 
-      // Corrupt the file
-      await Bun.write(join(testDir.path, 'tools.json'), 'invalid json');
+  describe('server config operations', () => {
+    beforeEach(async () => {
+      await manager.addConfigSet('custom', {});
+    });
 
-      // Should reset to defaults
-      const tools = await manager.list();
-      expect(tools).toEqual([]);
+    test('adds and gets server config', async () => {
+      await manager.addServerConfig('custom', 'test', testServer);
+      const config = await manager.getServerConfig('custom', 'test');
+      expect(config).toEqual(testServer);
+    });
+
+    test('updates server config', async () => {
+      await manager.addServerConfig('custom', 'test', testServer);
+      await manager.updateServerConfig('custom', 'test', { disabled: true });
+      const config = await manager.getServerConfig('custom', 'test');
+      expect(config.disabled).toBe(true);
+    });
+
+    test('removes server config', async () => {
+      await manager.addServerConfig('custom', 'test', testServer);
+      await manager.removeServerConfig('custom', 'test');
+      const configSet = await manager.getConfigSet('custom');
+      expect(configSet['test']).toBeUndefined();
+    });
+
+    test('throws when config set not found', async () => {
+      await expect(manager.addServerConfig('missing', 'test', testServer))
+        .rejects.toThrow('Config set missing not found');
+    });
+
+    test('throws on duplicate server in set', async () => {
+      await manager.addServerConfig('custom', 'test', testServer);
+      await expect(manager.addServerConfig('custom', 'test', testServer))
+        .rejects.toThrow('Server test already exists in config set custom');
+    });
+  });
+
+  describe('active config set operations', () => {
+    test('gets default active config set', async () => {
+      const active = await manager.getActive();
+      expect(active).toBe('default');
+    });
+
+    test('sets and gets active config set', async () => {
+      await manager.addConfigSet('custom', testToolConfig);
+      await manager.setActive('custom');
+      const active = await manager.getActive();
+      expect(active).toBe('custom');
+    });
+
+    test('throws when setting non-existent config set as active', async () => {
+      await expect(manager.setActive('missing'))
+        .rejects.toThrow('Config set missing not found');
+    });
+  });
+
+  describe('defaults', () => {
+    test('provides default filesystem and git tools', async () => {
+      const config = await manager.getConfigSet('default');
+      expect(config.filesystem).toBeDefined();
+      expect(config.filesystem.command).toBe('mcp-filesystem-server');
+      expect(config.git).toBeDefined();
+      expect(config.git.command).toBe('mcp-git-server');
     });
   });
 });

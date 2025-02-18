@@ -55,8 +55,8 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
 
     // Initialize sub-managers with defaults
     await Promise.all([
-      this.tools.list(),
-      this.models.get(),
+      this.tools.init(),
+      this.models.init(),
       this.prompt.get(),
     ]);
 

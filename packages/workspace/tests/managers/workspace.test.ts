@@ -49,22 +49,19 @@ describe('WorkspaceManager', () => {
       await workspaceManager.init();
 
       // Check tools
-      const tools = await workspaceManager.tools.list();
-      expect(tools).toEqual([]);
+      const tools = await workspaceManager.tools.listConfigSets();
+      expect(tools).toContain('default');
 
       // Check models
-      const models = await workspaceManager.models.get();
-      expect(models).toEqual({
-        provider: '',
-        maxTokens: 16000,
-        temperature: 0.7
-      });
+      const models = await workspaceManager.models.getActive();
+      expect(models).toBe('');
+      const providers = await workspaceManager.models.listProviders();
+      expect(Object.keys(providers)).toHaveLength(0);
 
-      // Check prompt
+      // Rest stays the same
       const prompt = await workspaceManager.prompt.get();
       expect(prompt).toBe('You are a helpful AI assistant.');
 
-      // Check dynamic context
       const contexts = await workspaceManager.dynamic.list();
       expect(contexts).toEqual([]);
     });
@@ -111,25 +108,26 @@ describe('WorkspaceManager', () => {
     });
 
     test('tools manager should operate independently', async () => {
-      await workspaceManager.tools.add({
-        id: 'test-tool',
-        name: 'Test Tool',
-        image: 'test:latest'
-      });
+      const config = {
+        test: {
+          command: 'test-command'
+        }
+      };
+      await workspaceManager.tools.addConfigSet('test', config);
 
-      const tools = await workspaceManager.tools.list();
-      expect(tools).toHaveLength(1);
+      const configs = await workspaceManager.tools.listConfigSets();
+      expect(configs).toContain('test');
     });
 
     test('models manager should operate independently', async () => {
-      await workspaceManager.models.update({
-        provider: 'test-provider',
-        temperature: 0.5
-      });
+      const provider = {
+        type: 'anthropic' as const,
+        apiKey: 'test-key'
+      };
+      await workspaceManager.models.addProvider('test', provider);
 
-      const models = await workspaceManager.models.get();
-      expect(models.provider).toBe('test-provider');
-      expect(models.temperature).toBe(0.5);
+      const providers = await workspaceManager.models.listProviders();
+      expect(Object.keys(providers)).toContain('test');
     });
 
     test('prompt manager should operate independently', async () => {

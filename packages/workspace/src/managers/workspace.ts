@@ -4,6 +4,7 @@ import { ToolsManager } from './tools';
 import { ModelsManager } from './models';
 import { PromptManager } from './prompt';
 import { DynamicContextManager } from './dynamic';
+import { FilesManager } from './files';
 import { BaseConfigManager } from './base';
 import { getWorkspacePath, type WorkspacePaths } from '../utils/paths';
 import { SessionManager } from './session';
@@ -15,6 +16,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
   public readonly models: ModelsManager;
   public readonly prompt: PromptManager;
   public readonly dynamic: DynamicContextManager;
+  public readonly files: FilesManager;
   public readonly sessions: SessionManager;
 
   constructor(workspaceDir: string, name: string) {
@@ -37,6 +39,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
     this.models = new ModelsManager(paths.models);
     this.prompt = new PromptManager(paths.systemPrompt);
     this.dynamic = new DynamicContextManager(paths.context);
+    this.files = new FilesManager(paths.root);
     this.sessions = new SessionManager(paths.db);
   }
 
@@ -50,13 +53,15 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
     await Promise.all([
       mkdir(this.paths.root, { recursive: true }),
       mkdir(this.paths.config, { recursive: true }),
-      mkdir(this.paths.files, { recursive: true }),
       mkdir(this.paths.src, { recursive: true }),
       mkdir(this.paths.mcpdata, { recursive: true })
     ]);
 
-    // Initialize sessions
-    await this.sessions.init();
+    // Initialize files and sessions
+    await Promise.all([
+      this.files.init(),
+      this.sessions.init()
+    ]);
 
     // Write initial workspace config
     const config: Workspace = {
@@ -70,8 +75,8 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
 
     // Initialize sub-managers with defaults
     await Promise.all([
-      this.tools.list(),      // Creates tools.json if doesn't exist
-      this.models.get(),      // Creates models.json if doesn't exist
+      this.tools.init(),      // Creates tools.json if doesn't exist
+      this.models.init(),      // Creates models.json if doesn't exist
       this.prompt.get(),      // Creates system-prompt.md if doesn't exist
       this.dynamic.list()     // Creates context.json if doesn't exist
     ]);

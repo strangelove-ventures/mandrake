@@ -1,82 +1,160 @@
-import { expect, test, describe, beforeEach, afterEach } from "bun:test";
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
+import { tmpdir } from 'os';
 import { ModelsManager } from '../../src/managers/models';
-import { createTestDirectory, type TestDirectory } from '../utils/utils';
-import type { ModelsConfig } from '../../src/types/workspace';
+import type { ProviderConfig, ModelConfig } from '../../src/types/workspace/models';
 
 describe('ModelsManager', () => {
-  let testDir: TestDirectory;
+  let tmpDir: string;
+  let configPath: string;
   let manager: ModelsManager;
 
+  const testProvider: ProviderConfig = {
+    type: 'anthropic',
+    apiKey: 'test-key',
+    baseUrl: 'https://api.anthropic.com',
+  };
+
+  const testModel: ModelConfig = {
+    enabled: true,
+    providerId: 'anthropic',
+    modelId: 'claude-3',
+    config: {
+      temperature: 0.7,
+      maxTokens: 4096,
+    },
+  };
+
   beforeEach(async () => {
-    testDir = await createTestDirectory('models-test-');
-    manager = new ModelsManager(join(testDir.path, 'models.json'));
+    tmpDir = await mkdtemp(join(tmpdir(), 'models-test-'));
+    configPath = join(tmpDir, 'models.json');
+    manager = new ModelsManager(configPath);
   });
 
   afterEach(async () => {
-    await testDir.cleanup();
+    await rm(tmpDir, { recursive: true, force: true });
   });
 
-  describe('Fresh State', () => {
-    test('should start with default config', async () => {
-      const config = await manager.get();
-      expect(config).toEqual({
-        provider: '',
-        maxTokens: 16000,
-        temperature: 0.7
-      });
-    });
-  });
-
-  describe('Config Management', () => {
-    test('should update config', async () => {
-      const updates: Partial<ModelsConfig> = {
-        provider: 'openai',
-        maxTokens: 8000,
-        temperature: 0.5
-      };
-
-      await manager.update(updates);
-      const config = await manager.get();
-      expect(config).toEqual({
-        ...manager.getDefaults(),
-        ...updates
-      });
+  describe('provider operations', () => {
+    test('adds and gets provider', async () => {
+      await manager.addProvider('anthropic', testProvider);
+      const provider = await manager.getProvider('anthropic');
+      expect(provider).toEqual(testProvider);
     });
 
-    test('should validate temperature range', async () => {
-      await expect(manager.update({ temperature: 1.5 }))
-        .rejects.toThrow();
+    test('lists providers', async () => {
+      await manager.addProvider('anthropic', testProvider);
+      const providers = await manager.listProviders();
+      expect(providers).toEqual({ anthropic: testProvider });
     });
 
-    test('should persist config across instances', async () => {
-      const updates = {
-        provider: 'openai',
-        temperature: 0.5
-      };
+    test('updates provider', async () => {
+      await manager.addProvider('anthropic', testProvider);
+      await manager.updateProvider('anthropic', { apiKey: 'new-key' });
+      const provider = await manager.getProvider('anthropic');
+      expect(provider.apiKey).toBe('new-key');
+    });
 
-      await manager.update(updates);
+    test('removes provider', async () => {
+      await manager.addProvider('anthropic', testProvider);
+      await manager.removeProvider('anthropic');
+      const providers = await manager.listProviders();
+      expect(providers).toEqual({});
+    });
 
-      // Create new instance pointing to same file
-      const newManager = new ModelsManager(join(testDir.path, 'models.json'));
-      const config = await newManager.get();
-      expect(config).toEqual({
-        ...manager.getDefaults(),
-        ...updates
-      });
+    test('removes models when provider is removed', async () => {
+      await manager.addProvider('anthropic', testProvider);
+      await manager.addModel('claude', testModel);
+      await manager.setActive('claude');
+      
+      await manager.removeProvider('anthropic');
+      
+      const models = await manager.listModels();
+      expect(models).toEqual({});
+      const active = await manager.getActive();
+      expect(active).toBe('');
+    });
+
+    test('throws on duplicate provider', async () => {
+      await manager.addProvider('anthropic', testProvider);
+      await expect(manager.addProvider('anthropic', testProvider))
+        .rejects.toThrow('Provider anthropic already exists');
     });
   });
 
-  describe('File Handling', () => {
-    test('should handle corrupted file', async () => {
-      await manager.update({ provider: 'test' });
+  describe('model operations', () => {
+    beforeEach(async () => {
+      await manager.addProvider('anthropic', testProvider);
+    });
 
-      // Corrupt the file
-      await Bun.write(join(testDir.path, 'models.json'), 'invalid json');
+    test('adds and gets model', async () => {
+      await manager.addModel('claude', testModel);
+      const model = await manager.getModel('claude');
+      expect(model).toEqual(testModel);
+    });
 
-      // Should reset to defaults
-      const config = await manager.get();
-      expect(config).toEqual(manager.getDefaults());
+    test('lists models', async () => {
+      await manager.addModel('claude', testModel);
+      const models = await manager.listModels();
+      expect(models).toEqual({ claude: testModel });
+    });
+
+    test('updates model', async () => {
+      await manager.addModel('claude', testModel);
+      await manager.updateModel('claude', { 
+        config: { ...testModel.config, temperature: 0.9 } 
+      });
+      const model = await manager.getModel('claude');
+      expect(model.config.temperature).toBe(0.9);
+    });
+
+    test('removes model', async () => {
+      await manager.addModel('claude', testModel);
+      await manager.setActive('claude');
+      
+      await manager.removeModel('claude');
+      
+      const models = await manager.listModels();
+      expect(models).toEqual({});
+      const active = await manager.getActive();
+      expect(active).toBe('');
+    });
+
+    test('throws when provider not found', async () => {
+      await expect(manager.addModel('claude', { ...testModel, providerId: 'missing' }))
+        .rejects.toThrow('Provider missing not found');
+    });
+
+    test('throws on duplicate model', async () => {
+      await manager.addModel('claude', testModel);
+      await expect(manager.addModel('claude', testModel))
+        .rejects.toThrow('Model claude already exists');
+    });
+  });
+
+  describe('active model operations', () => {
+    beforeEach(async () => {
+      await manager.addProvider('anthropic', testProvider);
+      await manager.addModel('claude', testModel);
+    });
+
+    test('sets and gets active model', async () => {
+      await manager.setActive('claude');
+      const active = await manager.getActive();
+      expect(active).toBe('claude');
+    });
+
+    test('throws when setting non-existent model as active', async () => {
+      await expect(manager.setActive('missing'))
+        .rejects.toThrow('Model missing not found');
+    });
+
+    test('allows clearing active model', async () => {
+      await manager.setActive('claude');
+      await manager.setActive('');
+      const active = await manager.getActive();
+      expect(active).toBe('');
     });
   });
 });

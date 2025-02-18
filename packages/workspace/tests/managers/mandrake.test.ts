@@ -40,16 +40,14 @@ describe('MandrakeManager', () => {
       await manager.init();
 
       // Check tools
-      const tools = await manager.tools.list();
-      expect(tools).toEqual([]);
+      const tools = await manager.tools.listConfigSets();
+      expect(tools).toContain('default');
 
       // Check models
-      const models = await manager.models.get();
-      expect(models).toEqual({
-        provider: '',
-        maxTokens: 16000,
-        temperature: 0.7
-      });
+      const models = await manager.models.getActive();
+      expect(models).toBe('');
+      const providers = await manager.models.listProviders();
+      expect(Object.keys(providers)).toHaveLength(0);
 
       // Check prompt
       const prompt = await manager.prompt.get();
