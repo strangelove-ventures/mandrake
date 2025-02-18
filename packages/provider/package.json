@@ -3,19 +3,22 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "src/index.ts",
   "scripts": {
-    "build": "tsc",
     "test": "bun test",
-    "clean": "rm -rf dist"
+    "build": "bun build ./src/index.ts --outdir ./dist"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.26.0",
+    "@google/generative-ai": "^0.21.0",
+    "@mandrake/mcp": "workspace:*",
     "@mandrake/utils": "workspace:*",
-    "@mandrake/mcp": "workspace:*"
+    "ollama": "^0.5.13",
+    "openai": "^4.85.1"
   },
   "devDependencies": {
-    "@types/node": "latest",
+    "bun-types": "latest",
+    "dotenv": "^16.4.7",
     "typescript": "^5.0.0"
   }
 }
