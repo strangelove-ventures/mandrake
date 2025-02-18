@@ -1,19 +1,14 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
-
-export interface MCPTool {
-  name: string
-  description: string
-  parameters: Record<string, any>
-}
+import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 
 export interface MCPConnection {
   server: {
     name: string
     status: 'connected' | 'disconnected' | 'connecting'
     error?: string
-    tools?: MCPTool[]
+    tools?: Tool[]
     disabled?: boolean
   }
   client: Client
@@ -33,9 +28,4 @@ export interface ServerState {
   lastRetryTimestamp?: number
   retryCount: number
   logs: string[]
-}
-
-export interface ToolCallParams {
-  name: string
-  arguments: Record<string, any>
 }

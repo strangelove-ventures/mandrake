@@ -5,7 +5,9 @@
     "rootDir": "./src",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "types": ["bun-types"]
+    "types": ["bun-types"],
+    "composite": true,
+    "declarationMap": true
   },
   "include": ["src/**/*"]
 }

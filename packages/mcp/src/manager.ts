@@ -1,5 +1,6 @@
 import { MCPServerImpl } from './server'
-import type { ServerConfig, ServerState, MCPTool } from './types'
+import type { ServerConfig, ServerState } from './types'
+import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 
 export class MCPManager {
   private servers: Map<string, MCPServerImpl>
@@ -43,8 +44,8 @@ export class MCPManager {
     await this.startServer(id, config)
   }
 
-  async listAllTools(): Promise<Array<MCPTool & { server: string }>> {
-    const allTools: Array<MCPTool & { server: string }> = []
+  async listAllTools(): Promise<Array<Tool & { server: string }>> {
+    const allTools: Array<Tool & { server: string }> = []
     
     for (const [id, server] of this.servers) {
       if (!server.getConfig().disabled) {

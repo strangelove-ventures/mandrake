@@ -77,7 +77,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
     await Promise.all([
       this.tools.init(),      // Creates tools.json if doesn't exist
       this.models.init(),      // Creates models.json if doesn't exist
-      this.prompt.get(),      // Creates system-prompt.md if doesn't exist
+      this.prompt.init(),      // Creates system-prompt.md if doesn't exist
       this.dynamic.list()     // Creates context.json if doesn't exist
     ]);
 

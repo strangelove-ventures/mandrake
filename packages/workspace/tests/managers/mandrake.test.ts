@@ -50,8 +50,9 @@ describe('MandrakeManager', () => {
       expect(Object.keys(providers)).toHaveLength(0);
 
       // Check prompt
-      const prompt = await manager.prompt.get();
-      expect(prompt).toBe('You are a helpful AI assistant.');
+      await manager.prompt.init();
+      const prompt = await manager.prompt.getConfig();
+      expect(prompt.instructions).toBe('You are a helpful AI assistant.');
     });
   });
 

@@ -15,7 +15,8 @@ describe('OllamaProvider', () => {
     provider = new OllamaProvider({
       modelId: MODEL,
       modelInfo: {
-        maxTokens: 4096
+        maxTokens: 4096,
+        contextWindow: 4096
       }
     });
   });

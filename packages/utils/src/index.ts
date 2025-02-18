@@ -82,3 +82,5 @@ export function createLogger(packageName: string, options: LoggerOptions = {}): 
     }
   });
 }
+
+export * from './models'

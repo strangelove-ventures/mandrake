@@ -1,6 +1,7 @@
 import { expect, test, describe, beforeEach, afterEach } from "bun:test";
 import { join } from 'path';
 import { PromptManager } from '../../src/managers/prompt';
+import type { PromptConfig } from '../../src/types/workspace/prompt';
 import { createTestDirectory, type TestDirectory } from '../utils/utils';
 
 describe('PromptManager', () => {
@@ -9,44 +10,96 @@ describe('PromptManager', () => {
 
   beforeEach(async () => {
     testDir = await createTestDirectory('prompt-test-');
-    manager = new PromptManager(join(testDir.path, 'prompt.md'));
+    manager = new PromptManager(join(testDir.path, 'prompt.json'));
   });
 
   afterEach(async () => {
     await testDir.cleanup();
   });
 
-  describe('Fresh State', () => {
-    test('should start with default prompt', async () => {
-      const prompt = await manager.get();
-      expect(prompt).toBe('You are a helpful AI assistant.');
+  describe('Initialization', () => {
+    test('should create config file on init', async () => {
+      await manager.init();
+      const config = await manager.getConfig();
+      expect(config).toEqual({
+        instructions: 'You are a helpful AI assistant.',
+        includeWorkspaceMetadata: true,
+        includeSystemInfo: true,
+        includeDateTime: true
+      });
+    });
+
+    test('should preserve existing config on init', async () => {
+      const customConfig: PromptConfig = {
+        instructions: 'Custom instructions',
+        includeWorkspaceMetadata: false,
+        includeSystemInfo: false,
+        includeDateTime: false
+      };
+      await manager.updateConfig(customConfig);
+      await manager.init();
+      const config = await manager.getConfig();
+      expect(config).toEqual(customConfig);
     });
   });
 
-  describe('Prompt Management', () => {
-    test('should update prompt', async () => {
-      const newPrompt = 'You are a specialized coding assistant.';
-      await manager.update(newPrompt);
-      const prompt = await manager.get();
-      expect(prompt).toBe(newPrompt);
+  describe('Fresh State', () => {
+    test('should start with default config', async () => {
+      const config = await manager.getConfig();
+      expect(config).toEqual({
+        instructions: 'You are a helpful AI assistant.',
+        includeWorkspaceMetadata: true,
+        includeSystemInfo: true,
+        includeDateTime: true
+      });
+    });
+  });
+
+  describe('Config Management', () => {
+    test('should update config', async () => {
+      const newConfig: PromptConfig = {
+        instructions: 'You are a specialized coding assistant.',
+        includeWorkspaceMetadata: false,
+        includeSystemInfo: true,
+        includeDateTime: false
+      };
+      await manager.updateConfig(newConfig);
+      const config = await manager.getConfig();
+      expect(config).toEqual(newConfig);
     });
 
-    test('should persist prompt across instances', async () => {
-      const newPrompt = 'You are a specialized coding assistant.';
-      await manager.update(newPrompt);
+    test('should persist config across instances', async () => {
+      const newConfig: PromptConfig = {
+        instructions: 'You are a specialized coding assistant.',
+        includeWorkspaceMetadata: true,
+        includeSystemInfo: false,
+        includeDateTime: true
+      };
+      await manager.updateConfig(newConfig);
 
       // Create new instance pointing to same file
-      const newManager = new PromptManager(join(testDir.path, 'prompt.md'));
-      const prompt = await newManager.get();
-      expect(prompt).toBe(newPrompt);
+      const newManager = new PromptManager(join(testDir.path, 'prompt.json'));
+      const config = await newManager.getConfig();
+      expect(config).toEqual(newConfig);
     });
   });
 
   describe('Error Handling', () => {
     test('should handle missing file', async () => {
-      const nonExistentManager = new PromptManager(join(testDir.path, 'nonexistent.md'));
-      const prompt = await nonExistentManager.get();
-      expect(prompt).toBe('You are a helpful AI assistant.');
+      const nonExistentManager = new PromptManager(join(testDir.path, 'nonexistent.json'));
+      const config = await nonExistentManager.getConfig();
+      expect(config).toEqual({
+        instructions: 'You are a helpful AI assistant.',
+        includeWorkspaceMetadata: true,
+        includeSystemInfo: true,
+        includeDateTime: true
+      });
+    });
+
+    test('should handle invalid JSON', async () => {
+      await Bun.write(join(testDir.path, 'invalid.json'), 'not json');
+      const invalidManager = new PromptManager(join(testDir.path, 'invalid.json'));
+      await expect(invalidManager.getConfig()).rejects.toThrow();
     });
   });
 });

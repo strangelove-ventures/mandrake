@@ -22,7 +22,8 @@ describe('BaseProvider', () => {
       const provider = new TestProvider({
         modelId: 'test',
         modelInfo: {
-          maxTokens: 1000
+          maxTokens: 1000,
+          contextWindow: 10000
         }
       });
 
@@ -36,6 +37,7 @@ describe('BaseProvider', () => {
         modelId: 'test',
         modelInfo: {
           maxTokens: 1000,
+          contextWindow: 10000,
           inputPrice: 10
         }
       });
@@ -44,53 +46,40 @@ describe('BaseProvider', () => {
         id: 'test',
         info: {
           maxTokens: 1000,
-          inputPrice: 10
+          inputPrice: 10,
+          contextWindow: 10000
         }
       });
     });
   });
 
   describe('calculateCost', () => {
-    test('calculates basic input/output costs', () => {
+    test('calculates cost based on input and output tokens', () => {
       const provider = new TestProvider({
         modelId: 'test',
         modelInfo: {
-          maxTokens: 1000,
-          inputPrice: 15,
-          outputPrice: 75
+          maxTokens: 100,
+          contextWindow: 1000,
+          inputPrice: 15,   // $15/million tokens
+          outputPrice: 75   // $75/million tokens
         }
       });
 
-      const cost = (provider as any).calculateCost(100, 200);
-      expect(cost).toBe((15 * 100 + 75 * 200) / 1_000_000);
+      const cost = provider.calculateCost(100, 200);
+      expect(cost).toBeCloseTo(0.0165, 6); // (100 * 15 + 200 * 75) / 1_000_000
     });
 
     test('handles missing prices', () => {
       const provider = new TestProvider({
         modelId: 'test',
         modelInfo: {
-          maxTokens: 1000
+          maxTokens: 1000,
+          contextWindow: 10000
         }
       });
 
       const cost = (provider as any).calculateCost(100, 200);
       expect(cost).toBe(0);
-    });
-
-    test('includes cache costs when provided', () => {
-      const provider = new TestProvider({
-        modelId: 'test',
-        modelInfo: {
-          maxTokens: 1000,
-          inputPrice: 15,
-          outputPrice: 75,
-          cacheWritesPrice: 5,
-          cacheReadsPrice: 2
-        }
-      });
-
-      const cost = (provider as any).calculateCost(100, 200, 50, 25);
-      expect(cost).toBeCloseTo(0.0168, 6);
     });
   });
 });

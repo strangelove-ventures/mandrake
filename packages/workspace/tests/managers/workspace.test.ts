@@ -59,8 +59,8 @@ describe('WorkspaceManager', () => {
       expect(Object.keys(providers)).toHaveLength(0);
 
       // Rest stays the same
-      const prompt = await workspaceManager.prompt.get();
-      expect(prompt).toBe('You are a helpful AI assistant.');
+      const prompt = await workspaceManager.prompt.getConfig();
+      expect(prompt.instructions).toBe('You are a helpful AI assistant.');
 
       const contexts = await workspaceManager.dynamic.list();
       expect(contexts).toEqual([]);
@@ -132,10 +132,15 @@ describe('WorkspaceManager', () => {
 
     test('prompt manager should operate independently', async () => {
       const newPrompt = 'Custom system prompt';
-      await workspaceManager.prompt.update(newPrompt);
+      await workspaceManager.prompt.updateConfig({
+        instructions: newPrompt,
+        includeWorkspaceMetadata: false,
+        includeSystemInfo: false,
+        includeDateTime: false
+      });
 
-      const prompt = await workspaceManager.prompt.get();
-      expect(prompt).toBe(newPrompt);
+      const prompt = await workspaceManager.prompt.getConfig();
+      expect(prompt.instructions).toBe(newPrompt);
     });
 
     test('dynamic context manager should operate independently', async () => {

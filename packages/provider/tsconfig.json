@@ -6,7 +6,6 @@
   },
   "include": ["src/**/*", "../session/src/stream"],
   "references": [
-    { "path": "../mcp" },
     { "path": "../utils" }
   ]
 }

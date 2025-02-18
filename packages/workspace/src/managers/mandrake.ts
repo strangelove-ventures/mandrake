@@ -57,7 +57,7 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
     await Promise.all([
       this.tools.init(),
       this.models.init(),
-      this.prompt.get(),
+      this.prompt.init(),
     ]);
 
     this.logger.info('Mandrake directory initialized');

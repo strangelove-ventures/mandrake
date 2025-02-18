@@ -21,28 +21,21 @@ export abstract class BaseProvider {
     };
   }
 
-  protected calculateCost(
+  calculateCost(
     inputTokens: number,
     outputTokens: number,
-    cacheWriteTokens?: number,
-    cacheReadTokens?: number
   ): number {
     const {
       inputPrice = 0,
       outputPrice = 0,
-      cacheWritesPrice = 0,
-      cacheReadsPrice = 0
+
     } = this.config.modelInfo;
 
-    const totalCost = (
+    return Number((
       (inputPrice / 1_000_000) * inputTokens +
-      (outputPrice / 1_000_000) * outputTokens +
-      (cacheWriteTokens ? (cacheWritesPrice / 1_000_000) * cacheWriteTokens : 0) +
-      (cacheReadTokens ? (cacheReadsPrice / 1_000_000) * cacheReadTokens : 0)
-    );
-    return Number(totalCost.toFixed(6));
+      (outputPrice / 1_000_000) * outputTokens
+    ).toFixed(6));
   }
-
   private validateConfig(config: ProviderConfig) {
     if (!config.modelId) {
       throw new ProviderError('Model ID is required');

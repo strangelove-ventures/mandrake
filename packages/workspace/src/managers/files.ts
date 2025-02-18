@@ -64,7 +64,7 @@ export class FilesManager {
       await this.get(name);
       throw new Error(`File ${name} already exists`);
     } catch (error) {
-      if (error.message === `File ${name} not found`) {
+      if ((error as Error).message === `File ${name} not found`) {
         await writeFile(path, content);
       } else {
         throw error;

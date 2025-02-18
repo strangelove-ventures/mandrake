@@ -3,7 +3,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { LogBuffer } from './logger'
 import type { Stream } from 'node:stream'
 import { TransportFactory } from './transport'
-import type { ServerConfig, ServerState, MCPTool } from './types'
+import type { Tool } from '@modelcontextprotocol/sdk/types.js'
+import type { ServerConfig, ServerState } from './types'
 
 // Default client config 
 const CLIENT_CONFIG = {
@@ -20,7 +21,7 @@ export interface MCPServer {
   getId(): string
   start(): Promise<void>
   stop(): Promise<void>
-  listTools(): Promise<MCPTool[]>
+  listTools(): Promise<Tool[]>
   invokeTool(name: string, params: any): Promise<any>
 }
 
@@ -152,7 +153,7 @@ export class MCPServerImpl implements MCPServer {
     }
   }
 
-  async listTools(): Promise<MCPTool[]> {
+  async listTools(): Promise<Tool[]> {
     if (this.config.disabled) {
       return []
     }
@@ -163,11 +164,7 @@ export class MCPServerImpl implements MCPServer {
 
     try {
       const response = await this.client.listTools()
-      return response.tools.map(tool => ({
-        name: tool.name,
-        description: tool.description || '',
-        parameters: tool.inputSchema.properties || {}
-      }))
+      return response.tools
     } catch (error) {
       this.logBuffer.append(`Failed to list tools: ${(error as Error).message}`)
       return []

@@ -24,7 +24,7 @@ export class AnthropicProvider extends BaseProvider {
     try {
       const stream = await this.client.messages.create({
         model: this.config.modelId,
-        max_tokens: this.config.modelInfo.maxTokens ?? 0,
+        max_tokens: this.config.modelInfo.maxTokens,
         system: systemPrompt,
         messages: this.convertMessages(messages),
         stream: true
@@ -37,9 +37,7 @@ export class AnthropicProvider extends BaseProvider {
               yield {
                 type: 'usage',
                 inputTokens: chunk.message.usage.input_tokens || 0,
-                outputTokens: chunk.message.usage.output_tokens || 0,
-                // cacheWriteTokens: chunk.message.usage.cache_creation_input_tokens,
-                // cacheReadTokens: chunk.message.usage.cache_read_input_tokens
+                outputTokens: chunk.message.usage.output_tokens || 0
               };
             }
             break;
