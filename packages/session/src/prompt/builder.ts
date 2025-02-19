@@ -4,6 +4,8 @@ import type {
   MetadataSectionConfig,
   SystemInfoSectionConfig,
   DateSectionConfig,
+  FilesSectionConfig,
+  DynamicContextSectionConfig
 } from './types';
 
 import {
@@ -16,7 +18,9 @@ import {
   ToolsSection,
   MetadataSection,
   SystemSection,
-  DateSection
+  DateSection,
+  FilesSection,
+  DynamicContextSection
 } from './sections';
 
 export interface SystemPromptBuilderConfig {
@@ -25,6 +29,8 @@ export interface SystemPromptBuilderConfig {
   metadata?: MetadataSectionConfig;
   systemInfo?: SystemInfoSectionConfig;
   dateConfig?: DateSectionConfig;
+  files?: FilesSectionConfig;
+  dynamicContext?: DynamicContextSectionConfig;
 }
 
 export class SystemPromptBuilder implements PromptBuilder {
@@ -42,6 +48,22 @@ export class SystemPromptBuilder implements PromptBuilder {
       const toolsContent = toolsSection.build();
       if (toolsContent) {
         this.sections.push(toolsContent);
+      }
+    }
+
+    if (config.files) {
+      const filesSection = new FilesSection(config.files);
+      const filesContent = filesSection.build();
+      if (filesContent) {
+        this.sections.push(filesContent);
+      }
+    }
+
+    if (config.dynamicContext) {
+      const dynamicSection = new DynamicContextSection(config.dynamicContext);
+      const dynamicContent = dynamicSection.build();
+      if (dynamicContent) {
+        this.sections.push(dynamicContent);
       }
     }
 

@@ -15,6 +15,10 @@ export interface MCPConnection {
   transport: StdioClientTransport | SSEClientTransport
 }
 
+export interface ToolWithServer extends Tool {
+  serverName: string;
+}
+
 export interface ServerConfig {
   command: string
   args?: string[]

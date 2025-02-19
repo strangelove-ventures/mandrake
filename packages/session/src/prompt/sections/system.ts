@@ -2,14 +2,14 @@ import { XmlTags, wrapWithXmlTag } from '../types';
 import type { ContextSection, SystemInfoSectionConfig } from '../types';
 
 export class SystemSection implements ContextSection {
-  constructor(private readonly config: SystemInfoSectionConfig) {}
+  constructor(private readonly config: SystemInfoSectionConfig) { }
 
   getContextString(): string {
+    const os = `Operating System: ${this.config.os}.${this.config.arch}`;
+    // TODO: more system info here
     return [
-      `os: ${this.config.os}`,
-      `arch: ${this.config.arch}`,
-      // Add other system info fields here as we expand
-    ].join('\n');
+      os
+    ].filter(Boolean).join('\n');
   }
 
   build(): string {

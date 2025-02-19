@@ -1,38 +1,40 @@
-import type { Logger } from '@mandrake/utils';
 import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { MCPManager } from '@mandrake/mcp';
+import type { 
+  Logger 
+} from '@mandrake/utils';
+import { 
+  MCPManager 
+} from '@mandrake/mcp';
+import type { 
+  Message 
+} from '@mandrake/provider'
 import { 
   PromptManager, 
   FilesManager, 
   DynamicContextManager, 
   SessionManager,
   ModelsManager,
+  type PromptConfig, 
+  type FileInfo,
 } from "@mandrake/workspace"
-import type { 
-  PromptConfig, 
-  FileInfo,
-  Session,
-} from '@mandrake/workspace';
 
 export interface Context {
-  systemPrompt: PromptConfig;
-  tools: Tool[];
-  files: FileInfo[];
-  dynamicContext: CallToolResult[];
-  history: Session[];
+  systemPrompt: string;
+  history: Message[];
+}
+
+export interface SessionMetadata {
+  name: string;
+  path: string;
 }
 
 export interface SessionCoordinatorOptions {
   logger?: Logger;
+  metadata: SessionMetadata;
   promptManager: PromptManager;
   sessionManager: SessionManager;
   mcpManager: MCPManager;
   modelsManager: ModelsManager;
   filesManager?: FilesManager;
   dynamicContextManager?: DynamicContextManager;
-}
-
-export interface MessageOptions {
-  sessionId: string;
-  request: string;
 }

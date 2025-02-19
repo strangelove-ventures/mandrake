@@ -1,10 +1,11 @@
 import type { Logger } from '@mandrake/utils';
 import { createLogger } from '@mandrake/utils';
-import type { SessionCoordinatorOptions, MessageOptions, Context } from './types';
+import type { SessionCoordinatorOptions, Context } from './types';
 import { ContextBuildError, MessageProcessError, ToolCallError } from './errors';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
-import { createProvider } from '@mandrake/provider';
-import type { ProviderID } from '@mandrake/provider';
+// import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { setupProviderFromManager } from './utils/provider';
+import { convertSessionToMessages } from './utils/messages';
+import { type SystemPromptBuilderConfig, SystemPromptBuilder } from './prompt/builder';
 
 export class SessionCoordinator {
   private logger: Logger;
@@ -12,38 +13,22 @@ export class SessionCoordinator {
   constructor(private readonly opts: SessionCoordinatorOptions) {
     this.logger = opts.logger || createLogger('SessionCoordinator');
   }
-
-  async handleMessage(opts: MessageOptions): Promise<void> {
+  async handleMessage(sessionId: string, request: string): Promise<void> {
     try {
-      // Get active model and provider
-      const modelName = await this.opts.modelsManager.getActive();
-      if (!modelName) {
-        throw new Error('No active model found');
-      }
-      
-      const model = await this.opts.modelsManager.getModel(modelName);
-      if (!model.enabled) {
-        throw new Error('Active model is disabled');
-      }
-
-      const providerConfig = await this.opts.modelsManager.getProvider(model.providerId);
-      this.logger.debug('Got provider for model', { 
-        modelName, 
-        provider: model.providerId 
-      });
-
-      const provider = createProvider(model.providerId as ProviderID, providerConfig);
+      // Setup provider using our new util
+      const provider = await setupProviderFromManager(this.opts.modelsManager);
+      this.logger.debug('Created provider for request', { sessionId });
 
       // Build context for request
-      const context = await this.buildContext(opts.sessionId);
-      this.logger.debug('Built context for request', { sessionId: opts.sessionId });
+      const context = await this.buildContext(sessionId);
+      this.logger.debug('Built context for request', { sessionId });
 
       // Create provider message stream
-      const messageStream = await provider.createMessage(
-        this.buildSystemPrompt(context),
-        [{ role: 'user', content: opts.request }]
+      const messageStream = provider.createMessage(
+        context.systemPrompt,
+        [...context.history, { role: 'user', content: request }]
       );
-      
+
       // Process message stream
       let content: string[] = [];
       let toolCalls: any[] = [];
@@ -55,6 +40,8 @@ export class SessionCoordinator {
             break;
           case 'tool_call':
             toolCalls.push(chunk.toolCall);
+            // Handle tool call immediately
+            await this.handleToolCall(opts.sessionId, chunk.toolCall);
             break;
           case 'usage':
             this.logger.debug('Token usage', {
@@ -63,13 +50,6 @@ export class SessionCoordinator {
               outputTokens: chunk.outputTokens
             });
             break;
-        }
-      }
-
-      // Handle tool calls if any
-      if (toolCalls.length > 0) {
-        for (const toolCall of toolCalls) {
-          await this.handleToolCall(opts.sessionId, toolCall);
         }
       }
 
@@ -84,86 +64,137 @@ export class SessionCoordinator {
     }
   }
 
-  private buildSystemPrompt(context: Context): string {
-    // Combine prompt config with context to build final system prompt
-    const { systemPrompt: config } = context;
-    
-    const sections: string[] = [];
-    sections.push(config.instructions);
+  private async buildSystemPrompt(): Promise<string> {
+    const promptConfig = await this.opts.promptManager.getConfig();
 
-    if (config.includeWorkspaceMetadata) {
-      // Add workspace metadata section
-    }
+    const instructions = promptConfig.instructions || '';
 
-    if (config.includeSystemInfo) {
-      // Add system info section
-    }
+    // Build individual section configs
+    const metadataConfig = promptConfig.includeWorkspaceMetadata ? {
+      metadata: {
+        workspaceName: this.opts.metadata.name,
+        workspacePath: this.opts.metadata.path,
+      }
+    } : {};
 
-    if (config.includeDateTime) {
-      // Add date/time section
-    }
+    const systemConfig = promptConfig.includeSystemInfo ? {
+      systemInfo: {
+        os: process.platform,
+        arch: process.arch,
+        cwd: this.opts.metadata.path,
+      }
+    } : {};
 
-    return sections.join('\n\n');
+    const dateConfig = promptConfig.includeDateTime ? {
+      dateConfig: {
+        includeTime: true
+      }
+    } : {};
+
+    // Build tools config if MCP manager exists
+    const toolsConfig = this.opts.mcpManager ? {
+      tools: {
+        tools: (await this.opts.mcpManager.listAllTools()).map(tool => ({
+          ...tool,
+          serverName: tool.server
+        }))
+      }
+    } : {};
+
+    // Build files config if files manager exists
+    const filesConfig = this.opts.filesManager ? {
+      files: {
+        files: await this.opts.filesManager.list()
+      }
+    } : {};
+
+    // Build dynamic context config if manager exists
+    const dynamicConfig = this.opts.dynamicContextManager ? {
+      dynamicContext: {
+        dynamicContext: await this.getDynamicContext()
+      }
+    } : {};
+
+    // Combine all configs
+    const builderConfig: SystemPromptBuilderConfig = {
+      instructions,
+      ...metadataConfig,
+      ...systemConfig,
+      ...dateConfig,
+      ...toolsConfig,
+      ...filesConfig,
+      ...dynamicConfig
+    };
+
+    const builder = new SystemPromptBuilder(builderConfig);
+    return builder.buildPrompt();
   }
 
-  private async buildContext(sessionId: string): Promise<Context> {
-    try {
-      // Get all required context in parallel
-      const [
-        systemPrompt,
-        tools,
-        files,
-        dynamicContext,
-        session
-      ] = await Promise.all([
-        this.opts.promptManager.getConfig(),
-        this.opts.mcpManager.listTools(),
-        this.opts.filesManager?.listFiles() || Promise.resolve([]),
-        this.getDynamicContext(),
-        this.opts.sessionManager.getSession(sessionId)
-      ]);
+  async buildContext(sessionId: string): Promise<Context> {
+    // Build system prompt which now includes all our context
+    const systemPrompt = await this.buildSystemPrompt();
 
-      return {
-        systemPrompt,
-        tools,
-        files,
-        dynamicContext,
-        history: [session]
-      };
-    } catch (error) {
-      throw new ContextBuildError('Failed to build context', error as Error);
-    }
+    // Get message history for the session
+    const sessionHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
+
+    const history = convertSessionToMessages(sessionHistory);
+    return {
+      systemPrompt,
+      history
+    };
   }
 
-  private async getDynamicContext(): Promise<CallToolResult[]> {
+  private async getDynamicContext(): Promise<{ name: string; result: any }[]> {
     if (!this.opts.dynamicContextManager) {
       return [];
     }
-    return this.opts.dynamicContextManager.getDynamicContext();
+
+    const configs = await this.opts.dynamicContextManager.list();
+
+    // Execute each dynamic context tool call and format result
+    const results = await Promise.all(
+      configs.map(async config => {
+        const result = await this.opts.mcpManager.invokeTool(
+          config.serverId,
+          config.methodName,
+          config.params
+        );
+
+        return {
+          name: `${config.serverId}/${config.methodName}`,  // Create meaningful name from config
+          result: result // The tool call result
+        };
+      })
+    );
+
+    return results;
   }
 
-  private async handleToolCall(sessionId: string, toolCall: any): Promise<void> {
+  private async handleToolCall(sessionId: string, serverId: string, methodId: string, args: any): Promise<void> {
     try {
       this.logger.debug('Handling tool call', { 
         sessionId,
-        tool: toolCall.name,
-        args: toolCall.arguments
+        tool: serverId,
+        method: methodId,
+        args: args
       });
 
-      const response = await this.opts.mcpManager.callTool(
-        toolCall.name,
-        toolCall.arguments
+      const response = await this.opts.mcpManager.invokeTool(
+        serverId,
+        methodId,
+        args
       );
 
       this.logger.debug('Tool call completed', {
         sessionId,
-        tool: toolCall.name,
+        tool: serverId,
+        method: methodId,
         response
       });
 
     } catch (error) {
       throw new ToolCallError(
-        `Failed to handle tool call: ${toolCall.name}`,
+        `Failed to handle tool call: ${serverId}.${methodId}`,
         error as Error
       );
     }

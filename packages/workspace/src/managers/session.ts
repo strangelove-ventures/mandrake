@@ -95,8 +95,41 @@ export class SessionManager {
         if (!session) {
             throw new Error(`Session not found: ${id}`);
         }
-
         return session;
+    }
+
+    async renderSessionHistory(id: string): Promise<{
+        session: Session;
+        rounds: (Round & {
+            request: Request;
+            response: Response & {
+                turns: Turn[];
+            };
+        })[];
+    }> {
+        const session = await this.getSession(id);
+        const rounds = await this.listRounds(session.id);
+
+        const roundsWithData = await Promise.all(
+            rounds.map(async (round) => {
+                const { request, response } = await this.getRound(round.id);
+                const turns = await this.listTurns(response.id);
+
+                return {
+                    ...round,
+                    request,
+                    response: {
+                        ...response,
+                        turns
+                    }
+                };
+            })
+        );
+
+        return {
+            session,
+            rounds: roundsWithData
+        };
     }
 
     async listSessions(opts?: {

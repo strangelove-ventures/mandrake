@@ -14,8 +14,12 @@ export interface ContextSection extends PromptSection {
 }
 
 // Section config types
+export interface ToolWithServer extends Tool {
+  serverName: string;
+}
+
 export interface ToolsSectionConfig {
-  tools: Tool[];
+  tools: ToolWithServer[];
 }
 
 export interface MetadataSectionConfig {
@@ -27,6 +31,7 @@ export interface MetadataSectionConfig {
 export interface SystemInfoSectionConfig {
   os: string;
   arch: string;
+  cwd?: string;
   // Add other system info fields as needed
 }
 
@@ -34,11 +39,31 @@ export interface DateSectionConfig {
   includeTime?: boolean;
 }
 
+export interface FilesSectionConfig {
+  files: {
+    name: string;
+    content: string;
+  }[];
+}
+
+export interface DynamicContextSectionConfig {
+  dynamicContext: {
+    name: string;
+    result: any;
+  }[];
+}
+
 // XML Tag types
 export enum XmlTags {
   INSTRUCTIONS = 'instructions',
   TOOLS = 'tools',
   TOOL = 'tool',
+  SERVER = 'server',
+  TOOL_INSTRUCTIONS = 'tool_instructions',
+  FILES = 'files',
+  FILE = 'file',
+  DYNAMIC_CONTEXTS = 'dynamic_contexts',
+  DYNAMIC_CONTEXT = 'dynamic_context',
   WORKSPACE = 'workspace',
   SYSTEM = 'system',
   DATETIME = 'datetime'

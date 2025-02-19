@@ -12,6 +12,13 @@ export class ContextBuildError extends SessionError {
   }
 }
 
+export class ProviderError extends SessionError {
+  constructor(message: string, cause?: Error) {
+    super(message, cause);
+    this.name = 'ProviderError';
+  }
+}
+
 export class MessageProcessError extends SessionError {
   constructor(message: string, cause?: Error) {
     super(message, cause);
