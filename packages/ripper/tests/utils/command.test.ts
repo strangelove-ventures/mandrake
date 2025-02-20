@@ -1,6 +1,7 @@
 import { expect, test, describe, beforeEach, afterEach } from 'bun:test';
 import { join } from 'path';
 import os from 'os';
+import { stat, rm, mkdir, realpath } from 'fs/promises';
 import {
   executeCommand,
   validateCommand,
@@ -49,11 +50,29 @@ describe('Command Utilities', () => {
     const testDir = join(os.tmpdir(), 'ripper-test');
     
     beforeEach(async () => {
-      await Bun.spawn(['mkdir', '-p', testDir]);
+      // Remove any existing directory first
+      try {
+        await rm(testDir, { recursive: true, force: true });
+      } catch (err) {
+        // Ignore removal errors
+      }
+
+      // Create directory
+      await mkdir(testDir, { recursive: true, mode: 0o755 });
+
+      // Verify directory exists and is accessible
+      const stats = await stat(testDir);
+      if (!stats.isDirectory()) {
+        throw new Error('Test directory was not created as a directory');
+      }
     });
 
     afterEach(async () => {
-      await Bun.spawn(['rm', '-rf', testDir]);
+      try {
+        await rm(testDir, { recursive: true, force: true });
+      } catch (err) {
+        // Ignore cleanup errors
+      }
     });
 
     test('executes simple command', async () => {
@@ -65,7 +84,15 @@ describe('Command Utilities', () => {
     test('handles working directory', async () => {
       const options: CommandOptions = { cwd: testDir };
       const result = await executeCommand('pwd', options);
-      expect(result.stdout.trim()).toBe(testDir);
+      const realTestDir = await realpath(testDir);
+      expect(result.stdout.trim()).toBe(realTestDir);
+    });
+
+    test('fails on non-existent working directory', async () => {
+      const options: CommandOptions = { cwd: join(testDir, 'nonexistent') };
+      await expect(executeCommand('pwd', options))
+        .rejects
+        .toThrow('Working directory does not exist');
     });
 
     test('handles environment variables', async () => {

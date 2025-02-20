@@ -1,45 +1,52 @@
-import { z } from 'zod';
-import { join } from 'path';
-import { readFile as fsReadFile } from 'fs/promises';
-import type { ToolContext } from '../types';
-import { UserError } from 'fastmcp';
+import { z } from "zod";
+import { safeReadFile } from "../utils/files";
+import { join } from "path";
+import { RipperError } from "../utils/errors";
 
-// Schema for tool parameters
-const schema = z.object({
-  path: z.string()
+const ReadFilesParams = z.object({
+  paths: z.array(z.string()),
+  allowedDirs: z.array(z.string())
 });
 
-export function readFile(ctx: ToolContext) {
-  return {
-    name: 'read_file',
-    description: 'Read the complete contents of a file from the file system. Handles various text encodings and provides detailed error messages if the file cannot be read.',
-    parameters: schema,
-    execute: async (args) => {
-      const { path } = schema.parse(args);
-      
-      // If workspace path is set, resolve relative to it
-      const fullPath = ctx.options.workspacePath 
-        ? join(ctx.options.workspacePath, path)
-        : path;
+type ReadFileResult = {
+  path: string;
+  content: string;
+  error?: string;
+};
 
-      // Check if path is allowed
-      if (ctx.options.allowedPaths) {
-        const allowed = ctx.options.allowedPaths.some(
-          allowedPath => fullPath.startsWith(allowedPath)
-        );
-        if (!allowed) {
-          throw new UserError(`Access to path ${path} is not allowed`);
+export const readFiles = {
+  name: "read_files",
+  description: "Read the contents of one or more files",
+  parameters: ReadFilesParams,
+  execute: async (args: z.infer<typeof ReadFilesParams>) => {
+    const results: ReadFileResult[] = [];
+
+    for (const path of args.paths) {
+      try {
+        const buf = await safeReadFile(path, args.allowedDirs);
+        const content = buf.toString('utf-8'); 
+        results.push({ path, content });
+      } catch (error) {
+        if (error instanceof RipperError) {
+          results.push({ path, content: "", error: error.message });
+        } else {
+          results.push({ 
+            path, 
+            content: "", 
+            error: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+          });
         }
       }
-
-      try {
-        const content = await fsReadFile(fullPath, 'utf-8');
-        return content;
-      } catch (error) {
-        throw new UserError(
-          `Failed to read file ${path}: ${(error as Error).message}`
-        );
-      }
     }
-  };
-}
+
+    // Return results in FastMCP format
+    return {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(results, null, 2)
+        }
+      ]
+    };
+  }
+};

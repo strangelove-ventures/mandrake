@@ -8,9 +8,7 @@ import { validatePath } from './paths';
  * @throws {RipperError} if creation fails or path is invalid
  */
 export async function ensureDir(
-  path: string,
-  allowedDirs: string[]
-): Promise<void> {
+path: string, allowedDirs: string[], p0: boolean): Promise<void> {
   const validPath = await validatePath(path, allowedDirs);
   try {
     await mkdir(validPath, { recursive: true });

@@ -1,5 +1,7 @@
 import { spawn } from 'child_process';
 import { RipperError, ErrorCode } from './errors';
+import { stat } from 'fs/promises';
+import { resolve as pathResolve } from 'path'; // Rename to avoid confusion
 
 export interface CommandOptions {
   cwd?: string;
@@ -13,20 +15,34 @@ export interface CommandResult {
   code: number;
 }
 
-/**
- * Execute a command with safety checks
- * @throws {RipperError} if command fails or is invalid
- */
+
 export async function executeCommand(
   command: string,
   options: CommandOptions = {}
 ): Promise<CommandResult> {
-  // Validate command before execution
   validateCommand(command);
+
+  // If cwd specified, validate it exists and is a directory
+  if (options.cwd) {
+    try {
+      const stats = await stat(options.cwd);
+      if (!stats.isDirectory()) {
+        throw new RipperError(
+          `Working directory is not a directory: ${options.cwd}`,
+          ErrorCode.COMMAND_ERROR
+        );
+      }
+    } catch (error) {
+      throw new RipperError(
+        `Working directory does not exist: ${options.cwd}`,
+        ErrorCode.COMMAND_ERROR
+      );
+    }
+  }
 
   return new Promise<CommandResult>((resolve, reject) => {
     const proc = spawn('bash', ['-c', command], {
-      cwd: options.cwd,
+      cwd: options.cwd ? pathResolve(options.cwd) : undefined,
       env: { ...process.env, ...options.env }
     });
 

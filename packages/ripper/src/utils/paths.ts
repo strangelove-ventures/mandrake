@@ -35,7 +35,8 @@ export function isSubPath(parent: string, child: string): boolean {
  */
 export async function validatePath(
   requestedPath: string,
-  allowedDirs: string[]
+  allowedDirs: string[],
+  requireParentExists = true
 ): Promise<string> {
   // First resolve all allowed dirs
   const resolvedAllowedDirs = await Promise.all(
@@ -90,10 +91,21 @@ export async function validatePath(
         return absolute;
       } catch (parentError) {
         if ((parentError as any)?.code === 'ENOENT') {
-          throw new RipperError(
-            `Parent directory does not exist: ${parentDir}`,
-            ErrorCode.INVALID_PATH
-          );
+          if (requireParentExists) {
+            throw new RipperError(
+              `Parent directory does not exist: ${parentDir}`,
+              ErrorCode.INVALID_PATH
+            );
+          }
+          // If we don't require parent to exist, just check if it would be allowed
+          const normalizedParent = normalizePath(parentDir);
+          if (!isAllowedPath(normalizedParent)) {
+            throw new RipperError(
+              'Access denied - parent directory outside allowed directories',
+              ErrorCode.ACCESS_DENIED
+            );
+          }
+          return absolute;
         }
         throw parentError;
       }

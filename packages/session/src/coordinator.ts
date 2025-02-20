@@ -226,7 +226,7 @@ export class SessionCoordinator {
   private async buildSystemPrompt(): Promise<string> {
     const promptConfig = await this.opts.promptManager.getConfig();
 
-    const instructions = promptConfig.instructions || '';
+    const instructions = promptConfig.instructions || 'You are mandrake an ai assistant';
 
     // Build individual section configs
     const metadataConfig = promptConfig.includeWorkspaceMetadata ? {

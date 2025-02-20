@@ -1,40 +1,56 @@
 import { FastMCP } from 'fastmcp';
-import type { RipperOptions } from './types';
+import * as tools from './tools';
 
-import { readFile } from './tools/read_file';
-import { writeFile } from './tools/write_file';
-import { searchFiles } from './tools/search_files';
-import { listDirectory } from './tools/list_directory';
-import { getCodeDefinitions } from './tools/get_code_definitions';
-import { executeCommand } from './tools/execute_command';
+export interface RipperServerConfig {
+  name?: string;
+  version?: string;
+  transportType: 'stdio' | 'sse';
+  sseConfig?: {
+    endpoint: string;
+    port: number;
+  };
+}
 
 export class RipperServer {
   private server: FastMCP;
-  private options: RipperOptions;
 
-  constructor(options: RipperOptions = {}) {
-    this.options = options;
+  constructor(config: RipperServerConfig) {
     this.server = new FastMCP({
-      name: 'ripper',
-      version: '0.1.0'
+      name: config.name || 'ripper',
+      version: config.version || '1.0.0'
     });
 
-    this.setupTools();
+    // Register all tools
+    Object.values(tools).forEach(tool => {
+      this.server.addTool(tool);
+    });
   }
 
-  private setupTools() {
-    const ctx = { server: this.server, options: this.options };
-
-    // Add each tool
-    this.server.addTool(readFile(ctx));
-    this.server.addTool(writeFile(ctx));
-    this.server.addTool(searchFiles(ctx));
-    this.server.addTool(listDirectory(ctx));
-    this.server.addTool(getCodeDefinitions(ctx));
-    this.server.addTool(executeCommand(ctx));
+  async start() {
+    if (this.config.transportType === 'sse' && this.config.sseConfig) {
+      await this.server.start({
+        transportType: 'sse',
+        sse: {
+          endpoint: this.config.sseConfig.endpoint,
+          port: this.config.sseConfig.port
+        }
+      });
+    } else {
+      await this.server.start({
+        transportType: 'stdio'
+      });
+    }
   }
 
-  start() {
-    this.server.start({ transportType: 'stdio' });
+  async stop() {
+    await this.server.stop();
   }
+}
+
+// Create default server if running as main
+if (require.main === module) {
+  const server = new RipperServer({
+    transportType: 'stdio'
+  });
+  server.start().catch(console.error);
 }
