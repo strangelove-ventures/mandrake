@@ -42,7 +42,7 @@ export class PromptManager {
 
   private getDefaults(): PromptConfig {
     return {
-      instructions: 'You are a helpful AI assistant.',
+      instructions: 'You are Mandrake a helpful AI assistant.',
       includeWorkspaceMetadata: true,
       includeSystemInfo: true,
       includeDateTime: true

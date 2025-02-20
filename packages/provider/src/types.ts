@@ -8,21 +8,12 @@ export interface Message {
 export type MessageStream = AsyncGenerator<MessageStreamChunk>;
 
 export type MessageStreamChunk = 
-  | TextChunk 
-  | ToolCallChunk
+  | TextChunk
   | UsageChunk;
 
 export interface TextChunk {
   type: 'text';
   text: string;
-}
-
-export interface ToolCallChunk {
-  type: 'tool_call';
-  toolCall: {
-    name: string;
-    arguments: unknown;
-  };
 }
 
 export interface UsageChunk {

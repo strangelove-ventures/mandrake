@@ -7,7 +7,7 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
-    "test": "bun test",
+    "test": "NODE_ENV=test bun test",
     "clean": "rm -rf dist"
   },
   "dependencies": {

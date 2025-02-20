@@ -49,7 +49,7 @@ describe('Database Schema', () => {
         inputTokens: 0,
         outputTokens: 0,
         inputCost: 0,
-        outputCost: 0
+        outputCost: 0,
       });
 
       expect(turn.status).toBe('streaming');
@@ -60,13 +60,13 @@ describe('Database Schema', () => {
         rawResponse: 'Initial content\nMore content',
         content: ['Initial content', 'More content'],
         currentTokens: 20,
-        expectedTokens: 100
+        expectedTokens: 100,
       });
 
-      // Complete the stream
+      const now = Date.now();
       await testDb.manager.updateTurn(turn.id, {
         status: 'completed',
-        streamEndTime: Math.floor(Date.now() / 1000)
+        streamEndTime: new Date(now),
       });
 
       const completed = await testDb.manager.getLatestTurn(response.id);

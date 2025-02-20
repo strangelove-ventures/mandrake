@@ -1,12 +1,15 @@
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { eq } from 'drizzle-orm';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
-import { dirname } from 'path';
 import { mkdir } from 'fs/promises';
 import Database from 'bun:sqlite';
+import { fileURLToPath } from 'url';
 import * as schema from '../session/db/schema';
 
+const MIGRATIONS_PATH = process.env.NODE_ENV === 'test'
+    ? '../session/db/migrations'  // Source context for workspace tests
+    : join(__dirname, '../migrations');  // Built context for dependents
 type Session = typeof schema.sessions.$inferSelect;
 type Request = typeof schema.requests.$inferSelect;
 type Response = typeof schema.responses.$inferSelect;
@@ -25,14 +28,14 @@ export class SessionManager {
 
     public async init(): Promise<void> {
         if (this.initialized) return;
-
+        
         // Ensure parent directory exists
         try {
             await mkdir(dirname(this.dbPath), { recursive: true });
         } catch (error) {
             throw new Error(`Failed to create database directory: ${error}`);
         }
-
+        
         // Create SQLite database with WAL mode and foreign keys enabled
         try {
             this.sqlite = new Database(this.dbPath);
@@ -41,14 +44,15 @@ export class SessionManager {
         } catch (error) {
             throw new Error(`Failed to initialize database: ${error}`);
         }
-
+        
         // Create drizzle instance
         this.db = drizzle(this.sqlite, { schema });
-
+        
         // Run migrations
         try {
+            const __dirname = dirname(fileURLToPath(import.meta.url));
             await migrate(this.db, {
-                migrationsFolder: join(__dirname, '../session/db/migrations'),
+                migrationsFolder: join(__dirname, MIGRATIONS_PATH),
             });
         } catch (error) {
             throw new Error(`Failed to run migrations: ${error}`);
@@ -308,25 +312,39 @@ export class SessionManager {
     }
 
     async updateTurn(id: string, updates: {
-        content?: string[];
+        // Content fields
         rawResponse?: string;
-        toolCalls?: {
-            call: any;
-            result: any;
-        }[];
+        content?: string[];  // Will be JSON stringified
+        toolCalls?: any[];   // Will be JSON stringified
+
+        // Streaming status fields  
         status?: 'streaming' | 'completed' | 'error';
+        streamEndTime?: number;
         currentTokens?: number;
         expectedTokens?: number;
-        streamEndTime?: number;
+
+        // Token metrics
+        inputTokens?: number;
+        outputTokens?: number;
+        cacheReadTokens?: number;
+        cacheWriteTokens?: number;
+        inputCost?: number;
+        outputCost?: number;
     }): Promise<Turn> {
         this.ensureInitialized();
+
         const updateData: any = { ...updates };
+
+        // Handle JSON stringification
         if (updates.content) {
             updateData.content = JSON.stringify(updates.content);
         }
         if (updates.toolCalls) {
             updateData.toolCalls = JSON.stringify(updates.toolCalls);
         }
+
+        // Set updated timestamp
+        updateData.updatedAt = new Date(Date.now());
 
         const [turn] = await this.db.update(schema.turns)
             .set(updateData)
@@ -339,7 +357,6 @@ export class SessionManager {
 
         return turn;
     }
-
     async getLatestTurn(responseId: string): Promise<Turn | null> {
         this.ensureInitialized();
         const [turn] = await this.db

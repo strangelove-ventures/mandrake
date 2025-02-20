@@ -10,7 +10,7 @@
     "allowJs": true,
     "esModuleInterop": true,
     "jsx": "react-jsx",
-    "noEmit": false,
+    "noEmit": true,
     "verbatimModuleSyntax": true,
     "moduleDetection": "force"
   }

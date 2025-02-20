@@ -1,5 +1,9 @@
 import { createLogger } from '@mandrake/utils';
 import { Database } from 'bun:sqlite';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 
 const logger = createLogger('workspace').child({
   meta: { component: 'session-db' }
@@ -10,7 +14,7 @@ export interface DatabaseConfig {
 }
 
 // Initialize Database with SQLite
-export function createDatabase(config: DatabaseConfig): Database {
+export async function createDatabase(config: DatabaseConfig): Promise<Database> {
   const db = new Database(config.path);
   
   // Enable foreign keys

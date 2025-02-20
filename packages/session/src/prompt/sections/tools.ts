@@ -2,43 +2,52 @@ import { XmlTags, wrapWithXmlTag } from '../types';
 import type { PromptSection, ToolsSectionConfig } from '../types';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
+export const TOOL_TAGS = {
+  TOOL_CALL: 'tool_call',
+  SERVER: 'server',
+  METHOD: 'method',
+  ARGUMENTS: 'arguments'
+} as const;
+
 export class ToolsSection implements PromptSection {
   private readonly toolInstructions = `# Tool Use
 
-Each tool is provided by a specific MCP server and is invoked using the \`tool_call\` XML tag format.
+You have access to a set of tools that are executed upon the user's approval. You can use one tool per message, and will receive the result of that tool use in the user's response. You use tools step-by-step to accomplish a given task, with each tool use informed by the result of the previous tool use.
+
+Each tool is provided by a specific MCP server and is invoked using the \`${TOOL_TAGS.TOOL_CALL}\` XML tag format.
 
 ## Required Parameters
 
-- server_name: (required) The name of the MCP server providing the tool
-- method_name: (required) The name of the method to execute on the server
-- arguments: (required) A JSON object containing the method's parameters, following its input schema
+- ${TOOL_TAGS.SERVER}: (required) The name of the MCP server providing the tool
+- ${TOOL_TAGS.METHOD}: (required) The name of the method to execute on the server
+- ${TOOL_TAGS.ARGUMENTS}: (required) A JSON object containing the method's parameters, following its input schema
 
 ## Usage Format
 
-<tool_call>
-<server_name>server_name</server_name>
-<method_name>method_name</method_name>
-<arguments>
+<${TOOL_TAGS.TOOL_CALL}>
+<${TOOL_TAGS.SERVER}>server</${TOOL_TAGS.SERVER}>
+<${TOOL_TAGS.METHOD}>method</${TOOL_TAGS.METHOD}>
+<${TOOL_TAGS.ARGUMENTS}>
 {
   "param1": "value1",
   "param2": "value2"
 }
-</arguments>
-</tool_call>
+</${TOOL_TAGS.ARGUMENTS}>
+</${TOOL_TAGS.TOOL_CALL}>
 
 ## Usage Example
 
-<tool_call>
-<server_name>github</server_name>
-<method_name>get_repository</method_name>
-<arguments>
+<${TOOL_TAGS.TOOL_CALL}>
+<${TOOL_TAGS.SERVER}>github</${TOOL_TAGS.SERVER}>
+<${TOOL_TAGS.METHOD}>get_repository</${TOOL_TAGS.METHOD}>
+<${TOOL_TAGS.ARGUMENTS}>
 {
   "owner": "strangelove-ventures",
   "repo": "mandrake",
   "branch": "main"
 }
-</arguments>
-</tool_call>
+</${TOOL_TAGS.ARGUMENTS}>
+</${TOOL_TAGS.TOOL_CALL}>
 
 ## Tool Use Guidelines
 
