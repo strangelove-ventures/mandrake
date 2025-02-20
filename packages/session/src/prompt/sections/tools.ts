@@ -2,52 +2,24 @@ import { XmlTags, wrapWithXmlTag } from '../types';
 import type { PromptSection, ToolsSectionConfig } from '../types';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
-export const TOOL_TAGS = {
-  TOOL_CALL: 'tool_call',
-  SERVER: 'server',
-  METHOD: 'method',
-  ARGUMENTS: 'arguments'
-} as const;
-
 export class ToolsSection implements PromptSection {
   private readonly toolInstructions = `# Tool Use
 
-You have access to a set of tools that are executed upon the user's approval. You can use one tool per message, and will receive the result of that tool use in the user's response. You use tools step-by-step to accomplish a given task, with each tool use informed by the result of the previous tool use.
-
-Each tool is provided by a specific MCP server and is invoked using the \`${TOOL_TAGS.TOOL_CALL}\` XML tag format.
-
-## Required Parameters
-
-- ${TOOL_TAGS.SERVER}: (required) The name of the MCP server providing the tool
-- ${TOOL_TAGS.METHOD}: (required) The name of the method to execute on the server
-- ${TOOL_TAGS.ARGUMENTS}: (required) A JSON object containing the method's parameters, following its input schema
+You have access to a set of tools that can be executed upon the user's approval. You use tools step-by-step to accomplish a given task, with each tool use informed by the result of the previous tool use.
 
 ## Usage Format
 
-<${TOOL_TAGS.TOOL_CALL}>
-<${TOOL_TAGS.SERVER}>server</${TOOL_TAGS.SERVER}>
-<${TOOL_TAGS.METHOD}>method</${TOOL_TAGS.METHOD}>
-<${TOOL_TAGS.ARGUMENTS}>
+<${XmlTags.TOOL_CALL}>
+<${XmlTags.SERVER}>server</${XmlTags.SERVER}>
+<${XmlTags.METHOD}>method</${XmlTags.METHOD}>
+<${XmlTags.DESCRIPTION}>Description of the tool call</${XmlTags.DESCRIPTION}>
+<${XmlTags.ARGUMENTS}>
 {
   "param1": "value1",
   "param2": "value2"
 }
-</${TOOL_TAGS.ARGUMENTS}>
-</${TOOL_TAGS.TOOL_CALL}>
-
-## Usage Example
-
-<${TOOL_TAGS.TOOL_CALL}>
-<${TOOL_TAGS.SERVER}>github</${TOOL_TAGS.SERVER}>
-<${TOOL_TAGS.METHOD}>get_repository</${TOOL_TAGS.METHOD}>
-<${TOOL_TAGS.ARGUMENTS}>
-{
-  "owner": "strangelove-ventures",
-  "repo": "mandrake",
-  "branch": "main"
-}
-</${TOOL_TAGS.ARGUMENTS}>
-</${TOOL_TAGS.TOOL_CALL}>
+</${XmlTags.ARGUMENTS}>
+</${XmlTags.TOOL_CALL}>
 
 ## Tool Use Guidelines
 
@@ -68,7 +40,7 @@ Each tool is provided by a specific MCP server and is invoked using the \`${TOOL
    - Tell the user what steps can be taken to resolve the error if you can't
    - Ask the user for clarification or additional information
 
-# Available Tools`;
+# Available Tools:`;
 
   constructor(private readonly config: ToolsSectionConfig) { }
 
@@ -77,34 +49,56 @@ Each tool is provided by a specific MCP server and is invoked using the \`${TOOL
       return '';
     }
 
-    // Group tools by server
-    const toolsByServer = this.config.tools.reduce((acc, tool) => {
-      if (!acc[tool.serverName]) {
-        acc[tool.serverName] = [];
-      }
-      acc[tool.serverName].push(tool);
-      return acc;
-    }, {} as Record<string, Tool[]>);
+    const toolDocs = this.config.tools.map(tool => {
+      const exampleArgs = this.createExampleArgs(tool.inputSchema);
 
-    // Format each server's tools
-    const toolsContent = Object.entries(toolsByServer)
-      .map(([serverName, tools]) => {
-        const toolDocs = tools.map(tool =>
-          wrapWithXmlTag(XmlTags.TOOL, [
-            `Method: ${tool.name}`,
-            `Description: ${tool.description}`,
-            tool.inputSchema ? `Schema:\n${JSON.stringify(tool.inputSchema, null, 2)}` : ''
-          ].filter(Boolean).join('\n'))
-        ).join('\n\n');
-
-        return wrapWithXmlTag(XmlTags.SERVER, [
-          `name: ${serverName}`,
-          'tools:\n' + toolDocs
-        ].join('\n'));
-      })
-      .join('\n\n');
+      return wrapWithXmlTag(XmlTags.TOOL_CALL, [
+        wrapWithXmlTag(XmlTags.SERVER, tool.serverName, true),
+        wrapWithXmlTag(XmlTags.METHOD, tool.name, true),
+        wrapWithXmlTag(XmlTags.DESCRIPTION, tool.description as string, true),
+        // Schema commented out for now
+        // wrapWithXmlTag(XmlTags.SCHEMA, JSON.stringify(tool.inputSchema, null, 2), true),
+        wrapWithXmlTag(XmlTags.ARGUMENTS, JSON.stringify(exampleArgs, null, 2))
+      ].join('\n'));
+    }).join('\n\n');
 
     const instructions = wrapWithXmlTag(XmlTags.TOOL_INSTRUCTIONS, this.toolInstructions);
-    return wrapWithXmlTag(XmlTags.TOOLS, instructions + '\n\n' + toolsContent);
+    return wrapWithXmlTag(XmlTags.TOOLS, instructions + '\n\n' + toolDocs);
   }
+
+  private createExampleArgs(schema: any): any {
+    if (!schema || !schema.properties) return {};
+
+    const example: Record<string, any> = {};
+
+    for (const [key, prop] of Object.entries<any>(schema.properties)) {
+      switch (prop.type) {
+        case 'string':
+          example[key] = `example_${key}`;
+          break;
+        case 'array':
+          if (prop.items?.type === 'string') {
+            example[key] = [`first_${key}`, `second_${key}`];
+          } else {
+            example[key] = [];
+          }
+          break;
+        case 'number':
+        case 'integer':
+          example[key] = 42;
+          break;
+        case 'boolean':
+          example[key] = false;
+          break;
+        case 'object':
+          example[key] = this.createExampleArgs(prop);
+          break;
+        default:
+          example[key] = null;
+      }
+    }
+
+    return example;
+  }
+
 }

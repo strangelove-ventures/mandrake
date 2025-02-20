@@ -58,6 +58,11 @@ export enum XmlTags {
   INSTRUCTIONS = 'instructions',
   TOOLS = 'tools',
   TOOL = 'tool',
+  TOOL_CALL = 'tool_call',
+  METHOD = 'method',
+  ARGUMENTS = 'arguments',
+  DESCRIPTION = 'description',
+  SCHEMA = 'schema',
   SERVER = 'server',
   TOOL_INSTRUCTIONS = 'tool_instructions',
   FILES = 'files',
@@ -70,6 +75,10 @@ export enum XmlTags {
 }
 
 // XML Utility functions
-export function wrapWithXmlTag(tag: XmlTags, content: string): string {
-  return `<${tag}>\n${content}\n</${tag}>`;
+export function wrapWithXmlTag(tag: XmlTags, content: string, newlines?: boolean): string {
+  if (!newlines) {
+    return `<${tag}>\n${content}\n</${tag}>`;
+  } else {
+    return `<${tag}>${content}</${tag}>`;
+  }
 }
