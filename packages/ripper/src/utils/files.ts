@@ -1,21 +1,9 @@
-import { readFile, writeFile, mkdir, rename } from 'fs/promises';
+import { readFile, writeFile, mkdir, rename, realpath } from 'fs/promises';
 import { dirname } from 'path';
-import { RipperError, ErrorCode, toRipperError } from './errors';
+import { toRipperError } from './errors';
 import { validatePath } from './paths';
 
-/**
- * Ensure directory exists, creating it if necessary
- * @throws {RipperError} if creation fails or path is invalid
- */
-export async function ensureDir(
-path: string, allowedDirs: string[], p0: boolean): Promise<void> {
-  const validPath = await validatePath(path, allowedDirs);
-  try {
-    await mkdir(validPath, { recursive: true });
-  } catch (error) {
-    throw toRipperError(error);
-  }
-}
+
 
 /**
  * Safely read file contents
@@ -69,3 +57,4 @@ export async function safeMove(
     throw toRipperError(error); // Convert filesystem error to RipperError
   }
 }
+

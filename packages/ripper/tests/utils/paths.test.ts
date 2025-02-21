@@ -1,7 +1,7 @@
 import { expect, test, describe, beforeEach, afterEach } from 'bun:test';
 import { join } from 'path';
 import os from 'os';
-import { writeFile, symlink, rm, realpath } from 'fs/promises';
+import { writeFile, symlink, rm, realpath, mkdir } from 'fs/promises';
 import {
   normalizePath,
   expandHomePath,
@@ -61,7 +61,7 @@ describe('Path Utilities', () => {
     const allowedDirs = [testDir];
     
     beforeEach(async () => {
-      await ensureDir(testDir);
+      await mkdir(testDir, { recursive: true }); // Use mkdir directly
     });
 
     afterEach(async () => {
@@ -139,7 +139,7 @@ describe('Path Utilities', () => {
     const testDir = join(testRoot, 'test-dir');
     
     beforeEach(async () => {
-      await ensureDir(testDir);
+      await mkdir(testDir, { recursive: true }); // Use mkdir directly
     });
 
     afterEach(async () => {

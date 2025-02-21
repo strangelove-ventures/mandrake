@@ -12,43 +12,20 @@ const SearchFilesParams = z.object({
   maxResults: z.number().optional().default(100)
 });
 
-type SearchMatch = {
-  path: string;
-  line: number;
-  content: string;
-  match: string;
-};
-
 type SearchResult = {
   path: string;
   pattern: string;
-  matches: SearchMatch[];
+  matches: string[]; // Just file paths
   error?: string;
 };
 
+
 async function searchInFile(
-  filePath: string, 
-  searchRegex: RegExp, 
-  maxResults: number
-): Promise<SearchMatch[]> {
+  filePath: string,
+  searchRegex: RegExp
+): Promise<boolean> {
   const content = await readFile(filePath, 'utf-8');
-  const lines = content.split('\n');
-  const matches: SearchMatch[] = [];
-
-  for (let i = 0; i < lines.length && matches.length < maxResults; i++) {
-    const line = lines[i];
-    const match = line.match(searchRegex);
-    if (match) {
-      matches.push({
-        path: filePath,
-        line: i + 1,
-        content: line,
-        match: match[0]
-      });
-    }
-  }
-
-  return matches;
+  return searchRegex.test(content);
 }
 
 async function searchDirectory(
@@ -57,8 +34,8 @@ async function searchDirectory(
   searchRegex: RegExp,
   excludePatterns: RegExp[],
   maxResults: number
-): Promise<SearchMatch[]> {
-  const matches: SearchMatch[] = [];
+): Promise<string[]> {
+  const matches: string[] = [];
   const entries = await readdir(currentPath);
 
   for (const entry of entries) {
@@ -67,13 +44,13 @@ async function searchDirectory(
     const fullPath = join(currentPath, entry);
     const relativePath = relative(basePath, fullPath);
 
-    // Check if path matches any exclude patterns
-    if (excludePatterns.some(pattern => pattern.test(relative(basePath, fullPath)))) {
+    // Skip if path matches any exclude pattern
+    if (excludePatterns.some(pattern => pattern.test(entry))) {
       continue;
     }
-    
+
     const stats = await stat(fullPath);
-    
+
     if (stats.isDirectory()) {
       const dirMatches = await searchDirectory(
         basePath,
@@ -84,12 +61,10 @@ async function searchDirectory(
       );
       matches.push(...dirMatches);
     } else {
-      const fileMatches = await searchInFile(
-        fullPath,
-        searchRegex,
-        maxResults - matches.length
-      );
-      matches.push(...fileMatches);
+      const hasMatch = await searchInFile(fullPath, searchRegex);
+      if (hasMatch) {
+        matches.push(fullPath);
+      }
     }
   }
 

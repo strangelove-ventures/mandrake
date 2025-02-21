@@ -3,7 +3,9 @@ import { join } from 'path';
 import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import { tmpdir } from 'os';
 import {
-  ensureDir,
+  ensureDir
+} from '../../src/utils/paths';
+import {
   safeReadFile,
   safeWriteFile,
   safeMove,

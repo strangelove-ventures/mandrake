@@ -45,7 +45,6 @@ describe('create_directory tool', () => {
 
     expect(result.content).toHaveLength(1);
     const parsed = JSON.parse(result.content[0].text);
-    console.log(parsed)
     expect(parsed.success).toBe(true);
 
     const stats = await stat(deepDir);

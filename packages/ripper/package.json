@@ -12,12 +12,13 @@
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
-    "test": "NODE_ENV=test bun test"
+    "test": "NODE_ENV=test bun test",
+    "build-image": "docker build -t ripper -f Dockerfile ."
   },
   "dependencies": {
     "fastmcp": "workspace:*",
     "directory-tree": "^3.5.1",
-    "ignore": "^5.3.1",
+    "ignore": "^5.3.1", 
     "zod": "^3.22.4"
   },
   "devDependencies": {

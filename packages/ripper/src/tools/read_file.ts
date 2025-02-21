@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { safeReadFile } from "../utils/files";
-import { join } from "path";
 import { RipperError } from "../utils/errors";
 
 const ReadFilesParams = z.object({

@@ -1,5 +1,5 @@
 import { homedir } from 'os';
-import { normalize, resolve, join, isAbsolute } from 'path';
+import { normalize, resolve, join, isAbsolute, basename, dirname } from 'path';
 import { stat, realpath, mkdir } from 'fs/promises';
 import { RipperError, ErrorCode } from './errors';
 
@@ -132,13 +132,76 @@ export async function safeStats(path: string) {
 /**
  * Ensure directory exists, creating it if necessary
  */
-export async function ensureDir(path: string): Promise<void> {
+export async function ensureDir(
+  path: string,
+  allowedDirs: string[]
+): Promise<void> {
+  const validPath = await validatePathForCreation(path, allowedDirs);
+
   try {
-    await mkdir(path, { recursive: true });
+    await mkdir(validPath, { recursive: true });
+    const testStat = await stat(validPath);
   } catch (error) {
     throw new RipperError(
       `Failed to create directory ${path}: ${(error as Error).message}`,
       ErrorCode.IO_ERROR
     );
   }
+}
+
+export async function validatePathForCreation(
+  requestedPath: string,
+  allowedDirs: string[]
+): Promise<string> {
+  const resolvedAllowedDirs = await Promise.all(
+    allowedDirs.map(async dir => {
+      const resolved = await realpath(resolve(dir));
+      return normalizePath(resolved);
+    })
+  );
+
+  const expandedPath = expandHomePath(requestedPath);
+  const absolute = isAbsolute(expandedPath)
+    ? resolve(expandedPath)
+    : resolve(process.cwd(), expandedPath);
+
+  // Walk up the path until we find an existing directory we can resolve
+  let current = absolute;
+  let components = [];
+
+  while (current !== dirname(current)) { // Stop at root
+    try {
+      const resolved = await realpath(current);
+      // Add back the components in reverse order
+      const fullPath = components.reduce((path, comp) =>
+        join(path, comp), resolved);
+      const normalizedPath = normalizePath(fullPath);
+
+      const isAllowed = resolvedAllowedDirs.some(dir =>
+        normalizedPath === dir || isSubPath(dir, normalizedPath)
+      );
+
+      if (!isAllowed) {
+        throw new RipperError(
+          'Access denied - path outside allowed directories',
+          ErrorCode.ACCESS_DENIED
+        );
+      }
+
+      return fullPath;
+    } catch (error) {
+      if ((error as any)?.code !== 'ENOENT') {
+        throw error;
+      }
+      // Path doesn't exist, save the component and move up
+      components.unshift(basename(current));
+      current = dirname(current);
+    }
+  }
+
+  // If we got here, we couldn't find any existing parent
+  throw new RipperError(
+    'Could not find existing parent directory',
+    ErrorCode.INVALID_PATH
+  );
 }

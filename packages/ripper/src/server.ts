@@ -1,20 +1,44 @@
 import { FastMCP } from 'fastmcp';
-import * as tools from './tools';
+import {
+  readFiles,
+  writeFile,
+  editFile,
+  moveFile,
+  createDirectory,
+  listDirectory,
+  tree,
+  searchFiles,
+  listAllowedDirectories
+} from './tools';
+
+const tools = {
+  readFiles,
+  writeFile,
+  editFile,
+  moveFile,
+  createDirectory,
+  listDirectory,
+  tree,
+  searchFiles,
+  listAllowedDirectories
+}
 
 export interface RipperServerConfig {
   name?: string;
-  version?: string;
+  version?: `${number}.${number}.${number}`;
   transportType: 'stdio' | 'sse';
   sseConfig?: {
-    endpoint: string;
+    endpoint: `\${string}`;
     port: number;
   };
 }
 
 export class RipperServer {
   private server: FastMCP;
+  private config: RipperServerConfig;
 
   constructor(config: RipperServerConfig) {
+    this.config = config;
     this.server = new FastMCP({
       name: config.name || 'ripper',
       version: config.version || '1.0.0'
