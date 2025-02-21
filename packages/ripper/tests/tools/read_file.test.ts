@@ -1,7 +1,7 @@
-import { expect, test, describe, beforeEach } from 'bun:test';
+import { expect, test, describe, beforeEach, afterAll, afterEach } from 'bun:test';
 import { readFiles } from '../../src/tools';
 import { join } from 'path';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, writeFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { parseJsonResult } from '../../src/utils/content';
 import type { Context } from '../../src/types';
@@ -18,16 +18,23 @@ describe('read_files tool', () => {
   let testDir: string;
   let allowedDirs: string[];
   let context: Context;
+  let excludePatterns: string[];
 
   beforeEach(async () => {
     // Create unique test directory
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
+    excludePatterns = [];
 
     // Create test directory
     await mkdir(testDir, { recursive: true });
     context = {};
+  });
+
+  afterEach(async () => {
+    // Clean up test directory
+    await rm(testRoot, { recursive: true, force: true });
   });
 
   test('reads single file successfully', async () => {
@@ -37,7 +44,8 @@ describe('read_files tool', () => {
 
     const result = await readFiles.execute({
       paths: [testFile],
-      allowedDirs
+      allowedDirs,
+      excludePatterns
     }, context);
 
     const parsed = parseJsonResult<ReadFileResult[]>(result);
@@ -58,7 +66,8 @@ describe('read_files tool', () => {
 
     const result = await readFiles.execute({
       paths: files.map(f => join(testDir, f.name)),
-      allowedDirs
+      allowedDirs,
+      excludePatterns
     }, context);
 
     const parsed = parseJsonResult<ReadFileResult[]>(result);
@@ -75,7 +84,8 @@ describe('read_files tool', () => {
 
     const result = await readFiles.execute({
       paths: [nonexistentFile],
-      allowedDirs
+      allowedDirs,
+      excludePatterns
     }, context);
 
     const parsed = parseJsonResult<ReadFileResult[]>(result);
@@ -89,11 +99,43 @@ describe('read_files tool', () => {
 
     const result = await readFiles.execute({
       paths: [outsideFile],
-      allowedDirs
+      allowedDirs,
+      excludePatterns
     }, context);
 
     const parsed = parseJsonResult<ReadFileResult[]>(result);
     expect(parsed).toHaveLength(1);
     expect(parsed?.[0].error).toBeDefined();
   });
+
+  test('respects exclude patterns', async () => {
+    const files = [
+      { name: 'test.txt', content: 'visible' },
+      { name: '.ws/hidden.txt', content: 'hidden' }
+    ];
+
+    // Create .ws directory and files
+    await mkdir(join(testDir, '.ws'), { recursive: true });
+    for (const file of files) {
+      await writeFile(join(testDir, file.name), file.content);
+    }
+
+    const result = await readFiles.execute({
+      paths: files.map(f => join(testDir, f.name)),
+      allowedDirs,
+      excludePatterns: ['^.*\.ws.*$']
+    }, context);
+
+    const parsed = parseJsonResult<ReadFileResult[]>(result);
+    expect(parsed).toHaveLength(2);
+
+    // First file should be read successfully
+    expect(parsed?.[0].content).toBe('visible');
+    expect(parsed?.[0].error).toBeUndefined();
+
+    // Second file should be excluded
+    expect(parsed?.[1].content).toBe('');
+    expect(parsed?.[1].error).toBe('Path matches exclude pattern');
+  });
+
 });

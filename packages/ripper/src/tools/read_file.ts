@@ -5,7 +5,8 @@ import type { Tool, ContentResult, Context } from "../types";
 
 const ReadFilesParams = z.object({
   paths: z.array(z.string()),
-  allowedDirs: z.array(z.string())
+  allowedDirs: z.array(z.string()),
+  excludePatterns: z.array(z.string()).optional().default([])
 });
 
 type ReadFileResult = {
@@ -20,8 +21,18 @@ export const readFiles: Tool<typeof ReadFilesParams> = {
   parameters: ReadFilesParams,
   execute: async (args: z.infer<typeof ReadFilesParams>, context: Context): Promise<ContentResult> => {
     const results: ReadFileResult[] = [];
-
+    
     for (const path of args.paths) {
+      if (args.excludePatterns.some(pattern =>
+        new RegExp(pattern).test(path)
+      )) {
+        results.push({
+          path,
+          content: "",
+          error: "Path matches exclude pattern"
+        });
+        continue;
+      }
       try {
         const buf = await safeReadFile(path, args.allowedDirs);
         const content = buf.toString('utf-8'); 
@@ -40,12 +51,10 @@ export const readFiles: Tool<typeof ReadFilesParams> = {
     }
 
     return {
-      content: [
-        {
-          type: "text",
-          text: JSON.stringify(results, null, 2)
-        }
-      ]
+      content: [{
+        type: "text",
+        text: JSON.stringify(results, null, 2)
+      }]
     };
   }
 };

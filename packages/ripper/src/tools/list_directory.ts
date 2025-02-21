@@ -7,7 +7,8 @@ import type { Tool, ContentResult, Context } from "../types";
 
 const ListDirectoryParams = z.object({
   path: z.string(),
-  allowedDirs: z.array(z.string())
+  allowedDirs: z.array(z.string()),
+  excludePatterns: z.array(z.string()).optional().default([])
 });
 
 type ListDirectoryItem = {
@@ -30,17 +31,22 @@ export const listDirectory: Tool<typeof ListDirectoryParams> = {
     try {
       const validPath = await validatePath(args.path, args.allowedDirs);
       const entries = await readdir(validPath);
-      
+
+      // Create RegExp objects for exclude patterns
+      const excludePatterns = args.excludePatterns.map(p => new RegExp(p));
+
       const items: ListDirectoryItem[] = await Promise.all(
-        entries.map(async (entry) => {
-          const fullPath = join(validPath, entry);
-          const stats = await stat(fullPath);
-          return {
-            type: stats.isDirectory() ? "DIR" : "FILE",
-            name: entry,
-            path: fullPath,
-          };
-        })
+        entries
+          .filter(entry => !excludePatterns.some(pattern => pattern.test(entry))) // Filter out excluded entries
+          .map(async (entry) => {
+            const fullPath = join(validPath, entry);
+            const stats = await stat(fullPath);
+            return {
+              type: stats.isDirectory() ? "DIR" : "FILE",
+              name: entry,
+              path: fullPath,
+            };
+          })
       );
 
       // Sort directories first, then files, both alphabetically

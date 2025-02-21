@@ -23,12 +23,14 @@ describe('list_directory tool', () => {
   let testRoot: string;
   let testDir: string;
   let allowedDirs: string[];
+  let excludePatterns: string[];
   let context: Context;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
+    excludePatterns = [];
     await mkdir(testDir, { recursive: true });
     context = {};
   });
@@ -36,7 +38,8 @@ describe('list_directory tool', () => {
   test('lists empty directory', async () => {
     const result = await listDirectory.execute({
       path: testDir,
-      allowedDirs
+      allowedDirs,
+      excludePatterns
     }, context);
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
@@ -52,7 +55,8 @@ describe('list_directory tool', () => {
 
     const result = await listDirectory.execute({
       path: testDir,
-      allowedDirs
+      allowedDirs,
+      excludePatterns
     }, context);
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
@@ -77,7 +81,8 @@ describe('list_directory tool', () => {
 
     const result = await listDirectory.execute({
       path: outsideDir,
-      allowedDirs
+      allowedDirs,
+      excludePatterns
     }, context);
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
@@ -89,10 +94,35 @@ describe('list_directory tool', () => {
 
     const result = await listDirectory.execute({
       path: nonexistentDir,
-      allowedDirs
+      allowedDirs,
+      excludePatterns
     }, context);
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
     expect(parsed?.error).toBeDefined();
   });
+
+  test('respects exclude patterns', async () => {
+    // Create test structure including files to exclude
+    await writeFile(join(testDir, 'file1.txt'), 'content');
+    await writeFile(join(testDir, '.hidden'), 'content');
+    await mkdir(join(testDir, 'dir1'));
+    await mkdir(join(testDir, '.ws'));
+
+    const result = await listDirectory.execute({
+      path: testDir,
+      allowedDirs,
+      excludePatterns: ['^\\.'] // Exclude hidden files/directories
+    }, context);
+
+    const parsed = parseJsonResult<ListDirectoryResult>(result);
+    expect(parsed?.items).toHaveLength(2); // Should only see file1.txt and dir1
+
+    const names = parsed?.items.map(item => item.name);
+    expect(names).toContain('file1.txt');
+    expect(names).toContain('dir1');
+    expect(names).not.toContain('.hidden');
+    expect(names).not.toContain('.ws');
+  });
+
 });

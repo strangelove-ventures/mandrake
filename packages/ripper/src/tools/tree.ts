@@ -8,12 +8,13 @@ import type { Tool, ContentResult, Context } from "../types";
 const TreeParams = z.object({
   path: z.string(),
   allowedDirs: z.array(z.string()),
+  excludePatterns: z.array(z.string()).optional().default([]),
   depth: z.number().optional().default(Infinity)
 });
 
 type TreeNode = {
   type: "file" | "directory";
-  name: string;  
+  name: string;
   path: string;
   children?: TreeNode[];
 };
@@ -24,10 +25,15 @@ type TreeResult = {
   error?: string;
 };
 
-async function buildTree(path: string, depth: number = Infinity, currentDepth: number = 0): Promise<TreeNode> {
+async function buildTree(
+  path: string,
+  excludePatterns: RegExp[],
+  depth: number = Infinity,
+  currentDepth: number = 0
+): Promise<TreeNode> {
   const stats = await stat(path);
   const name = path.split("/").pop() || path;
-  
+
   if (!stats.isDirectory() || currentDepth >= depth) {
     return {
       type: "file",
@@ -37,10 +43,15 @@ async function buildTree(path: string, depth: number = Infinity, currentDepth: n
   }
 
   const entries = await readdir(path);
+  // Filter entries using exclude patterns
+  const filteredEntries = entries.filter(entry =>
+    !excludePatterns.some(pattern => pattern.test(entry))
+  );
+
   const children = await Promise.all(
-    entries.map(async (entry) => {
+    filteredEntries.map(async (entry) => {
       const fullPath = join(path, entry);
-      return buildTree(fullPath, depth, currentDepth + 1);
+      return buildTree(fullPath, excludePatterns, depth, currentDepth + 1);
     })
   );
 
@@ -67,7 +78,8 @@ export const tree: Tool<typeof TreeParams> = {
   execute: async (args: z.infer<typeof TreeParams>, context: Context): Promise<ContentResult> => {
     try {
       const validPath = await validatePath(args.path, args.allowedDirs);
-      const tree = await buildTree(validPath, args.depth);
+      const excludePatterns = args.excludePatterns.map(p => new RegExp(p));
+      const tree = await buildTree(validPath, excludePatterns, args.depth);
 
       const result: TreeResult = {
         path: validPath,
@@ -86,8 +98,8 @@ export const tree: Tool<typeof TreeParams> = {
           name: args.path.split("/").pop() || args.path,
           path: args.path
         },
-        error: error instanceof RipperError ? 
-          error.message : 
+        error: error instanceof RipperError ?
+          error.message :
           `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
       };
 
