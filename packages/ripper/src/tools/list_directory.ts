@@ -3,6 +3,7 @@ import { readdir, stat } from "fs/promises";
 import { RipperError } from "../utils/errors";
 import { validatePath } from "../utils/paths";
 import { join } from "path";
+import type { Tool, ContentResult, Context } from "../types";
 
 const ListDirectoryParams = z.object({
   path: z.string(),
@@ -21,11 +22,11 @@ type ListDirectoryResult = {
   error?: string;
 };
 
-export const listDirectory = {
+export const listDirectory: Tool<typeof ListDirectoryParams> = {
   name: "list_directory",
   description: "List contents of a directory with FILE/DIR prefixes",
   parameters: ListDirectoryParams,
-  execute: async (args: z.infer<typeof ListDirectoryParams>) => {
+  execute: async (args: z.infer<typeof ListDirectoryParams>, context: Context): Promise<ContentResult> => {
     try {
       const validPath = await validatePath(args.path, args.allowedDirs);
       const entries = await readdir(validPath);

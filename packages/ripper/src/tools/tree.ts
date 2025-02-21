@@ -3,6 +3,7 @@ import { RipperError } from "../utils/errors";
 import { validatePath } from "../utils/paths";
 import { readdir, stat } from "fs/promises";
 import { join } from "path";
+import type { Tool, ContentResult, Context } from "../types";
 
 const TreeParams = z.object({
   path: z.string(),
@@ -59,11 +60,11 @@ async function buildTree(path: string, depth: number = Infinity, currentDepth: n
   };
 }
 
-export const tree = {
+export const tree: Tool<typeof TreeParams> = {
   name: "tree",
   description: "Generate a tree visualization of a directory structure",
   parameters: TreeParams,
-  execute: async (args: z.infer<typeof TreeParams>) => {
+  execute: async (args: z.infer<typeof TreeParams>, context: Context): Promise<ContentResult> => {
     try {
       const validPath = await validatePath(args.path, args.allowedDirs);
       const tree = await buildTree(validPath, args.depth);

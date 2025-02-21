@@ -2,6 +2,7 @@ import { z } from "zod";
 import { ensureDir } from "../utils/paths";
 import { RipperError } from "../utils/errors";
 import { stat } from "fs/promises";
+import type { Tool, ContentResult, Context } from "../types";
 
 const CreateDirectoryParams = z.object({
   path: z.string(),
@@ -14,11 +15,11 @@ type CreateDirectoryResult = {
   error?: string;
 };
 
-export const createDirectory = {
+export const createDirectory: Tool<typeof CreateDirectoryParams> = {
   name: "create_directory",
   description: "Create a directory and any necessary parent directories",
   parameters: CreateDirectoryParams,
-  execute: async (args: z.infer<typeof CreateDirectoryParams>) => {
+  execute: async (args: z.infer<typeof CreateDirectoryParams>, context: Context): Promise<ContentResult> => {
     try {
       await ensureDir(args.path, args.allowedDirs);
 
@@ -49,7 +50,6 @@ export const createDirectory = {
         content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
       };
     } catch (error) {
-
       const result: CreateDirectoryResult = {
         path: args.path,
         success: false,

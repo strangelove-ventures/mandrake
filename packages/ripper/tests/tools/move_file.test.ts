@@ -3,18 +3,29 @@ import { moveFile } from '../../src/tools';
 import { join } from 'path';
 import { mkdir, writeFile, readFile, stat } from 'fs/promises';
 import { tmpdir } from 'os';
+import { parseJsonResult } from '../../src/utils/content';
+import type { Context } from '../../src/types';
+
+interface MoveFileResult {
+  source: string;
+  destination: string;
+  success: boolean;
+  error?: string;
+}
 
 describe('move_file tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
   let allowedDirs: string[];
+  let context: Context;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
+    context = {};
   });
 
   test('moves file successfully', async () => {
@@ -27,12 +38,11 @@ describe('move_file tool', () => {
       source: sourcePath,
       destination: destPath,
       allowedDirs
-    });
+    }, context);
 
     // Check result
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
+    const parsed = parseJsonResult<MoveFileResult>(result);
+    expect(parsed?.success).toBe(true);
 
     // Verify file was moved
     const movedContent = await readFile(destPath, 'utf-8');
@@ -50,11 +60,10 @@ describe('move_file tool', () => {
       source: sourcePath,
       destination: destPath,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
+    const parsed = parseJsonResult<MoveFileResult>(result);
+    expect(parsed?.success).toBe(true);
 
     const movedContent = await readFile(destPath, 'utf-8');
     expect(movedContent).toBe(content);
@@ -70,12 +79,11 @@ describe('move_file tool', () => {
       source: sourcePath,
       destination: destPath,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(false);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<MoveFileResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBeDefined();
   });
 
   test('handles destination outside allowed directories', async () => {
@@ -87,12 +95,11 @@ describe('move_file tool', () => {
       source: sourcePath,
       destination: destPath,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(false);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<MoveFileResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBeDefined();
 
     // Verify source file wasn't moved
     const sourceContent = await readFile(sourcePath, 'utf-8');
@@ -107,11 +114,10 @@ describe('move_file tool', () => {
       source: sourcePath,
       destination: destPath,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(false);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<MoveFileResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBeDefined();
   });
 });

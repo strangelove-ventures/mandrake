@@ -1,13 +1,32 @@
-import type { FastMCP } from 'fastmcp';
+import { z } from 'zod';
 
-export interface RipperOptions {
-  workspacePath?: string;  // Base path for file operations
-  allowedPaths?: string[]; // List of allowed paths
+// Context type that FastMCP provides to tools
+export interface Context {
+  // Add any context fields FastMCP provides
 }
 
-export interface ToolContext {
-  server: FastMCP;
-  options: RipperOptions;
+// Content types that match FastMCP's expectations
+export interface TextContent {
+  type: 'text';
+  text: string;
 }
 
-// Add other types as needed
+export interface ImageContent {
+  type: 'image';
+  data: string;  // Changed from imageData to data to match FastMCP
+  mimeType: string;
+}
+
+export type Content = TextContent | ImageContent;
+
+export interface ContentResult {
+  content: Content[];
+}
+
+// Tool type that matches FastMCP's expectations
+export interface Tool<T extends z.ZodType> {
+  name: string;
+  description: string;
+  parameters: T;
+  execute: (args: z.infer<T>, context: Context) => Promise<string | ContentResult | TextContent | ImageContent>;
+}

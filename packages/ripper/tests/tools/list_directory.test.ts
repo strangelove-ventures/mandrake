@@ -3,29 +3,44 @@ import { listDirectory } from '../../src/tools';
 import { join } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
+import { parseJsonResult } from '../../src/utils/content';
+import type { Context } from '../../src/types';
+
+interface DirectoryItem {
+  type: 'FILE' | 'DIR';
+  name: string;
+  path: string;
+}
+
+interface ListDirectoryResult {
+  path: string;
+  items: DirectoryItem[];
+  error?: string;
+}
 
 describe('list_directory tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
   let allowedDirs: string[];
+  let context: Context;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
+    context = {};
   });
 
   test('lists empty directory', async () => {
     const result = await listDirectory.execute({
       path: testDir,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.items).toHaveLength(0);
+    const parsed = parseJsonResult<ListDirectoryResult>(result);
+    expect(parsed?.items).toHaveLength(0);
   });
 
   test('lists files and directories', async () => {
@@ -38,23 +53,22 @@ describe('list_directory tool', () => {
     const result = await listDirectory.execute({
       path: testDir,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.items).toHaveLength(4);
+    const parsed = parseJsonResult<ListDirectoryResult>(result);
+    expect(parsed?.items).toHaveLength(4);
 
     // Verify directories are listed first
-    expect(parsed.items[0].type).toBe('DIR');
-    expect(parsed.items[1].type).toBe('DIR');
-    expect(parsed.items[2].type).toBe('FILE');
-    expect(parsed.items[3].type).toBe('FILE');
+    expect(parsed?.items[0].type).toBe('DIR');
+    expect(parsed?.items[1].type).toBe('DIR');
+    expect(parsed?.items[2].type).toBe('FILE');
+    expect(parsed?.items[3].type).toBe('FILE');
 
     // Verify alphabetical ordering within types
-    expect(parsed.items[0].name).toBe('dir1');
-    expect(parsed.items[1].name).toBe('dir2');
-    expect(parsed.items[2].name).toBe('file1.txt');
-    expect(parsed.items[3].name).toBe('file2.txt');
+    expect(parsed?.items[0].name).toBe('dir1');
+    expect(parsed?.items[1].name).toBe('dir2');
+    expect(parsed?.items[2].name).toBe('file1.txt');
+    expect(parsed?.items[3].name).toBe('file2.txt');
   });
 
   test('handles directory outside allowed directories', async () => {
@@ -64,11 +78,10 @@ describe('list_directory tool', () => {
     const result = await listDirectory.execute({
       path: outsideDir,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<ListDirectoryResult>(result);
+    expect(parsed?.error).toBeDefined();
   });
 
   test('handles non-existent directory', async () => {
@@ -77,10 +90,9 @@ describe('list_directory tool', () => {
     const result = await listDirectory.execute({
       path: nonexistentDir,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<ListDirectoryResult>(result);
+    expect(parsed?.error).toBeDefined();
   });
 });

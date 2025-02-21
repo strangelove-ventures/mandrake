@@ -3,18 +3,29 @@ import { searchFiles } from '../../src/tools';
 import { join } from 'path';
 import { mkdir, writeFile, realpath, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { parseJsonResult } from '../../src/utils/content';
+import type { Context } from '../../src/types';
+
+interface SearchResult {
+  path: string;
+  pattern: string;
+  matches: string[];
+  error?: string;
+}
 
 describe('search_files tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
   let allowedDirs: string[];
+  let context: Context;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
+    context = {};
   });
 
   afterEach(async () => {
@@ -31,13 +42,12 @@ describe('search_files tool', () => {
       allowedDirs,
       excludePatterns: [],
       maxResults: 100
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.matches).toHaveLength(1);
+    const parsed = parseJsonResult<SearchResult>(result);
+    expect(parsed?.matches).toHaveLength(1);
     const expectedPath = await realpath(testFile);
-    expect(parsed.matches[0]).toBe(expectedPath);
+    expect(parsed?.matches[0]).toBe(expectedPath);
   });
 
   test('finds multiple matching files', async () => {
@@ -52,16 +62,15 @@ describe('search_files tool', () => {
       allowedDirs,
       excludePatterns: [],
       maxResults: 100
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.matches).toHaveLength(2);
+    const parsed = parseJsonResult<SearchResult>(result);
+    expect(parsed?.matches).toHaveLength(2);
 
     const expectedPath1 = await realpath(file1);
     const expectedPath2 = await realpath(file2);
-    expect(parsed.matches).toContain(expectedPath1);
-    expect(parsed.matches).toContain(expectedPath2);
+    expect(parsed?.matches).toContain(expectedPath1);
+    expect(parsed?.matches).toContain(expectedPath2);
   });
 
   test('searches in nested directories', async () => {
@@ -77,16 +86,15 @@ describe('search_files tool', () => {
       allowedDirs,
       excludePatterns: [],
       maxResults: 100
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.matches).toHaveLength(2);
+    const parsed = parseJsonResult<SearchResult>(result);
+    expect(parsed?.matches).toHaveLength(2);
 
     const expectedRoot = await realpath(rootFile);
     const expectedNested = await realpath(nestedFile);
-    expect(parsed.matches).toContain(expectedRoot);
-    expect(parsed.matches).toContain(expectedNested);
+    expect(parsed?.matches).toContain(expectedRoot);
+    expect(parsed?.matches).toContain(expectedNested);
   });
 
   test('respects exclude patterns', async () => {
@@ -102,13 +110,12 @@ describe('search_files tool', () => {
       excludePatterns: ['node_modules'],
       allowedDirs,
       maxResults: 100
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.matches).toHaveLength(1);
+    const parsed = parseJsonResult<SearchResult>(result);
+    expect(parsed?.matches).toHaveLength(1);
     const expectedPath = await realpath(rootFile);
-    expect(parsed.matches[0]).toBe(expectedPath);
+    expect(parsed?.matches[0]).toBe(expectedPath);
   });
 
   test('respects maxResults parameter', async () => {
@@ -123,11 +130,10 @@ describe('search_files tool', () => {
       allowedDirs,
       maxResults: 5,
       excludePatterns: []
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.matches).toHaveLength(5);
+    const parsed = parseJsonResult<SearchResult>(result);
+    expect(parsed?.matches).toHaveLength(5);
   });
 
   test('handles directory outside allowed directories', async () => {
@@ -140,11 +146,10 @@ describe('search_files tool', () => {
       allowedDirs,
       excludePatterns: [],
       maxResults: 100
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<SearchResult>(result);
+    expect(parsed?.error).toBeDefined();
   });
 
   test('handles invalid regex pattern', async () => {
@@ -154,10 +159,9 @@ describe('search_files tool', () => {
       allowedDirs,
       excludePatterns: [],
       maxResults: 100
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<SearchResult>(result);
+    expect(parsed?.error).toBeDefined();
   });
 });

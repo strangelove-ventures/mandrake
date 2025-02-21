@@ -3,6 +3,7 @@ import { RipperError } from "../utils/errors";
 import { validatePath } from "../utils/paths";
 import { readdir, stat, readFile } from "fs/promises";
 import { join, relative } from "path";
+import type { Tool, ContentResult, Context } from "../types";
 
 const SearchFilesParams = z.object({
   path: z.string(),
@@ -18,7 +19,6 @@ type SearchResult = {
   matches: string[]; // Just file paths
   error?: string;
 };
-
 
 async function searchInFile(
   filePath: string,
@@ -71,11 +71,11 @@ async function searchDirectory(
   return matches;
 }
 
-export const searchFiles = {
+export const searchFiles: Tool<typeof SearchFilesParams> = {
   name: "search_files",
   description: "Search for files matching a pattern recursively",
   parameters: SearchFilesParams,
-  execute: async (args: z.infer<typeof SearchFilesParams>) => {
+  execute: async (args: z.infer<typeof SearchFilesParams>, context: Context): Promise<ContentResult> => {
     try {
       const validPath = await validatePath(args.path, args.allowedDirs);
       

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { stat } from "fs/promises";
 import { RipperError } from "../utils/errors";
+import type { Tool, ContentResult, Context } from "../types";
 
 const ListAllowedDirectoriesParams = z.object({
   allowedDirs: z.array(z.string())
@@ -16,11 +17,11 @@ type ListAllowedDirectoriesResult = {
   directories: DirectoryInfo[];
 };
 
-export const listAllowedDirectories = {
+export const listAllowedDirectories: Tool<typeof ListAllowedDirectoriesParams> = {
   name: "list_allowed_directories",
   description: "List all directories that are allowed to be accessed",
   parameters: ListAllowedDirectoriesParams,
-  execute: async (args: z.infer<typeof ListAllowedDirectoriesParams>) => {
+  execute: async (args: z.infer<typeof ListAllowedDirectoriesParams>, context: Context): Promise<ContentResult> => {
     const results: DirectoryInfo[] = await Promise.all(
       args.allowedDirs.map(async (dir) => {
         try {

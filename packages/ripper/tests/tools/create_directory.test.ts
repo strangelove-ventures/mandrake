@@ -3,18 +3,28 @@ import { createDirectory } from '../../src/tools';
 import { join } from 'path';
 import { mkdir, stat } from 'fs/promises';
 import { tmpdir } from 'os';
+import { parseJsonResult } from '../../src/utils/content';
+import type { Context } from '../../src/types';
+
+interface DirectoryResult {
+  path: string;
+  success: boolean;
+  error?: string;
+}
 
 describe('create_directory tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
   let allowedDirs: string[];
+  let context: Context;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
+    context = {};
   });
 
   test('creates new directory successfully', async () => {
@@ -23,12 +33,11 @@ describe('create_directory tool', () => {
     const result = await createDirectory.execute({
       path: newDir,
       allowedDirs
-    });
+    }, context);
 
     // Check result
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
+    const parsed = parseJsonResult<DirectoryResult>(result);
+    expect(parsed?.success).toBe(true);
 
     // Verify directory was created
     const stats = await stat(newDir);
@@ -41,11 +50,10 @@ describe('create_directory tool', () => {
     const result = await createDirectory.execute({
       path: deepDir,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
+    const parsed = parseJsonResult<DirectoryResult>(result);
+    expect(parsed?.success).toBe(true);
 
     const stats = await stat(deepDir);
     expect(stats.isDirectory()).toBe(true);
@@ -58,11 +66,10 @@ describe('create_directory tool', () => {
     const result = await createDirectory.execute({
       path: existingDir,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
+    const parsed = parseJsonResult<DirectoryResult>(result);
+    expect(parsed?.success).toBe(true);
 
     const stats = await stat(existingDir);
     expect(stats.isDirectory()).toBe(true);
@@ -74,12 +81,11 @@ describe('create_directory tool', () => {
     const result = await createDirectory.execute({
       path: outsideDir,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(false);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<DirectoryResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBeDefined();
 
     // Verify directory wasn't created
     await expect(stat(outsideDir)).rejects.toThrow();

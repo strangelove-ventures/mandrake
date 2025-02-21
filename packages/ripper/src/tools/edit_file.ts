@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { safeReadFile, safeWriteFile } from "../utils/files";
 import { RipperError, ErrorCode } from "../utils/errors";
+import type { Tool, ContentResult, Context } from "../types";
 
 const EditParams = z.object({
   path: z.string(),
@@ -46,11 +47,11 @@ function generateDiff(original: Buffer, edited: Buffer, path: string): string {
   return diff;
 }
 
-export const editFile = {
+export const editFile: Tool<typeof EditParams> = {
   name: "edit_file",
   description: "Edit a file using search/replace operations and return a git-style diff",
   parameters: EditParams,
-  execute: async (args: z.infer<typeof EditParams>) => {
+  execute: async (args: z.infer<typeof EditParams>, context: Context): Promise<ContentResult> => {
     try {
       // Read original content
       const originalContent = await safeReadFile(args.path, args.allowedDirs);

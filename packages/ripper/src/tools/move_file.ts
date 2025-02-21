@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { safeMove } from "../utils/files";
 import { RipperError } from "../utils/errors";
+import type { Tool, ContentResult, Context } from "../types";
 
 const MoveFileParams = z.object({
   source: z.string(),
@@ -15,11 +16,11 @@ type MoveFileResult = {
   error?: string;
 };
 
-export const moveFile = {
+export const moveFile: Tool<typeof MoveFileParams> = {
   name: "move_file",
   description: "Move/rename a file or directory, creating parent directories if needed",
   parameters: MoveFileParams,
-  execute: async (args: z.infer<typeof MoveFileParams>) => {
+  execute: async (args: z.infer<typeof MoveFileParams>, context: Context): Promise<ContentResult> => {
     try {
       await safeMove(args.source, args.destination, args.allowedDirs);
       

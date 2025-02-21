@@ -3,18 +3,29 @@ import { editFile } from '../../src/tools';
 import { join } from 'path';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { tmpdir } from 'os';
+import { parseJsonResult } from '../../src/utils/content';
+import type { Context } from '../../src/types';
+
+interface EditResult {
+  path: string;
+  success: boolean;
+  diff?: string;
+  error?: string;
+}
 
 describe('edit_file tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
   let allowedDirs: string[];
+  let context: Context;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
+    context = {};
   });
 
   test('performs single edit successfully', async () => {
@@ -27,13 +38,12 @@ describe('edit_file tool', () => {
       edits: [{ oldText: 'world', newText: 'there' }],
       allowedDirs,
       dryRun: false
-    });
+    }, context);
 
     // Check result format
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
-    expect(parsed.diff).toBeDefined();
+    const parsed = parseJsonResult<EditResult>(result);
+    expect(parsed?.success).toBe(true);
+    expect(parsed?.diff).toBeDefined();
 
     // Verify file content
     const finalContent = await readFile(testFile, 'utf-8');
@@ -53,12 +63,11 @@ describe('edit_file tool', () => {
       ],
       allowedDirs,
       dryRun: false
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
-    
+    const parsed = parseJsonResult<EditResult>(result);
+    expect(parsed?.success).toBe(true);
+
     const finalContent = await readFile(testFile, 'utf-8');
     expect(finalContent).toBe('hello there hello mars');
   });
@@ -73,12 +82,11 @@ describe('edit_file tool', () => {
       edits: [{ oldText: 'nonexistent', newText: 'test' }],
       allowedDirs,
       dryRun: false
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(false);
-    expect(parsed.error).toContain('Could not find text to replace');
+    const parsed = parseJsonResult<EditResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toContain('Could not find text to replace');
 
     // Verify file wasn't changed
     const finalContent = await readFile(testFile, 'utf-8');
@@ -95,12 +103,11 @@ describe('edit_file tool', () => {
       edits: [{ oldText: 'world', newText: 'there' }],
       allowedDirs,
       dryRun: true
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
-    expect(parsed.diff).toBeDefined();
+    const parsed = parseJsonResult<EditResult>(result);
+    expect(parsed?.success).toBe(true);
+    expect(parsed?.diff).toBeDefined();
 
     // Verify file wasn't changed
     const finalContent = await readFile(testFile, 'utf-8');
@@ -116,11 +123,10 @@ describe('edit_file tool', () => {
       edits: [{ oldText: 'test', newText: 'new' }],
       allowedDirs,
       dryRun: false
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(false);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<EditResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBeDefined();
   });
 });

@@ -1,4 +1,6 @@
 import { FastMCP } from 'fastmcp';
+import type { Context } from './types';
+
 import {
   readFiles,
   writeFile,
@@ -28,7 +30,7 @@ export interface RipperServerConfig {
   version?: `${number}.${number}.${number}`;
   transportType: 'stdio' | 'sse';
   sseConfig?: {
-    endpoint: `\${string}`;
+    endpoint: `/${string}`;
     port: number;
   };
 }
@@ -46,7 +48,12 @@ export class RipperServer {
 
     // Register all tools
     Object.values(tools).forEach(tool => {
-      this.server.addTool(tool);
+      this.server.addTool({
+        description: tool.description,
+        name: tool.name,
+        parameters: tool.parameters,
+        execute: (args: any, context: Context) => tool.execute(args, context),
+      });
     });
   }
 

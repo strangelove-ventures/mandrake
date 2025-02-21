@@ -3,18 +3,28 @@ import { writeFile } from '../../src/tools';
 import { join } from 'path';
 import { mkdir, readFile } from 'fs/promises';
 import { tmpdir } from 'os';
+import { parseJsonResult } from '../../src/utils/content';
+import type { Context } from '../../src/types';
+
+interface WriteFileResult {
+  path: string;
+  success: boolean;
+  error?: string;
+}
 
 describe('write_file tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
   let allowedDirs: string[];
+  let context: Context;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
+    context = {};
   });
 
   test('writes new file successfully', async () => {
@@ -25,12 +35,11 @@ describe('write_file tool', () => {
       path: testFile,
       content,
       allowedDirs
-    });
+    }, context);
 
     // Check result
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
+    const parsed = parseJsonResult<WriteFileResult>(result);
+    expect(parsed?.success).toBe(true);
 
     // Verify file content
     const writtenContent = await readFile(testFile, 'utf-8');
@@ -46,11 +55,10 @@ describe('write_file tool', () => {
       path: testFile,
       content: newContent,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
+    const parsed = parseJsonResult<WriteFileResult>(result);
+    expect(parsed?.success).toBe(true);
 
     const writtenContent = await readFile(testFile, 'utf-8');
     expect(writtenContent).toBe(newContent);
@@ -64,11 +72,10 @@ describe('write_file tool', () => {
       path: deepFile,
       content,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(true);
+    const parsed = parseJsonResult<WriteFileResult>(result);
+    expect(parsed?.success).toBe(true);
 
     const writtenContent = await readFile(deepFile, 'utf-8');
     expect(writtenContent).toBe(content);
@@ -82,11 +89,10 @@ describe('write_file tool', () => {
       path: outsideFile,
       content,
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.success).toBe(false);
-    expect(parsed.error).toBeDefined();
+    const parsed = parseJsonResult<WriteFileResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBeDefined();
   });
 });

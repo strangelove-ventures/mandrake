@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { safeReadFile } from "../utils/files";
 import { RipperError } from "../utils/errors";
+import type { Tool, ContentResult, Context } from "../types";
 
 const ReadFilesParams = z.object({
   paths: z.array(z.string()),
@@ -13,11 +14,11 @@ type ReadFileResult = {
   error?: string;
 };
 
-export const readFiles = {
+export const readFiles: Tool<typeof ReadFilesParams> = {
   name: "read_files",
   description: "Read the contents of one or more files",
   parameters: ReadFilesParams,
-  execute: async (args: z.infer<typeof ReadFilesParams>) => {
+  execute: async (args: z.infer<typeof ReadFilesParams>, context: Context): Promise<ContentResult> => {
     const results: ReadFileResult[] = [];
 
     for (const path of args.paths) {
@@ -38,7 +39,6 @@ export const readFiles = {
       }
     }
 
-    // Return results in FastMCP format
     return {
       content: [
         {

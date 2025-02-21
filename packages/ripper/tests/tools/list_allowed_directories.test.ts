@@ -3,11 +3,24 @@ import { listAllowedDirectories } from '../../src/tools';
 import { join } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
+import { parseJsonResult } from '../../src/utils/content';
+import type { Context } from '../../src/types';
+
+interface DirectoryInfo {
+  path: string;
+  exists: boolean;
+  error?: string;
+}
+
+interface ListDirectoriesResult {
+  directories: DirectoryInfo[];
+}
 
 describe('list_allowed_directories tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDirs: string[];
+  let context: Context;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
@@ -21,18 +34,18 @@ describe('list_allowed_directories tool', () => {
     for (const dir of testDirs) {
       await mkdir(dir, { recursive: true });
     }
+    context = {};
   });
 
   test('lists all existing directories', async () => {
     const result = await listAllowedDirectories.execute({
       allowedDirs: testDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.directories).toHaveLength(testDirs.length);
-    
-    for (const dir of parsed.directories) {
+    const parsed = parseJsonResult<ListDirectoriesResult>(result);
+    expect(parsed?.directories).toHaveLength(testDirs.length);
+
+    for (const dir of parsed?.directories ?? []) {
       expect(dir.exists).toBe(true);
       expect(dir.error).toBeUndefined();
     }
@@ -44,15 +57,14 @@ describe('list_allowed_directories tool', () => {
 
     const result = await listAllowedDirectories.execute({
       allowedDirs: dirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.directories).toHaveLength(dirs.length);
+    const parsed = parseJsonResult<ListDirectoriesResult>(result);
+    expect(parsed?.directories).toHaveLength(dirs.length);
 
-    const nonexistent = parsed.directories.find((d: any) => d.path === nonexistentDir);
-    expect(nonexistent.exists).toBe(false);
-    expect(nonexistent.error).toBeDefined();
+    const nonexistent = parsed?.directories.find(d => d.path === nonexistentDir);
+    expect(nonexistent?.exists).toBe(false);
+    expect(nonexistent?.error).toBeDefined();
   });
 
   test('handles file paths', async () => {
@@ -61,23 +73,20 @@ describe('list_allowed_directories tool', () => {
 
     const result = await listAllowedDirectories.execute({
       allowedDirs: [...testDirs, filePath]
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    
-    const file = parsed.directories.find((d: any) => d.path === filePath);
-    expect(file.exists).toBe(false);
-    expect(file.error).toContain('not a directory');
+    const parsed = parseJsonResult<ListDirectoriesResult>(result);
+    const file = parsed?.directories.find(d => d.path === filePath);
+    expect(file?.exists).toBe(false);
+    expect(file?.error).toContain('not a directory');
   });
 
   test('handles empty directory list', async () => {
     const result = await listAllowedDirectories.execute({
       allowedDirs: []
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.directories).toHaveLength(0);
+    const parsed = parseJsonResult<ListDirectoriesResult>(result);
+    expect(parsed?.directories).toHaveLength(0);
   });
 });

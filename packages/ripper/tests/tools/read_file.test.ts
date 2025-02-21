@@ -3,21 +3,31 @@ import { readFiles } from '../../src/tools';
 import { join } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
+import { parseJsonResult } from '../../src/utils/content';
+import type { Context } from '../../src/types';
+
+interface ReadFileResult {
+  path: string;
+  content: string;
+  error?: string;
+}
 
 describe('read_files tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
   let allowedDirs: string[];
+  let context: Context;
 
   beforeEach(async () => {
     // Create unique test directory
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
     allowedDirs = [testDir];
-    
+
     // Create test directory
     await mkdir(testDir, { recursive: true });
+    context = {};
   });
 
   test('reads single file successfully', async () => {
@@ -28,13 +38,12 @@ describe('read_files tool', () => {
     const result = await readFiles.execute({
       paths: [testFile],
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = parseJsonResult<ReadFileResult[]>(result);
     expect(parsed).toHaveLength(1);
-    expect(parsed[0].content).toBe(content);
-    expect(parsed[0].error).toBeUndefined();
+    expect(parsed?.[0].content).toBe(content);
+    expect(parsed?.[0].error).toBeUndefined();
   });
 
   test('reads multiple files successfully', async () => {
@@ -50,15 +59,14 @@ describe('read_files tool', () => {
     const result = await readFiles.execute({
       paths: files.map(f => join(testDir, f.name)),
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = parseJsonResult<ReadFileResult[]>(result);
     expect(parsed).toHaveLength(2);
-    
+
     for (let i = 0; i < files.length; i++) {
-      expect(parsed[i].content).toBe(files[i].content);
-      expect(parsed[i].error).toBeUndefined();
+      expect(parsed?.[i].content).toBe(files[i].content);
+      expect(parsed?.[i].error).toBeUndefined();
     }
   });
 
@@ -68,12 +76,11 @@ describe('read_files tool', () => {
     const result = await readFiles.execute({
       paths: [nonexistentFile],
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = parseJsonResult<ReadFileResult[]>(result);
     expect(parsed).toHaveLength(1);
-    expect(parsed[0].error).toBeDefined();
+    expect(parsed?.[0].error).toBeDefined();
   });
 
   test('handles file outside allowed directories', async () => {
@@ -83,11 +90,10 @@ describe('read_files tool', () => {
     const result = await readFiles.execute({
       paths: [outsideFile],
       allowedDirs
-    });
+    }, context);
 
-    expect(result.content).toHaveLength(1);
-    const parsed = JSON.parse(result.content[0].text);
+    const parsed = parseJsonResult<ReadFileResult[]>(result);
     expect(parsed).toHaveLength(1);
-    expect(parsed[0].error).toBeDefined();
+    expect(parsed?.[0].error).toBeDefined();
   });
 });
