@@ -368,6 +368,19 @@ export class SessionManager {
         return turn || null;
     }
 
+    async getTurn(id: string): Promise<Turn> {
+        this.ensureInitialized();
+        const [turn] = await this.db
+            .select()
+            .from(schema.turns)
+            .where(eq(schema.turns.id, id));
+
+        if (!turn) {
+            throw new Error(`Turn not found: ${id}`);
+        }
+        return turn;
+    }
+
     async listTurns(responseId: string): Promise<Turn[]> {
         this.ensureInitialized();
         return this.db

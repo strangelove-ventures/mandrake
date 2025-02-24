@@ -89,7 +89,7 @@ describe('Session Integration', () => {
         // This prompt should trigger:
         // 1. A fetch tool call to get data
         // 2. A write_file tool call to save the data
-        await coordinator.handleMessage(
+        await coordinator.handleRequest(
             session.id,
             'Can you fetch the current time from http://worldtimeapi.org/api/ip and save it to a file called current_time.txt in our workspace?'
         );
@@ -119,8 +119,8 @@ describe('Session Integration', () => {
         // Check second turn - should have write_file tool call
         const secondTurnToolCalls = JSON.parse(turns[1].toolCalls);
         expect(secondTurnToolCalls.length).toBeGreaterThan(0);
-        const writeToolCall = secondTurnToolCalls[0];
-        expect(writeToolCall.serverName).toBe('filesystem');
+        const writeToolCall = secondTurnToolCalls[0].call;
+        expect(writeToolCall.serverName).toBe('ripper');
         expect(writeToolCall.methodName).toBe('write_file');
         expect(writeToolCall.arguments.path).toBe('current_time.txt');
 

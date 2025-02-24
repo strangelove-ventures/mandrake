@@ -18,23 +18,24 @@ export class SessionCoordinator {
   constructor(private readonly opts: SessionCoordinatorOptions) {
     this.logger = opts.logger || createLogger('SessionCoordinator');
   }
-  async handleMessage(sessionId: string, request: string): Promise<void> {
+
+  async handleRequest(sessionId: string, requestContent: string): Promise<void> {
     try {
-      // Setup provider using our new util
+      // Setup provider
       const provider = await setupProviderFromManager(this.opts.modelsManager);
       this.logger.info('Created provider for request', { sessionId });
 
-      // Build context for request 
+      // Build context
       const context = await this.buildContext(sessionId);
       this.logger.info('Built context for request', { sessionId });
 
-      // Create round and response for this request
+      // Create round and initial response
       const { response } = await this.opts.sessionManager.createRound({
         sessionId,
-        content: request
+        content: requestContent
       });
 
-      // Create initial turn
+      // Initial empty turn
       let currentTurn = await this.opts.sessionManager.createTurn({
         responseId: response.id,
         content: [''],
@@ -48,92 +49,14 @@ export class SessionCoordinator {
       // Create provider message stream
       const messageStream = provider.createMessage(
         context.systemPrompt,
-        [...context.history, { role: 'user', content: request }]
+        [...context.history, { role: 'user', content: requestContent }]
       );
 
-      // Buffer for accumulating XML content
-      let xmlBuffer = '';
-
-      // Process message stream
-      for await (const chunk of messageStream) {
-        switch (chunk.type) {
-          case 'text':
-            // Add to XML buffer for parsing
-            xmlBuffer += chunk.text;
-
-            // Try to parse complete tool calls
-            const { tools, content, remaining } = this.parseContent(xmlBuffer);
-            xmlBuffer = remaining;
-
-            // Update raw response and content if we have non-tool text
-            if (content) {
-              currentTurn = await this.opts.sessionManager.updateTurn(currentTurn.id, {
-                rawResponse: currentTurn.rawResponse + content,
-                content: [...JSON.parse(currentTurn.content), content]
-              });
-            }
-
-            // Handle any complete tool calls
-            if (tools.length > 0) {
-              this.logger.debug('Found tool calls in response', {
-                count: tools.length,
-                firstTool: {
-                  server: tools[0].serverName,
-                  method: tools[0].methodName
-                }
-              });
-
-              currentTurn = await this.opts.sessionManager.updateTurn(currentTurn.id, {
-                toolCalls: [JSON.stringify(tools)], // Ensure proper JSON stringification 
-                status: 'completed',
-                streamEndTime: Math.floor(Date.now() / 1000)
-              });
-
-              // Execute tools
-              for (const tool of tools) {
-                await this.handleToolCall(
-                  sessionId,
-                  tool.serverName,
-                  tool.methodName,
-                  tool.arguments
-                );
-              }
-
-              // Create new turn for continuation
-              currentTurn = await this.opts.sessionManager.createTurn({
-                responseId: response.id,
-                content: [''],
-                rawResponse: '',
-                inputTokens: 0,
-                outputTokens: 0,
-                inputCost: 0,
-                outputCost: 0
-              });
-            }
-            break;
-
-          case 'usage':
-            // Update turn with usage info
-            currentTurn = await this.opts.sessionManager.updateTurn(currentTurn.id, {
-              inputTokens: chunk.inputTokens,
-              outputTokens: chunk.outputTokens,
-              inputCost: provider.calculateCost(chunk.inputTokens, 0),
-              outputCost: provider.calculateCost(0, chunk.outputTokens)
-            });
-            break;
-        }
-      }
-
-      // Complete final turn if not already completed by tool call
-      if (currentTurn.status === 'streaming') {
-        await this.opts.sessionManager.updateTurn(currentTurn.id, {
-          status: 'completed',
-          streamEndTime: Math.floor(Date.now() / 1000)
-        });
-      }
+      // Process the message stream
+      await this.processMessageStream(sessionId, response.id, currentTurn.id, messageStream);
 
     } catch (error) {
-      this.logger.error('Failed to process message', {
+      this.logger.error('Failed to process request', {
         sessionId,
         error: error instanceof Error ? {
           message: error.message,
@@ -141,138 +64,259 @@ export class SessionCoordinator {
           cause: (error as any).cause ? (error as any).cause.message : undefined
         } : String(error)
       });
-      throw new MessageProcessError('Failed to process message', error as Error);
+      throw new MessageProcessError('Failed to process request', error as Error);
     }
   }
 
-  // In coordinator.ts, enhance the parseContent method:
-  private parseContent(content: string): ParsedContent {
-    this.logger.debug('Parsing content for tool calls', {
-      contentLength: content.length,
-      snippet: content.length > 100 ? content.substring(0, 100) + '...' : content
-    });
+  // Process the message stream from the provider
+  // Refactored processMessageStream method for SessionCoordinator
+  private async processMessageStream(
+    sessionId: string,
+    responseId: string,
+    initialTurnId: string,
+    messageStream: AsyncIterable<any>
+  ): Promise<void> {
+    let currentTurnId = initialTurnId;
+    let xmlBuffer = '';
+    let textBuffer = '';
+    let usageData = { inputTokens: 0, outputTokens: 0 };
 
-    const result: ParsedContent = {
-      tools: [],
-      content: '',
+    // Process each chunk
+    for await (const chunk of messageStream) {
+      switch (chunk.type) {
+        case 'text':
+          // Add text to buffers
+          xmlBuffer += chunk.text;
+          textBuffer += chunk.text;
+
+          // Extract any complete tool calls
+          const { tools, extractedContent, remaining } = this.extractToolCalls(xmlBuffer);
+          xmlBuffer = remaining;
+
+          // Update the current turn with new content
+          await this.opts.sessionManager.updateTurn(currentTurnId, {
+            rawResponse: textBuffer,
+            content: this.splitContent(textBuffer),
+          });
+
+          // If we found tool calls
+          if (tools.length > 0) {
+            this.logger.debug('Found tool calls', { count: tools.length });
+
+            // 1. Complete the current turn with the tool calls
+            await this.opts.sessionManager.updateTurn(currentTurnId, {
+              status: 'completed',
+              streamEndTime: Math.floor(Date.now() / 1000),
+              toolCalls: JSON.stringify(tools.map(tool => ({
+                call: {
+                  serverName: tool.serverName,
+                  methodName: tool.methodName,
+                  arguments: tool.arguments
+                },
+                result: null // Will be filled in after execution
+              })))
+            });
+
+            // 2. Process each tool call and create a new turn for each one
+            for (let i = 0; i < tools.length; i++) {
+              const tool = tools[i];
+              try {
+                // Execute the tool
+                const result = await this.executeToolCall(
+                  sessionId,
+                  tool.serverName,
+                  tool.methodName,
+                  tool.arguments
+                );
+
+                // Update the turn with the result
+                const turn = await this.opts.sessionManager.getTurn(currentTurnId);
+                const currentToolCalls = JSON.parse(turn.toolCalls);
+                currentToolCalls[i].result = result;
+
+                await this.opts.sessionManager.updateTurn(currentTurnId, {
+                  toolCalls: JSON.stringify(currentToolCalls)
+                });
+
+                // 3. Create a new turn for the continuation after each tool call
+                // This is crucial for maintaining the conversation flow
+                const newTurn = await this.opts.sessionManager.createTurn({
+                  responseId: responseId,
+                  content: [''],
+                  rawResponse: '',
+                  inputTokens: usageData.inputTokens,
+                  outputTokens: usageData.outputTokens,
+                  inputCost: 0,
+                  outputCost: 0
+                });
+
+                // Update the current turn ID and reset text buffer for new content
+                currentTurnId = newTurn.id;
+                textBuffer = '';
+              } catch (error) {
+                this.logger.error('Tool execution failed', {
+                  tool: tool.serverName,
+                  method: tool.methodName,
+                  error
+                });
+              }
+            }
+          }
+          break;
+
+        case 'usage':
+          // Update usage data
+          usageData = {
+            inputTokens: chunk.inputTokens,
+            outputTokens: chunk.outputTokens
+          };
+
+          // Update the current turn with usage info
+          await this.opts.sessionManager.updateTurn(currentTurnId, {
+            inputTokens: chunk.inputTokens,
+            outputTokens: chunk.outputTokens,
+            inputCost: 0, // Calculate from provider rates
+            outputCost: 0  // Calculate from provider rates
+          });
+          break;
+      }
+    }
+
+    // Complete the final turn if needed
+    const finalTurn = await this.opts.sessionManager.updateTurn(currentTurnId, {
+      status: 'completed',
+      streamEndTime: Math.floor(Date.now() / 1000)
+    });
+  }
+
+  private async executeToolCall(
+    sessionId: string,
+    serverName: string,
+    methodName: string,
+    args: any
+  ): Promise<any> {
+    try {
+      this.logger.debug('Executing tool call', {
+        sessionId, serverName, methodName, args
+      });
+
+      const result = await this.opts.mcpManager.invokeTool(
+        serverName,
+        methodName,
+        args
+      );
+
+      this.logger.debug('Tool call executed', {
+        sessionId, serverName, methodName, result
+      });
+
+      return result;
+    } catch (error) {
+      this.logger.error('Tool call failed', {
+        sessionId, serverName, methodName,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  private extractToolCalls(content: string): {
+    tools: Array<{ serverName: string, methodName: string, arguments: any }>,
+    extractedContent: string,
+    remaining: string
+  } {
+    const result = {
+      tools: [] as Array<{ serverName: string, methodName: string, arguments: any }>,
+      extractedContent: '',
       remaining: ''
     };
 
-    // Look for start of tool call
     const tagStart = '<tool_call>';
     const tagEnd = '</tool_call>';
 
-    this.logger.debug('Looking for tool tags', {
-      tagStartIndex: content.indexOf(tagStart),
-      tagEndIndex: content.indexOf(tagEnd)
-    });
-
     let currentIndex = 0;
+
     while (true) {
-      // Find next tool call start
+      // Find next tool call
       const startIndex = content.indexOf(tagStart, currentIndex);
       if (startIndex === -1) {
-        // No more tool calls found
-        result.content += content.slice(currentIndex);
+        // No more tool calls
+        result.extractedContent += content.slice(currentIndex);
         break;
       }
 
-      // Add any content before the tool call
-      if (startIndex > currentIndex) {
-        result.content += content.slice(currentIndex, startIndex);
-      }
+      // Add content before tool call
+      result.extractedContent += content.slice(currentIndex, startIndex);
 
-      // Look for end of this tool call
+      // Look for end of tool call
       const endIndex = content.indexOf(tagEnd, startIndex);
       if (endIndex === -1) {
-        // Incomplete tool call, save remaining content and stop
+        // Incomplete tool call
         result.remaining = content.slice(currentIndex);
-        this.logger.debug('Found incomplete tool call', {
-          startIndex,
-          currentIndex,
-          partialToolCall: content.slice(startIndex, Math.min(startIndex + 200, content.length))
-        });
         break;
       }
 
-      // Extract the full tool call XML
+      // Extract complete tool call
       const toolCallXml = content.slice(startIndex, endIndex + tagEnd.length);
-      this.logger.debug('Found tool call XML', { toolCallXml });
 
       try {
-        // Parse the tool call XML
-        const parsed = this.parseToolCall(toolCallXml);
+        const parsed = this.parseToolCallXml(toolCallXml);
         if (parsed) {
           result.tools.push(parsed);
-          this.logger.debug('Successfully parsed tool call', {
-            serverName: parsed.serverName,
-            methodName: parsed.methodName
-          });
-        } else {
-          this.logger.warn('Failed to parse tool call: returned null', { toolCallXml });
+
+          // Include the tool call in extracted content
+          result.extractedContent += toolCallXml;
         }
       } catch (error) {
-        this.logger.warn('Failed to parse tool call XML', {
-          error,
-          xml: toolCallXml
-        });
+        this.logger.warn('Failed to parse tool call', { error, xml: toolCallXml });
+
+        // Include the tool call even if parsing failed
+        result.extractedContent += toolCallXml;
       }
 
-      // Move index past this tool call
+      // Move past this tool call
       currentIndex = endIndex + tagEnd.length;
     }
-
-    this.logger.debug('Finished parsing content', {
-      foundTools: result.tools.length,
-      contentLength: result.content.length,
-      remainingLength: result.remaining.length
-    });
 
     return result;
   }
 
-  // Also enhance the parseToolCall method:
-  // Assuming parseToolCall looks something like this in coordinator.ts
-  private parseToolCall(xml: string): { serverName: string; methodName: string; arguments: any } | null {
-    // Create regex patterns with the XmlTags constants but add the /s modifier
+  private parseToolCallXml(xml: string): { serverName: string; methodName: string; arguments: any } | null {
+    // Use regex with 's' flag to match across newlines
     const serverRegex = new RegExp(`<${XmlTags.SERVER}>(.*?)</${XmlTags.SERVER}>`, 's');
     const methodRegex = new RegExp(`<${XmlTags.METHOD}>(.*?)</${XmlTags.METHOD}>`, 's');
     const argsRegex = new RegExp(`<${XmlTags.ARGUMENTS}>([\s\S]*?)</${XmlTags.ARGUMENTS}>`, 's');
 
-    // Match patterns
     const serverMatch = xml.match(serverRegex);
-    if (!serverMatch) {
-      this.logger.warn('Missing server tag in tool call', { xml });
-      return null;
-    }
-
     const methodMatch = xml.match(methodRegex);
-    if (!methodMatch) {
-      this.logger.warn('Missing method tag in tool call', { xml });
-      return null;
-    }
-
     const argsMatch = xml.match(argsRegex);
-    if (!argsMatch) {
-      this.logger.warn('Missing arguments tag in tool call', { xml });
+
+    if (!serverMatch || !methodMatch || !argsMatch) {
+      this.logger.warn('Missing tags in tool call', {
+        hasServer: !!serverMatch,
+        hasMethod: !!methodMatch,
+        hasArgs: !!argsMatch,
+        xml
+      });
       return null;
     }
 
     try {
-      const argsJson = argsMatch[1].trim();
-      const args = JSON.parse(argsJson);
       return {
         serverName: serverMatch[1].trim(),
         methodName: methodMatch[1].trim(),
-        arguments: args
+        arguments: JSON.parse(argsMatch[1].trim())
       };
     } catch (error) {
-      this.logger.warn('Failed to parse tool call arguments', {
-        error: error instanceof Error ? error.message : String(error),
-        args: argsMatch[1]
-      });
+      this.logger.warn('Failed to parse tool call arguments', { error, args: argsMatch[1] });
       return null;
     }
+  }
+
+  // Split content into an array for storage
+  private splitContent(content: string): string[] {
+    // Simple implementation - you can enhance this
+    return content.split('').map(c => c === '' ? '' : c);
   }
 
   private async buildSystemPrompt(): Promise<string> {
@@ -381,33 +425,4 @@ export class SessionCoordinator {
     return results;
   }
 
-  private async handleToolCall(sessionId: string, serverId: string, methodId: string, args: any): Promise<void> {
-    try {
-      this.logger.debug('Handling tool call', { 
-        sessionId,
-        tool: serverId,
-        method: methodId,
-        args: args
-      });
-
-      const response = await this.opts.mcpManager.invokeTool(
-        serverId,
-        methodId,
-        args
-      );
-
-      this.logger.debug('Tool call completed', {
-        sessionId,
-        tool: serverId,
-        method: methodId,
-        response
-      });
-
-    } catch (error) {
-      throw new ToolCallError(
-        `Failed to handle tool call: ${serverId}.${methodId}`,
-        error as Error
-      );
-    }
-  }
 }
