@@ -16,7 +16,7 @@ export const turns = sqliteTable('turns', {
   // Streaming status fields
   status: text('status', { enum: ['streaming', 'completed', 'error'] }).notNull().default('streaming'),
   streamStartTime: integer('streamStartTime').notNull().$defaultFn(() => Math.floor(Date.now() / 1000)),
-  streamEndTime: integer('streamEndTime', { mode: 'timestamp' }),
+  streamEndTime: integer('streamEndTime').$defaultFn(() => Math.floor(Date.now() / 1000)),
   currentTokens: integer('currentTokens').notNull().default(0),
   expectedTokens: integer('expectedTokens'),
 

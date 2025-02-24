@@ -9,16 +9,15 @@ import { resolve } from 'path';
 
 function getServerConfigs(paths: WorkspacePaths): Record<string, ServerConfig> {
     return {
-        filesystem: {
-            command: 'docker',
+        // Use ripper instead of filesystem
+        ripper: {
+            command: 'bun',
             args: [
                 'run',
-                '--rm',
-                '-i',
-                '--mount',
-                `type=bind,src=${paths.root},dst=/workspace`,
-                'mcp/filesystem',
-                '/workspace'
+                '../ripper/dist/server.js',
+                '--transport=stdio',
+                `--workspaceDir=${paths.root}`,
+                '--excludePatterns=\\.ws'
             ]
         },
         fetch: {
@@ -82,14 +81,17 @@ describe('Session Integration', () => {
         await testDir.cleanup();
     });
 
-    test('handles basic message flow with tool calls', async () => {
+    test('handles multistage tool flow with fetch and file creation', async () => {
         const session = await workspace.sessions.createSession({
-            title: 'Test Session'
+            title: 'Multistage Tool Test'
         });
 
+        // This prompt should trigger:
+        // 1. A fetch tool call to get data
+        // 2. A write_file tool call to save the data
         await coordinator.handleMessage(
             session.id,
-            'Show me the files in this workspace'
+            'Can you fetch the current time from http://worldtimeapi.org/api/ip and save it to a file called current_time.txt in our workspace?'
         );
 
         const history = await workspace.sessions.renderSessionHistory(session.id);
@@ -98,13 +100,33 @@ describe('Session Integration', () => {
         const response = history.rounds[0].response;
         const turns = response.turns;
 
-        const toolCall = JSON.parse(turns[0].toolCalls)[0];
-        expect(toolCall.serverName).toBe('filesystem');
-        expect(toolCall.methodName).toBe('directory_tree');
-        expect(toolCall.arguments).toEqual({ path: '.' });
+        console.log(JSON.stringify(turns, null, 2));
 
-        const content = JSON.parse(turns[1].content);
-        expect(content[0]).toContain('config');
-        expect(content[0]).toContain('src');
-    });
+        // We should have at least 3 turns:
+        // 1. Initial response with fetch tool call
+        // 2. Turn with fetch results and write_file tool call
+        // 3. Final turn with confirmation message
+        expect(turns.length).toBeGreaterThanOrEqual(3);
+
+        // Check first turn - should have fetch tool call
+        const firstTurnToolCalls = JSON.parse(turns[0].toolCalls);
+        expect(firstTurnToolCalls.length).toBeGreaterThan(0);
+        const fetchToolCall = firstTurnToolCalls[0];
+        expect(fetchToolCall.serverName).toBe('fetch');
+        expect(fetchToolCall.methodName).toBe('fetch');
+        expect(fetchToolCall.arguments.url).toContain('worldtimeapi.org');
+
+        // Check second turn - should have write_file tool call
+        const secondTurnToolCalls = JSON.parse(turns[1].toolCalls);
+        expect(secondTurnToolCalls.length).toBeGreaterThan(0);
+        const writeToolCall = secondTurnToolCalls[0];
+        expect(writeToolCall.serverName).toBe('filesystem');
+        expect(writeToolCall.methodName).toBe('write_file');
+        expect(writeToolCall.arguments.path).toBe('current_time.txt');
+
+        // Final turn should contain a confirmation message
+        const finalTurnContent = JSON.parse(turns[turns.length - 1].content);
+        const combinedContent = finalTurnContent.join('');
+        expect(combinedContent).toContain('successfully');
+    }, 30000);
 });

@@ -197,6 +197,9 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
               `--workspaceDir=${workspacePath}`,
               '--excludePatterns=\\.ws'
             ]
+          },
+          fetch: {
+            command: 'mcp-fetch-server'
           }
         },
       },

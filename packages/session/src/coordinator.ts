@@ -1,8 +1,7 @@
-import type { Logger } from '@mandrake/utils';
-import { createLogger } from '@mandrake/utils';
+import { type Logger, createLogger } from '@mandrake/utils';
 import type { SessionCoordinatorOptions, Context } from './types';
 import { ContextBuildError, MessageProcessError, ToolCallError } from './errors';
-// import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
+import { XmlTags } from './prompt/types';
 import { setupProviderFromManager } from './utils/provider';
 import { convertSessionToMessages } from './utils/messages';
 import { type SystemPromptBuilderConfig, SystemPromptBuilder } from './prompt/builder';
@@ -28,7 +27,6 @@ export class SessionCoordinator {
       // Build context for request 
       const context = await this.buildContext(sessionId);
       this.logger.info('Built context for request', { sessionId });
-      console.log(context.systemPrompt)
 
       // Create round and response for this request
       const { response } = await this.opts.sessionManager.createRound({
@@ -77,12 +75,16 @@ export class SessionCoordinator {
 
             // Handle any complete tool calls
             if (tools.length > 0) {
-              // Complete current turn with tool calls
+              this.logger.debug('Found tool calls in response', {
+                count: tools.length,
+                firstTool: {
+                  server: tools[0].serverName,
+                  method: tools[0].methodName
+                }
+              });
+
               currentTurn = await this.opts.sessionManager.updateTurn(currentTurn.id, {
-                toolCalls: [
-                  ...currentTurn.toolCalls,
-                  ...tools
-                ],
+                toolCalls: [JSON.stringify(tools)], // Ensure proper JSON stringification 
                 status: 'completed',
                 streamEndTime: Math.floor(Date.now() / 1000)
               });
@@ -131,11 +133,25 @@ export class SessionCoordinator {
       }
 
     } catch (error) {
+      this.logger.error('Failed to process message', {
+        sessionId,
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          cause: (error as any).cause ? (error as any).cause.message : undefined
+        } : String(error)
+      });
       throw new MessageProcessError('Failed to process message', error as Error);
     }
   }
 
+  // In coordinator.ts, enhance the parseContent method:
   private parseContent(content: string): ParsedContent {
+    this.logger.debug('Parsing content for tool calls', {
+      contentLength: content.length,
+      snippet: content.length > 100 ? content.substring(0, 100) + '...' : content
+    });
+
     const result: ParsedContent = {
       tools: [],
       content: '',
@@ -145,6 +161,11 @@ export class SessionCoordinator {
     // Look for start of tool call
     const tagStart = '<tool_call>';
     const tagEnd = '</tool_call>';
+
+    this.logger.debug('Looking for tool tags', {
+      tagStartIndex: content.indexOf(tagStart),
+      tagEndIndex: content.indexOf(tagEnd)
+    });
 
     let currentIndex = 0;
     while (true) {
@@ -166,17 +187,29 @@ export class SessionCoordinator {
       if (endIndex === -1) {
         // Incomplete tool call, save remaining content and stop
         result.remaining = content.slice(currentIndex);
+        this.logger.debug('Found incomplete tool call', {
+          startIndex,
+          currentIndex,
+          partialToolCall: content.slice(startIndex, Math.min(startIndex + 200, content.length))
+        });
         break;
       }
 
       // Extract the full tool call XML
       const toolCallXml = content.slice(startIndex, endIndex + tagEnd.length);
+      this.logger.debug('Found tool call XML', { toolCallXml });
 
       try {
         // Parse the tool call XML
         const parsed = this.parseToolCall(toolCallXml);
         if (parsed) {
           result.tools.push(parsed);
+          this.logger.debug('Successfully parsed tool call', {
+            serverName: parsed.serverName,
+            methodName: parsed.methodName
+          });
+        } else {
+          this.logger.warn('Failed to parse tool call: returned null', { toolCallXml });
         }
       } catch (error) {
         this.logger.warn('Failed to parse tool call XML', {
@@ -189,34 +222,53 @@ export class SessionCoordinator {
       currentIndex = endIndex + tagEnd.length;
     }
 
+    this.logger.debug('Finished parsing content', {
+      foundTools: result.tools.length,
+      contentLength: result.content.length,
+      remainingLength: result.remaining.length
+    });
+
     return result;
   }
 
+  // Also enhance the parseToolCall method:
+  // Assuming parseToolCall looks something like this in coordinator.ts
   private parseToolCall(xml: string): { serverName: string; methodName: string; arguments: any } | null {
-    // Extract server name
-    const serverMatch = xml.match(/<server_name>(.*?)<\/server_name>/);
-    if (!serverMatch) return null;
-    const serverName = serverMatch[1];
+    // Create regex patterns with the XmlTags constants but add the /s modifier
+    const serverRegex = new RegExp(`<${XmlTags.SERVER}>(.*?)</${XmlTags.SERVER}>`, 's');
+    const methodRegex = new RegExp(`<${XmlTags.METHOD}>(.*?)</${XmlTags.METHOD}>`, 's');
+    const argsRegex = new RegExp(`<${XmlTags.ARGUMENTS}>([\s\S]*?)</${XmlTags.ARGUMENTS}>`, 's');
 
-    // Extract method name  
-    const methodMatch = xml.match(/<method_name>(.*?)<\/method_name>/);
-    if (!methodMatch) return null;
-    const methodName = methodMatch[1];
+    // Match patterns
+    const serverMatch = xml.match(serverRegex);
+    if (!serverMatch) {
+      this.logger.warn('Missing server tag in tool call', { xml });
+      return null;
+    }
 
-    // Extract arguments
-    const argsMatch = xml.match(/<arguments>([\s\S]*?)<\/arguments>/);
-    if (!argsMatch) return null;
+    const methodMatch = xml.match(methodRegex);
+    if (!methodMatch) {
+      this.logger.warn('Missing method tag in tool call', { xml });
+      return null;
+    }
+
+    const argsMatch = xml.match(argsRegex);
+    if (!argsMatch) {
+      this.logger.warn('Missing arguments tag in tool call', { xml });
+      return null;
+    }
 
     try {
-      const args = JSON.parse(argsMatch[1]);
+      const argsJson = argsMatch[1].trim();
+      const args = JSON.parse(argsJson);
       return {
-        serverName,
-        methodName,
+        serverName: serverMatch[1].trim(),
+        methodName: methodMatch[1].trim(),
         arguments: args
       };
     } catch (error) {
       this.logger.warn('Failed to parse tool call arguments', {
-        error,
+        error: error instanceof Error ? error.message : String(error),
         args: argsMatch[1]
       });
       return null;
