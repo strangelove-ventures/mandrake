@@ -1,10 +1,12 @@
+// list_directory.test.ts
 import { expect, test, describe, beforeEach } from 'bun:test';
-import { listDirectory } from '../../src/tools';
+import { listDirectory, ListDirectoryParams } from '../../src/tools/list_directory';
 import { join } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { parseJsonResult } from '../../src/utils/content';
-import type { Context } from '../../src/types';
+import { createTestContext } from '../utils/test-utils';
+import type { Tool } from '../../src/fastmcp';
 
 interface DirectoryItem {
   type: 'FILE' | 'DIR';
@@ -22,25 +24,24 @@ describe('list_directory tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
-  let allowedDirs: string[];
-  let excludePatterns: string[];
-  let context: Context;
+  let listTool: Tool<typeof ListDirectoryParams>;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
-    allowedDirs = [testDir];
-    excludePatterns = [];
     await mkdir(testDir, { recursive: true });
-    context = {};
+
+    // Create list directory tool with security context
+    listTool = listDirectory({
+      allowedDirs: [testDir],
+      excludePatterns: []
+    });
   });
 
   test('lists empty directory', async () => {
-    const result = await listDirectory.execute({
-      path: testDir,
-      allowedDirs,
-      excludePatterns
-    }, context);
+    const result = await listTool.execute({
+      path: testDir
+    }, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
     expect(parsed?.items).toHaveLength(0);
@@ -53,11 +54,9 @@ describe('list_directory tool', () => {
     await mkdir(join(testDir, 'dir1'));
     await mkdir(join(testDir, 'dir2'));
 
-    const result = await listDirectory.execute({
-      path: testDir,
-      allowedDirs,
-      excludePatterns
-    }, context);
+    const result = await listTool.execute({
+      path: testDir
+    }, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
     expect(parsed?.items).toHaveLength(4);
@@ -79,11 +78,9 @@ describe('list_directory tool', () => {
     const outsideDir = join(testRoot, 'outside');
     await mkdir(outsideDir);
 
-    const result = await listDirectory.execute({
-      path: outsideDir,
-      allowedDirs,
-      excludePatterns
-    }, context);
+    const result = await listTool.execute({
+      path: outsideDir
+    }, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
     expect(parsed?.error).toBeDefined();
@@ -92,11 +89,9 @@ describe('list_directory tool', () => {
   test('handles non-existent directory', async () => {
     const nonexistentDir = join(testDir, 'nonexistent');
 
-    const result = await listDirectory.execute({
-      path: nonexistentDir,
-      allowedDirs,
-      excludePatterns
-    }, context);
+    const result = await listTool.execute({
+      path: nonexistentDir
+    }, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
     expect(parsed?.error).toBeDefined();
@@ -109,11 +104,15 @@ describe('list_directory tool', () => {
     await mkdir(join(testDir, 'dir1'));
     await mkdir(join(testDir, '.ws'));
 
-    const result = await listDirectory.execute({
-      path: testDir,
-      allowedDirs,
-      excludePatterns: ['^\\.'] // Exclude hidden files/directories
-    }, context);
+    // Create a new tool with exclude patterns
+    const restrictedTool = listDirectory({
+      allowedDirs: [testDir],
+      excludePatterns: ['/\\.']
+    });
+
+    const result = await restrictedTool.execute({
+      path: testDir
+    }, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoryResult>(result);
     expect(parsed?.items).toHaveLength(2); // Should only see file1.txt and dir1
@@ -124,5 +123,4 @@ describe('list_directory tool', () => {
     expect(names).not.toContain('.hidden');
     expect(names).not.toContain('.ws');
   });
-
 });

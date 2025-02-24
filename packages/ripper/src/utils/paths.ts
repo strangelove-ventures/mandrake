@@ -36,8 +36,17 @@ export function isSubPath(parent: string, child: string): boolean {
 export async function validatePath(
   requestedPath: string,
   allowedDirs: string[],
+  excludePatterns: RegExp[] = [],
   requireParentExists = true
 ): Promise<string> {
+  // Check exclude patterns first
+  if (excludePatterns.some(pattern => pattern.test(requestedPath))) {
+    throw new RipperError(
+      'Path matches exclude pattern',
+      ErrorCode.ACCESS_DENIED
+    );
+  }
+
   // First resolve all allowed dirs
   const resolvedAllowedDirs = await Promise.all(
     allowedDirs.map(async dir => {

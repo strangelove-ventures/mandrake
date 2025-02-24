@@ -1,4 +1,4 @@
-import type { ContentResult, TextContent, ImageContent } from '../types';
+import type { ContentResult, TextContent, ImageContent } from '../fastmcp';
 
 export function getTextContent(result: string | ContentResult | TextContent | ImageContent): string | undefined {
     if (typeof result === 'string') {

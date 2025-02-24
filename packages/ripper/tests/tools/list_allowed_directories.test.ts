@@ -1,10 +1,11 @@
 import { expect, test, describe, beforeEach } from 'bun:test';
-import { listAllowedDirectories } from '../../src/tools';
+import { listAllowedDirectories, ListAllowedDirectoriesParams } from '../../src/tools/list_allowed_directories';
 import { join } from 'path';
 import { mkdir, writeFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { parseJsonResult } from '../../src/utils/content';
-import type { Context } from '../../src/types';
+import { createTestContext } from '../utils/test-utils';
+import type { Tool } from '../../src/fastmcp';
 
 interface DirectoryInfo {
   path: string;
@@ -20,7 +21,7 @@ describe('list_allowed_directories tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDirs: string[];
-  let context: Context;
+  let listDirsTool: Tool<typeof ListAllowedDirectoriesParams>;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
@@ -34,13 +35,16 @@ describe('list_allowed_directories tool', () => {
     for (const dir of testDirs) {
       await mkdir(dir, { recursive: true });
     }
-    context = {};
+
+    // Create tool with security context
+    listDirsTool = listAllowedDirectories({
+      allowedDirs: testDirs,
+      excludePatterns: []
+    });
   });
 
   test('lists all existing directories', async () => {
-    const result = await listAllowedDirectories.execute({
-      allowedDirs: testDirs
-    }, context);
+    const result = await listDirsTool.execute({}, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoriesResult>(result);
     expect(parsed?.directories).toHaveLength(testDirs.length);
@@ -55,9 +59,13 @@ describe('list_allowed_directories tool', () => {
     const nonexistentDir = join(testRoot, 'nonexistent');
     const dirs = [...testDirs, nonexistentDir];
 
-    const result = await listAllowedDirectories.execute({
-      allowedDirs: dirs
-    }, context);
+    // Create a new tool with updated dirs list
+    const updatedTool = listAllowedDirectories({
+      allowedDirs: dirs,
+      excludePatterns: []
+    });
+
+    const result = await updatedTool.execute({}, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoriesResult>(result);
     expect(parsed?.directories).toHaveLength(dirs.length);
@@ -71,9 +79,13 @@ describe('list_allowed_directories tool', () => {
     const filePath = join(testRoot, 'file.txt');
     await writeFile(filePath, 'test');
 
-    const result = await listAllowedDirectories.execute({
-      allowedDirs: [...testDirs, filePath]
-    }, context);
+    // Create a new tool with file in allowed dirs
+    const fileIncludedTool = listAllowedDirectories({
+      allowedDirs: [...testDirs, filePath],
+      excludePatterns: []
+    });
+
+    const result = await fileIncludedTool.execute({}, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoriesResult>(result);
     const file = parsed?.directories.find(d => d.path === filePath);
@@ -82,9 +94,13 @@ describe('list_allowed_directories tool', () => {
   });
 
   test('handles empty directory list', async () => {
-    const result = await listAllowedDirectories.execute({
-      allowedDirs: []
-    }, context);
+    // Create a tool with empty allowed dirs
+    const emptyTool = listAllowedDirectories({
+      allowedDirs: [],
+      excludePatterns: []
+    });
+
+    const result = await emptyTool.execute({}, createTestContext());
 
     const parsed = parseJsonResult<ListDirectoriesResult>(result);
     expect(parsed?.directories).toHaveLength(0);

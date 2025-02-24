@@ -1,10 +1,11 @@
 import { expect, test, describe, beforeEach, afterEach } from 'bun:test';
-import { searchFiles } from '../../src/tools';
+import { searchFiles, SearchFilesParams } from '../../src/tools/search_files';
 import { join } from 'path';
 import { mkdir, writeFile, realpath, rm } from 'fs/promises';
 import { tmpdir } from 'os';
+import { createTestContext } from '../utils/test-utils';
 import { parseJsonResult } from '../../src/utils/content';
-import type { Context } from '../../src/types';
+import type { Tool } from '../../src/fastmcp';
 
 interface SearchResult {
   path: string;
@@ -17,15 +18,18 @@ describe('search_files tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
-  let allowedDirs: string[];
-  let context: Context;
+  let searchTool: Tool<typeof SearchFilesParams>;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
-    allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
-    context = {};
+
+    // Create search tool with security context
+    searchTool = searchFiles({
+      allowedDirs: [testDir],
+      excludePatterns: []
+    });
   });
 
   afterEach(async () => {
@@ -36,13 +40,11 @@ describe('search_files tool', () => {
     const testFile = join(testDir, 'test.txt');
     await writeFile(testFile, 'line one\nline two\nline three\nline two again');
 
-    const result = await searchFiles.execute({
+    const result = await searchTool.execute({
       path: testDir,
       pattern: 'line two',
-      allowedDirs,
-      excludePatterns: [],
       maxResults: 100
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<SearchResult>(result);
     expect(parsed?.matches).toHaveLength(1);
@@ -56,13 +58,11 @@ describe('search_files tool', () => {
     await writeFile(file1, 'test pattern here\nno match\n');
     await writeFile(file2, 'another test pattern\n');
 
-    const result = await searchFiles.execute({
+    const result = await searchTool.execute({
       path: testDir,
       pattern: 'test pattern',
-      allowedDirs,
-      excludePatterns: [],
       maxResults: 100
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<SearchResult>(result);
     expect(parsed?.matches).toHaveLength(2);
@@ -80,13 +80,11 @@ describe('search_files tool', () => {
     await writeFile(rootFile, 'test pattern');
     await writeFile(nestedFile, 'test pattern');
 
-    const result = await searchFiles.execute({
+    const result = await searchTool.execute({
       path: testDir,
       pattern: 'test pattern',
-      allowedDirs,
-      excludePatterns: [],
       maxResults: 100
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<SearchResult>(result);
     expect(parsed?.matches).toHaveLength(2);
@@ -99,18 +97,21 @@ describe('search_files tool', () => {
 
   test('respects exclude patterns', async () => {
     const rootFile = join(testDir, 'file.txt');
-    const moduleFile = join(testDir, 'node_modules', 'module.txt');
-    await mkdir(join(testDir, 'node_modules'), { recursive: true });
+    const hiddenFile = join(testDir, '.hidden.txt');
     await writeFile(rootFile, 'test pattern');
-    await writeFile(moduleFile, 'test pattern');
+    await writeFile(hiddenFile, 'test pattern');
 
-    const result = await searchFiles.execute({
+    // Create a new tool with exclude patterns
+    const restrictedTool = searchFiles({
+      allowedDirs: [testDir],
+      excludePatterns: ['/\\.']
+    });
+
+    const result = await restrictedTool.execute({
       path: testDir,
       pattern: 'test pattern',
-      excludePatterns: ['node_modules'],
-      allowedDirs,
       maxResults: 100
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<SearchResult>(result);
     expect(parsed?.matches).toHaveLength(1);
@@ -124,13 +125,11 @@ describe('search_files tool', () => {
       await writeFile(join(testDir, `file${i}.txt`), 'test pattern');
     }
 
-    const result = await searchFiles.execute({
+    const result = await searchTool.execute({
       path: testDir,
       pattern: 'test pattern',
-      allowedDirs,
-      maxResults: 5,
-      excludePatterns: []
-    }, context);
+      maxResults: 5
+    }, createTestContext());
 
     const parsed = parseJsonResult<SearchResult>(result);
     expect(parsed?.matches).toHaveLength(5);
@@ -140,26 +139,22 @@ describe('search_files tool', () => {
     const outsideDir = join(testRoot, 'outside');
     await mkdir(outsideDir);
 
-    const result = await searchFiles.execute({
+    const result = await searchTool.execute({
       path: outsideDir,
       pattern: 'test',
-      allowedDirs,
-      excludePatterns: [],
       maxResults: 100
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<SearchResult>(result);
     expect(parsed?.error).toBeDefined();
   });
 
   test('handles invalid regex pattern', async () => {
-    const result = await searchFiles.execute({
+    const result = await searchTool.execute({
       path: testDir,
       pattern: '[invalid regex)',
-      allowedDirs,
-      excludePatterns: [],
       maxResults: 100
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<SearchResult>(result);
     expect(parsed?.error).toBeDefined();

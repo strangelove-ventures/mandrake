@@ -130,6 +130,14 @@ There will be a `{new_mandrake}/packages/utils` for the logger (see the existing
 
 There will be a frontend for Mandrake that is a Next js application which exposes key functionality
 
+#### Services
+
+Mandrake has a number of services that the backend needs to provide to the api:
+
+- MCP Server Management
+- Workspace Management
+- SessionCoordinator
+
 #### API
 
 We will need to support the data/functionality from `WorkspaceManager`, `DockerMCPService` and `ProviderManager` via our api to the frontend. Below is a list I've made of the routes that will be necessary. This may be incomplete or need additional work. We should flesh this out into an implementation plan in `{new_mandrake}/apps/web/src/app/api`

@@ -1,14 +1,23 @@
+/**
+ * Generate a tree visualization of a directory structure.
+ * Enforces allowedDirs and excludePatterns security boundaries.
+ * 
+ * excludePatterns are applied to the full path, so patterns should account for path separators.
+ * Common patterns:
+ * - '/\\.' - exclude hidden files/directories anywhere in path
+ * - '\\.git/' - exclude .git directories
+ * - '\\.env$' - exclude .env files
+ */
 import { z } from "zod";
 import { RipperError } from "../utils/errors";
 import { validatePath } from "../utils/paths";
 import { readdir, stat } from "fs/promises";
 import { join } from "path";
-import type { Tool, ContentResult, Context } from "../types";
+import type { SecurityContext } from "../types";
+import type { Tool, Context, ContentResult } from "../fastmcp";
 
-const TreeParams = z.object({
+export const TreeParams = z.object({
   path: z.string(),
-  allowedDirs: z.array(z.string()),
-  excludePatterns: z.array(z.string()).optional().default([]),
   depth: z.number().optional().default(Infinity)
 });
 
@@ -43,10 +52,12 @@ async function buildTree(
   }
 
   const entries = await readdir(path);
-  // Filter entries using exclude patterns
-  const filteredEntries = entries.filter(entry =>
-    !excludePatterns.some(pattern => pattern.test(entry))
-  );
+
+  // Filter entries using exclude patterns against full path
+  const filteredEntries = entries.filter(entry => {
+    const fullPath = join(path, entry);
+    return !excludePatterns.some(pattern => pattern.test(fullPath));
+  });
 
   const children = await Promise.all(
     filteredEntries.map(async (entry) => {
@@ -71,41 +82,43 @@ async function buildTree(
   };
 }
 
-export const tree: Tool<typeof TreeParams> = {
-  name: "tree",
-  description: "Generate a tree visualization of a directory structure",
-  parameters: TreeParams,
-  execute: async (args: z.infer<typeof TreeParams>, context: Context): Promise<ContentResult> => {
-    try {
-      const validPath = await validatePath(args.path, args.allowedDirs);
-      const excludePatterns = args.excludePatterns.map(p => new RegExp(p));
-      const tree = await buildTree(validPath, excludePatterns, args.depth);
+export function tree(securityContext: SecurityContext): Tool<typeof TreeParams> {
+  return {
+    name: "tree",
+    description: "Generate a tree visualization of a directory structure",
+    parameters: TreeParams,
+    execute: async (args: z.infer<typeof TreeParams>, context: Context): Promise<ContentResult> => {
+      try {
+        const validPath = await validatePath(args.path, securityContext.allowedDirs);
+        const excludePatterns = securityContext.excludePatterns.map(p => new RegExp(p));
+        const tree = await buildTree(validPath, excludePatterns, args.depth);
 
-      const result: TreeResult = {
-        path: validPath,
-        tree
-      };
+        const result: TreeResult = {
+          path: validPath,
+          tree
+        };
 
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-      };
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+        };
 
-    } catch (error) {
-      const result: TreeResult = {
-        path: args.path,
-        tree: {
-          type: "directory",
-          name: args.path.split("/").pop() || args.path,
-          path: args.path
-        },
-        error: error instanceof RipperError ?
-          error.message :
-          `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
-      };
+      } catch (error) {
+        const result: TreeResult = {
+          path: args.path,
+          tree: {
+            type: "directory",
+            name: args.path.split("/").pop() || args.path,
+            path: args.path
+          },
+          error: error instanceof RipperError ?
+            error.message :
+            `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+        };
 
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-      };
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+        };
+      }
     }
-  }
-};
+  };
+}

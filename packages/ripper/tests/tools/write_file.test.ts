@@ -1,10 +1,11 @@
 import { expect, test, describe, beforeEach } from 'bun:test';
-import { writeFile } from '../../src/tools';
+import { writeFile, WriteFileParams } from '../../src/tools/write_file';
 import { join } from 'path';
-import { mkdir, readFile } from 'fs/promises';
+import { mkdir, readFile, stat } from 'fs/promises';
+import { createTestContext } from '../utils/test-utils';
 import { tmpdir } from 'os';
+import type { Tool } from '../../src/fastmcp';
 import { parseJsonResult } from '../../src/utils/content';
-import type { Context } from '../../src/types';
 
 interface WriteFileResult {
   path: string;
@@ -16,26 +17,23 @@ describe('write_file tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
-  let allowedDirs: string[];
-  let context: Context;
+  let wf: Tool<typeof WriteFileParams>;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
-    allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
-    context = {};
+    wf = writeFile({ allowedDirs: [testDir], excludePatterns: [] });
   });
 
   test('writes new file successfully', async () => {
     const testFile = join(testDir, 'test.txt');
     const content = 'test content';
 
-    const result = await writeFile.execute({
+    const result = await wf.execute({
       path: testFile,
-      content,
-      allowedDirs
-    }, context);
+      content
+    }, createTestContext());
 
     // Check result
     const parsed = parseJsonResult<WriteFileResult>(result);
@@ -51,11 +49,10 @@ describe('write_file tool', () => {
     await Bun.write(testFile, 'original content');
 
     const newContent = 'new content';
-    const result = await writeFile.execute({
+    const result = await wf.execute({
       path: testFile,
-      content: newContent,
-      allowedDirs
-    }, context);
+      content: newContent
+    }, createTestContext());
 
     const parsed = parseJsonResult<WriteFileResult>(result);
     expect(parsed?.success).toBe(true);
@@ -68,11 +65,10 @@ describe('write_file tool', () => {
     const deepFile = join(testDir, 'deep', 'nested', 'test.txt');
     const content = 'test content';
 
-    const result = await writeFile.execute({
+    const result = await wf.execute({
       path: deepFile,
-      content,
-      allowedDirs
-    }, context);
+      content
+    }, createTestContext());
 
     const parsed = parseJsonResult<WriteFileResult>(result);
     expect(parsed?.success).toBe(true);
@@ -85,14 +81,59 @@ describe('write_file tool', () => {
     const outsideFile = join(testRoot, 'outside.txt');
     const content = 'test content';
 
-    const result = await writeFile.execute({
+    const result = await wf.execute({
       path: outsideFile,
-      content,
-      allowedDirs
-    }, context);
+      content
+    }, createTestContext());
 
     const parsed = parseJsonResult<WriteFileResult>(result);
     expect(parsed?.success).toBe(false);
     expect(parsed?.error).toBeDefined();
+  });
+
+  test('respects exclude patterns', async () => {
+    const hiddenFile = join(testDir, '.hidden.txt');
+    const content = 'test content';
+
+    // Create a new tool with exclude patterns
+    const restrictedTool = writeFile({
+      allowedDirs: [testDir],
+      excludePatterns: ['/\\.']
+    });
+
+    const result = await restrictedTool.execute({
+      path: hiddenFile,
+      content
+    }, createTestContext());
+
+    const parsed = parseJsonResult<WriteFileResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBe('Path matches exclude pattern');
+
+    // Make sure the file wasn't created
+    await expect(stat(hiddenFile)).rejects.toThrow();
+  });
+
+  test('respects exclude patterns in deep paths', async () => {
+    const deepHiddenFile = join(testDir, 'visible', '.hidden', 'file.txt');
+    const content = 'test content';
+
+    // Create a new tool with exclude patterns
+    const restrictedTool = writeFile({
+      allowedDirs: [testDir],
+      excludePatterns: ['/\\.']
+    });
+
+    const result = await restrictedTool.execute({
+      path: deepHiddenFile,
+      content
+    }, createTestContext());
+
+    const parsed = parseJsonResult<WriteFileResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBe('Path matches exclude pattern');
+
+    // Make sure the directory structure wasn't created
+    await expect(stat(join(testDir, 'visible', '.hidden'))).rejects.toThrow();
   });
 });

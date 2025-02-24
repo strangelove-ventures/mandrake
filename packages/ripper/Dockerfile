@@ -5,7 +5,6 @@ WORKDIR /app
 
 # Copy package files
 COPY package.json .
-COPY bun.lockb .
 
 # Install dependencies
 RUN bun install --frozen-lockfile
@@ -33,4 +32,5 @@ RUN mkdir -p /tmp/ripper
 EXPOSE 3000
 ENV NODE_ENV=production
 
-CMD ["bun", "run", "./dist/server.js"]
+ENTRYPOINT ["bun", "run", "./dist/server.js"]
+CMD ["--transport=stdio", "--workspaceDir=/ws"]

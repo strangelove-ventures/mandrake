@@ -6,3 +6,15 @@ import { tmpdir } from 'os';
 export async function createTestDir() {
     return await mkdtemp(join(tmpdir(), 'ripper-test-'));
 }
+
+export function createTestContext(): any {
+    return {
+        reportProgress: async () => { },
+        log: {
+            debug: () => { },
+            error: () => { },
+            info: () => { },
+            warn: () => { }
+        }
+    };
+}

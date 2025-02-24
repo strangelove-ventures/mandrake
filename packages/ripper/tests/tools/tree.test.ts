@@ -1,10 +1,11 @@
 import { expect, test, describe, beforeEach, afterEach } from 'bun:test';
-import { tree } from '../../src/tools';
+import { tree, TreeParams } from '../../src/tools/tree';
 import { join } from 'path';
+import { createTestContext } from '../utils/test-utils';
 import { mkdir, writeFile, rm } from 'fs/promises';
 import { tmpdir } from 'os';
 import { parseJsonResult } from '../../src/utils/content';
-import type { Context } from '../../src/types';
+import type { Tool } from '../../src/fastmcp';
 
 interface TreeNode {
   type: 'file' | 'directory';
@@ -23,17 +24,18 @@ describe('tree tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
-  let allowedDirs: string[];
-  let context: Context;
-  let excludePatterns: string[];
+  let treeTool: Tool<typeof TreeParams>;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
-    allowedDirs = [testDir];
-    excludePatterns = [];
     await mkdir(testDir, { recursive: true });
-    context = {};
+
+    // Create tree tool with security context
+    treeTool = tree({
+      allowedDirs: [testDir],
+      excludePatterns: []
+    });
   });
 
   afterEach(async () => {
@@ -41,12 +43,10 @@ describe('tree tool', () => {
   });
 
   test('shows empty directory structure', async () => {
-    const result = await tree.execute({
+    const result = await treeTool.execute({
       path: testDir,
-      allowedDirs,
-      depth: 3,
-      excludePatterns
-    }, context);
+      depth: 3
+    }, createTestContext());
 
     const parsed = parseJsonResult<TreeResult>(result);
     expect(parsed?.tree.type).toBe('directory');
@@ -62,30 +62,28 @@ describe('tree tool', () => {
     await writeFile(join(testDir, 'dir1', 'file2.txt'), 'content');
     await writeFile(join(testDir, 'dir1', 'nested', 'file3.txt'), 'content');
 
-    const result = await tree.execute({
+    const result = await treeTool.execute({
       path: testDir,
-      allowedDirs,
-      depth: 3,
-      excludePatterns
-    }, context);
+      depth: 3
+    }, createTestContext());
 
     const parsed = parseJsonResult<TreeResult>(result);
 
     // Check root structure
     expect(parsed?.tree.type).toBe('directory');
-    expect(parsed?.tree.children).toHaveLength(3); // dir1, dir2, file1.txt
+    expect(parsed?.tree.children).toHaveLength(3);
 
     // Find dir1 and check its structure
     const dir1 = parsed?.tree.children?.find(c => c.name === 'dir1');
     expect(dir1).toBeDefined();
     expect(dir1?.type).toBe('directory');
-    expect(dir1?.children).toHaveLength(2); // nested, file2.txt
+    expect(dir1?.children).toHaveLength(2);
 
     // Check nested directory
     const nested = dir1?.children?.find(c => c.name === 'nested');
     expect(nested).toBeDefined();
     expect(nested?.type).toBe('directory');
-    expect(nested?.children).toHaveLength(1); // file3.txt
+    expect(nested?.children).toHaveLength(1);
   });
 
   test('respects depth parameter', async () => {
@@ -93,12 +91,10 @@ describe('tree tool', () => {
     await mkdir(join(testDir, 'dir1', 'nested1', 'nested2'), { recursive: true });
     await writeFile(join(testDir, 'dir1', 'nested1', 'nested2', 'deep.txt'), 'content');
 
-    const result = await tree.execute({
+    const result = await treeTool.execute({
       path: testDir,
-      allowedDirs,
-      depth: 2,
-      excludePatterns
-    }, context);
+      depth: 2
+    }, createTestContext());
 
     const parsed = parseJsonResult<TreeResult>(result);
 
@@ -112,12 +108,10 @@ describe('tree tool', () => {
     const outsideDir = join(testRoot, 'outside');
     await mkdir(outsideDir);
 
-    const result = await tree.execute({
+    const result = await treeTool.execute({
       path: outsideDir,
-      allowedDirs,
-      depth: 3,
-      excludePatterns
-    }, context);
+      depth: 3
+    }, createTestContext());
 
     const parsed = parseJsonResult<TreeResult>(result);
     expect(parsed?.error).toBeDefined();
@@ -126,34 +120,36 @@ describe('tree tool', () => {
   test('handles non-existent directory', async () => {
     const nonexistentDir = join(testDir, 'nonexistent');
 
-    const result = await tree.execute({
+    const result = await treeTool.execute({
       path: nonexistentDir,
-      allowedDirs,
-      depth: 3,
-      excludePatterns
-    }, context);
+      depth: 3
+    }, createTestContext());
 
     const parsed = parseJsonResult<TreeResult>(result);
     expect(parsed?.error).toBeDefined();
   });
 
-
   test('respects exclude patterns', async () => {
     // Create test structure including files to exclude
-    await mkdir(join(testDir, '.ws'));
-    await writeFile(join(testDir, '.ws', 'config.json'), 'content');
+    const hiddenDir = join(testDir, '.hidden');
+    await mkdir(hiddenDir);
+    await writeFile(join(hiddenDir, 'config.json'), 'content');
     await writeFile(join(testDir, 'file1.txt'), 'content');
-    await writeFile(join(testDir, '.hidden'), 'content');
+    await writeFile(join(testDir, '.hidden.txt'), 'content');
     await mkdir(join(testDir, 'dir1'));
     await writeFile(join(testDir, 'dir1', 'visible.txt'), 'content');
-    await writeFile(join(testDir, 'dir1', '.hidden2'), 'content');
+    await writeFile(join(testDir, 'dir1', '.hidden2.txt'), 'content');
 
-    const result = await tree.execute({
+    // Create a new tool with exclude patterns
+    const restrictedTool = tree({
+      allowedDirs: [testDir],
+      excludePatterns: ['/\\.']
+    });
+
+    const result = await restrictedTool.execute({
       path: testDir,
-      allowedDirs,
-      excludePatterns: ['^\\.'],
       depth: Infinity
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<TreeResult>(result);
     expect(parsed?.tree.type).toBe('directory');
@@ -164,12 +160,27 @@ describe('tree tool', () => {
     // Find dir1 and check its contents
     const dir1 = parsed?.tree.children?.find(c => c.name === 'dir1');
     expect(dir1?.type).toBe('directory');
-    // Should only have visible.txt, not .hidden2
+    // Should only have visible.txt, not .hidden2.txt
     expect(dir1?.children).toHaveLength(1);
     expect(dir1?.children?.[0].name).toBe('visible.txt');
 
-    // Verify .ws directory and its contents are excluded
-    const hiddenItems = parsed?.tree.children?.filter(c => c.name.startsWith('.'));
-    expect(hiddenItems).toHaveLength(0);
+    // Verify no hidden files/dirs are present
+    const allPaths = getAllPaths(parsed?.tree);
+    expect(allPaths.some(p => p.includes('/.hidden'))).toBe(false);
+    expect(allPaths.some(p => p.includes('/.hidden.txt'))).toBe(false);
+    expect(allPaths.some(p => p.includes('/.hidden2.txt'))).toBe(false);
   });
 });
+
+// Helper to get all paths in tree
+function getAllPaths(node: TreeNode | undefined): string[] {
+  if (!node) return [];
+
+  const paths = [node.path];
+  if (node.children) {
+    node.children.forEach(child => {
+      paths.push(...getAllPaths(child));
+    });
+  }
+  return paths;
+}

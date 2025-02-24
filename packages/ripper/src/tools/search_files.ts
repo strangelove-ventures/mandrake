@@ -1,15 +1,24 @@
+/**
+ * Search for files matching a pattern recursively.
+ * Enforces allowedDirs and excludePatterns security boundaries.
+ * 
+ * excludePatterns are applied to the full path, so patterns should account for path separators.
+ * Common patterns:
+ * - '/\\.' - exclude hidden files/directories anywhere in path
+ * - '\\.git/' - exclude .git directories
+ * - '\\.env$' - exclude .env files
+ */
 import { z } from "zod";
 import { RipperError } from "../utils/errors";
 import { validatePath } from "../utils/paths";
 import { readdir, stat, readFile } from "fs/promises";
-import { join, relative } from "path";
-import type { Tool, ContentResult, Context } from "../types";
+import { join } from "path";
+import type { Tool, Context, ContentResult } from "../fastmcp";
+import type { SecurityContext } from "../types";
 
-const SearchFilesParams = z.object({
+export const SearchFilesParams = z.object({
   path: z.string(),
   pattern: z.string(),
-  allowedDirs: z.array(z.string()),
-  excludePatterns: z.array(z.string()).optional().default([]),
   maxResults: z.number().optional().default(100)
 });
 
@@ -42,10 +51,9 @@ async function searchDirectory(
     if (matches.length >= maxResults) break;
 
     const fullPath = join(currentPath, entry);
-    const relativePath = relative(basePath, fullPath);
 
-    // Skip if path matches any exclude pattern
-    if (excludePatterns.some(pattern => pattern.test(entry))) {
+    // Check the full path against exclude patterns, not just the entry name
+    if (excludePatterns.some(pattern => pattern.test(fullPath))) {
       continue;
     }
 
@@ -71,49 +79,51 @@ async function searchDirectory(
   return matches;
 }
 
-export const searchFiles: Tool<typeof SearchFilesParams> = {
-  name: "search_files",
-  description: "Search for files matching a pattern recursively",
-  parameters: SearchFilesParams,
-  execute: async (args: z.infer<typeof SearchFilesParams>, context: Context): Promise<ContentResult> => {
-    try {
-      const validPath = await validatePath(args.path, args.allowedDirs);
-      
-      // Create RegExp objects for search and exclude patterns
-      const searchRegex = new RegExp(args.pattern);
-      const excludePatterns = args.excludePatterns.map(p => new RegExp(p));
+export function searchFiles(securityContext: SecurityContext): Tool<typeof SearchFilesParams> {
+  return {
+    name: "search_files",
+    description: "Search for files matching a pattern recursively",
+    parameters: SearchFilesParams,
+    execute: async (args: z.infer<typeof SearchFilesParams>, context: Context): Promise<ContentResult> => {
+      try {
+        const validPath = await validatePath(args.path, securityContext.allowedDirs);
 
-      const matches = await searchDirectory(
-        validPath,
-        validPath,
-        searchRegex,
-        excludePatterns,
-        args.maxResults
-      );
+        // Create RegExp objects for search and exclude patterns
+        const searchRegex = new RegExp(args.pattern);
+        const excludePatterns = securityContext.excludePatterns.map(p => new RegExp(p));
 
-      const result: SearchResult = {
-        path: validPath,
-        pattern: args.pattern,
-        matches
-      };
+        const matches = await searchDirectory(
+          validPath,
+          validPath,
+          searchRegex,
+          excludePatterns,
+          args.maxResults
+        );
 
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-      };
+        const result: SearchResult = {
+          path: validPath,
+          pattern: args.pattern,
+          matches
+        };
 
-    } catch (error) {
-      const result: SearchResult = {
-        path: args.path,
-        pattern: args.pattern,
-        matches: [],
-        error: error instanceof RipperError ? 
-          error.message : 
-          `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
-      };
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+        };
 
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-      };
+      } catch (error) {
+        const result: SearchResult = {
+          path: args.path,
+          pattern: args.pattern,
+          matches: [],
+          error: error instanceof RipperError ?
+            error.message :
+            `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+        };
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+        };
+      }
     }
-  }
-};
+  };
+}

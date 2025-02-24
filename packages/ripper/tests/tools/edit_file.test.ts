@@ -1,10 +1,12 @@
+// edit_file.test.ts
 import { expect, test, describe, beforeEach } from 'bun:test';
-import { editFile } from '../../src/tools';
+import { editFile, EditParams } from '../../src/tools/edit_file';
 import { join } from 'path';
 import { mkdir, writeFile, readFile } from 'fs/promises';
 import { tmpdir } from 'os';
 import { parseJsonResult } from '../../src/utils/content';
-import type { Context } from '../../src/types';
+import { createTestContext } from '../utils/test-utils';
+import type { Tool } from '../../src/fastmcp';
 
 interface EditResult {
   path: string;
@@ -17,15 +19,18 @@ describe('edit_file tool', () => {
   const tmpDir = tmpdir();
   let testRoot: string;
   let testDir: string;
-  let allowedDirs: string[];
-  let context: Context;
+  let editTool: Tool<typeof EditParams>;
 
   beforeEach(async () => {
     testRoot = join(tmpDir, `ripper-test-${Date.now()}`);
     testDir = join(testRoot, 'test-dir');
-    allowedDirs = [testDir];
     await mkdir(testDir, { recursive: true });
-    context = {};
+
+    // Create edit tool with security context
+    editTool = editFile({
+      allowedDirs: [testDir],
+      excludePatterns: []
+    });
   });
 
   test('performs single edit successfully', async () => {
@@ -33,12 +38,11 @@ describe('edit_file tool', () => {
     const originalContent = 'hello world';
     await writeFile(testFile, originalContent);
 
-    const result = await editFile.execute({
+    const result = await editTool.execute({
       path: testFile,
       edits: [{ oldText: 'world', newText: 'there' }],
-      allowedDirs,
       dryRun: false
-    }, context);
+    }, createTestContext());
 
     // Check result format
     const parsed = parseJsonResult<EditResult>(result);
@@ -55,15 +59,14 @@ describe('edit_file tool', () => {
     const originalContent = 'hello world hello earth';
     await writeFile(testFile, originalContent);
 
-    const result = await editFile.execute({
+    const result = await editTool.execute({
       path: testFile,
       edits: [
         { oldText: 'world', newText: 'there' },
         { oldText: 'earth', newText: 'mars' }
       ],
-      allowedDirs,
       dryRun: false
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<EditResult>(result);
     expect(parsed?.success).toBe(true);
@@ -77,12 +80,11 @@ describe('edit_file tool', () => {
     const originalContent = 'hello world';
     await writeFile(testFile, originalContent);
 
-    const result = await editFile.execute({
+    const result = await editTool.execute({
       path: testFile,
       edits: [{ oldText: 'nonexistent', newText: 'test' }],
-      allowedDirs,
       dryRun: false
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<EditResult>(result);
     expect(parsed?.success).toBe(false);
@@ -98,12 +100,11 @@ describe('edit_file tool', () => {
     const originalContent = 'hello world';
     await writeFile(testFile, originalContent);
 
-    const result = await editFile.execute({
+    const result = await editTool.execute({
       path: testFile,
       edits: [{ oldText: 'world', newText: 'there' }],
-      allowedDirs,
       dryRun: true
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<EditResult>(result);
     expect(parsed?.success).toBe(true);
@@ -118,15 +119,40 @@ describe('edit_file tool', () => {
     const outsideFile = join(testRoot, 'outside.txt');
     await writeFile(outsideFile, 'test content');
 
-    const result = await editFile.execute({
+    const result = await editTool.execute({
       path: outsideFile,
       edits: [{ oldText: 'test', newText: 'new' }],
-      allowedDirs,
       dryRun: false
-    }, context);
+    }, createTestContext());
 
     const parsed = parseJsonResult<EditResult>(result);
     expect(parsed?.success).toBe(false);
     expect(parsed?.error).toBeDefined();
+  });
+
+  test('respects exclude patterns', async () => {
+    const hiddenFile = join(testDir, '.hidden.txt');
+    const content = 'test content';
+    await writeFile(hiddenFile, content);
+
+    // Create a new tool with exclude patterns
+    const restrictedTool = editFile({
+      allowedDirs: [testDir],
+      excludePatterns: ['/\\.']
+    });
+
+    const result = await restrictedTool.execute({
+      path: hiddenFile,
+      edits: [{ oldText: 'test', newText: 'new' }],
+      dryRun: false
+    }, createTestContext());
+
+    const parsed = parseJsonResult<EditResult>(result);
+    expect(parsed?.success).toBe(false);
+    expect(parsed?.error).toBe('Path matches exclude pattern');
+
+    // Verify file wasn't changed
+    const finalContent = await readFile(hiddenFile, 'utf-8');
+    expect(finalContent).toBe(content);
   });
 });

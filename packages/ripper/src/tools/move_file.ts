@@ -1,12 +1,23 @@
+/**
+ * Move/rename a file or directory, creating parent directories if needed.
+ * Enforces allowedDirs and excludePatterns security boundaries.
+ * 
+ * excludePatterns are applied to both source and destination paths.
+ * Common patterns:
+ * - '/\\.' - exclude hidden files/directories anywhere in path
+ * - '\\.git/' - exclude .git directories
+ * - '\\.env$' - exclude .env files
+ */
 import { z } from "zod";
 import { safeMove } from "../utils/files";
 import { RipperError } from "../utils/errors";
-import type { Tool, ContentResult, Context } from "../types";
+import type { SecurityContext } from "../types";
+import type { Tool, Context } from "../fastmcp";
+import type { ContentResult } from "../fastmcp";
 
-const MoveFileParams = z.object({
+export const MoveFileParams = z.object({
   source: z.string(),
-  destination: z.string(),
-  allowedDirs: z.array(z.string())
+  destination: z.string()
 });
 
 type MoveFileResult = {
@@ -16,37 +27,40 @@ type MoveFileResult = {
   error?: string;
 };
 
-export const moveFile: Tool<typeof MoveFileParams> = {
-  name: "move_file",
-  description: "Move/rename a file or directory, creating parent directories if needed",
-  parameters: MoveFileParams,
-  execute: async (args: z.infer<typeof MoveFileParams>, context: Context): Promise<ContentResult> => {
-    try {
-      await safeMove(args.source, args.destination, args.allowedDirs);
-      
-      const result: MoveFileResult = {
-        source: args.source,
-        destination: args.destination,
-        success: true
-      };
+export function moveFile(securityContext: SecurityContext): Tool<typeof MoveFileParams> {
+  return {
+    name: "move_file",
+    description: "Move/rename a file or directory, creating parent directories if needed",
+    parameters: MoveFileParams,
+    execute: async (args: z.infer<typeof MoveFileParams>, context: Context): Promise<ContentResult> => {
+      try {
+        const excludePatterns = securityContext.excludePatterns.map(p => new RegExp(p));
+        await safeMove(args.source, args.destination, securityContext.allowedDirs, excludePatterns);
 
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-      };
+        const result: MoveFileResult = {
+          source: args.source,
+          destination: args.destination,
+          success: true
+        };
 
-    } catch (error) {
-      const result: MoveFileResult = {
-        source: args.source,
-        destination: args.destination,
-        success: false,
-        error: error instanceof RipperError ? 
-          error.message : 
-          `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
-      };
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+        };
 
-      return {
-        content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
-      };
+      } catch (error) {
+        const result: MoveFileResult = {
+          source: args.source,
+          destination: args.destination,
+          success: false,
+          error: error instanceof RipperError ?
+            error.message :
+            `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+        };
+
+        return {
+          content: [{ type: "text", text: JSON.stringify(result, null, 2) }]
+        };
+      }
     }
-  }
-};
+  };
+}

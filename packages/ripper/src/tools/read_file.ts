@@ -1,12 +1,21 @@
+/**
+ * Read one or more files, enforcing allowedDirs and excludePatterns security boundaries.
+ * 
+ * excludePatterns are applied to the full path, so patterns should account for path separators.
+ * Common patterns:
+ * - '/\\.' - exclude hidden files/directories anywhere in path
+ * - '\\.git/' - exclude .git directories
+ * - '\\.env$' - exclude .env files
+ */
 import { z } from "zod";
 import { safeReadFile } from "../utils/files";
 import { RipperError } from "../utils/errors";
-import type { Tool, ContentResult, Context } from "../types";
+import type { SecurityContext } from "../types";
+import type { Tool, Context } from "../fastmcp";
+import type { ContentResult } from "../fastmcp";
 
-const ReadFilesParams = z.object({
-  paths: z.array(z.string()),
-  allowedDirs: z.array(z.string()),
-  excludePatterns: z.array(z.string()).optional().default([])
+export const ReadFilesParams = z.object({
+  paths: z.array(z.string())
 });
 
 type ReadFileResult = {
@@ -15,46 +24,47 @@ type ReadFileResult = {
   error?: string;
 };
 
-export const readFiles: Tool<typeof ReadFilesParams> = {
-  name: "read_files",
-  description: "Read the contents of one or more files",
-  parameters: ReadFilesParams,
-  execute: async (args: z.infer<typeof ReadFilesParams>, context: Context): Promise<ContentResult> => {
-    const results: ReadFileResult[] = [];
-    
-    for (const path of args.paths) {
-      if (args.excludePatterns.some(pattern =>
-        new RegExp(pattern).test(path)
-      )) {
-        results.push({
-          path,
-          content: "",
-          error: "Path matches exclude pattern"
-        });
-        continue;
-      }
-      try {
-        const buf = await safeReadFile(path, args.allowedDirs);
-        const content = buf.toString('utf-8'); 
-        results.push({ path, content });
-      } catch (error) {
-        if (error instanceof RipperError) {
-          results.push({ path, content: "", error: error.message });
-        } else {
-          results.push({ 
-            path, 
-            content: "", 
-            error: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+export function readFiles(securityContext: SecurityContext): Tool<typeof ReadFilesParams> {
+  return {
+    name: "read_files",
+    description: "Read the contents of one or more files",
+    parameters: ReadFilesParams,
+    execute: async (args: z.infer<typeof ReadFilesParams>, context: Context): Promise<ContentResult> => {
+      const results: ReadFileResult[] = [];
+      const excludePatterns = securityContext.excludePatterns.map(p => new RegExp(p));
+
+      for (const path of args.paths) {
+        if (excludePatterns.some(pattern => pattern.test(path))) {
+          results.push({
+            path,
+            content: "",
+            error: "Path matches exclude pattern"
           });
+          continue;
+        }
+        try {
+          const buf = await safeReadFile(path, securityContext.allowedDirs);
+          const content = buf.toString('utf-8');
+          results.push({ path, content });
+        } catch (error) {
+          if (error instanceof RipperError) {
+            results.push({ path, content: "", error: error.message });
+          } else {
+            results.push({
+              path,
+              content: "",
+              error: `Unexpected error: ${error instanceof Error ? error.message : String(error)}`
+            });
+          }
         }
       }
-    }
 
-    return {
-      content: [{
-        type: "text",
-        text: JSON.stringify(results, null, 2)
-      }]
-    };
-  }
-};
+      return {
+        content: [{
+          type: "text",
+          text: JSON.stringify(results, null, 2)
+        }]
+      };
+    }
+  };
+}
