@@ -1,4 +1,5 @@
 import { BaseConfigManager } from './base';
+import { dirname } from 'path';
 import { 
   type ToolsConfig,
   type ToolConfig,
@@ -180,19 +181,23 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
   }
 
   protected getDefaults(): ToolsConfig {
+    const configDir = dirname(this.path);
+    const wsDir = dirname(configDir);
+    const workspacePath = dirname(wsDir);
     return {
       active: 'default',
       configs: {
         default: {
-          filesystem: {
-            command: 'mcp-filesystem-server',
-            env: {
-              MCP_FILESYSTEM_ROOT: '.',
-            },
-          },
-          git: {
-            command: 'mcp-git-server',
-          },
+          ripper: {
+            command: 'bun',
+            args: [
+              'run',
+              '../ripper/dist/server.js', // Or use the correct path to the ripper server
+              '--transport=stdio',
+              `--workspaceDir=${workspacePath}`,
+              '--excludePatterns=\\.ws'
+            ]
+          }
         },
       },
     };

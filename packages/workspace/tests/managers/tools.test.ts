@@ -1,8 +1,9 @@
+import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { ToolsManager } from '../../src/managers/tools';
-import { ServerConfig, ToolConfig } from '../../src/types/workspace/tools';
+import type { ServerConfig, ToolConfig } from '../../src/types/workspace/tools';
 
 describe('ToolsManager', () => {
   let tmpDir: string;
@@ -129,12 +130,10 @@ describe('ToolsManager', () => {
   });
 
   describe('defaults', () => {
-    test('provides default filesystem and git tools', async () => {
+    test('provides default ripper server', async () => {
       const config = await manager.getConfigSet('default');
-      expect(config.filesystem).toBeDefined();
-      expect(config.filesystem.command).toBe('mcp-filesystem-server');
-      expect(config.git).toBeDefined();
-      expect(config.git.command).toBe('mcp-git-server');
+      expect(config.ripper).toBeDefined();
+      expect(config.ripper.command).toBe('bun');
     });
   });
 });
