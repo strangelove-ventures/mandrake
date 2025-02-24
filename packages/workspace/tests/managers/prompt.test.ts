@@ -21,12 +21,10 @@ describe('PromptManager', () => {
     test('should create config file on init', async () => {
       await manager.init();
       const config = await manager.getConfig();
-      expect(config).toEqual({
-        instructions: 'You are a helpful AI assistant.',
-        includeWorkspaceMetadata: true,
-        includeSystemInfo: true,
-        includeDateTime: true
-      });
+      expect(config.instructions).toInclude("Mandrake");
+      expect(config.includeDateTime).toBeTrue();
+      expect(config.includeSystemInfo).toBeTrue();
+      expect(config.includeWorkspaceMetadata).toBeTrue();
     });
 
     test('should preserve existing config on init', async () => {
@@ -46,12 +44,10 @@ describe('PromptManager', () => {
   describe('Fresh State', () => {
     test('should start with default config', async () => {
       const config = await manager.getConfig();
-      expect(config).toEqual({
-        instructions: 'You are a helpful AI assistant.',
-        includeWorkspaceMetadata: true,
-        includeSystemInfo: true,
-        includeDateTime: true
-      });
+      expect(config.instructions).toInclude("Mandrake");
+      expect(config.includeDateTime).toBeTrue();
+      expect(config.includeSystemInfo).toBeTrue();
+      expect(config.includeWorkspaceMetadata).toBeTrue();
     });
   });
 
@@ -88,12 +84,10 @@ describe('PromptManager', () => {
     test('should handle missing file', async () => {
       const nonExistentManager = new PromptManager(join(testDir.path, 'nonexistent.json'));
       const config = await nonExistentManager.getConfig();
-      expect(config).toEqual({
-        instructions: 'You are a helpful AI assistant.',
-        includeWorkspaceMetadata: true,
-        includeSystemInfo: true,
-        includeDateTime: true
-      });
+      expect(config.instructions).toInclude("Mandrake");
+      expect(config.includeDateTime).toBeTrue();
+      expect(config.includeSystemInfo).toBeTrue();
+      expect(config.includeWorkspaceMetadata).toBeTrue();
     });
 
     test('should handle invalid JSON', async () => {

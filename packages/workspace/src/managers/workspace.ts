@@ -39,7 +39,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
     this.models = new ModelsManager(paths.models);
     this.prompt = new PromptManager(paths.systemPrompt);
     this.dynamic = new DynamicContextManager(paths.context);
-    this.files = new FilesManager(paths.root);
+    this.files = new FilesManager(paths.wsDir);
     this.sessions = new SessionManager(paths.db);
   }
 
@@ -52,8 +52,8 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
     // Create directory structure
     await Promise.all([
       mkdir(this.paths.root, { recursive: true }),
+      mkdir(this.paths.wsDir, { recursive: true }),
       mkdir(this.paths.config, { recursive: true }),
-      mkdir(this.paths.src, { recursive: true }),
       mkdir(this.paths.mcpdata, { recursive: true })
     ]);
 
@@ -78,7 +78,8 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
       this.tools.init(),      // Creates tools.json if doesn't exist
       this.models.init(),      // Creates models.json if doesn't exist
       this.prompt.init(),      // Creates system-prompt.md if doesn't exist
-      this.dynamic.list()     // Creates context.json if doesn't exist
+      this.dynamic.list(),     // Creates context.json if doesn't exist
+      this.files.init(),
     ]);
 
     this.logger.info('Workspace initialized');

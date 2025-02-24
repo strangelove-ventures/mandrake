@@ -8,13 +8,13 @@ export class FilesManager {
   private filesDir: string;
   private inactiveDir: string;
 
-  constructor(workspacePath: string) {
-    this.filesDir = join(workspacePath, 'files');
+  constructor(wsConfigPath: string) {
+    this.filesDir = join(wsConfigPath, 'files');
     this.inactiveDir = join(this.filesDir, 'inactive');
     this.logger = createLogger('workspace').child({
       meta: {
         component: 'files-manager',
-        path: workspacePath
+        path: wsConfigPath
       }
     });
   }

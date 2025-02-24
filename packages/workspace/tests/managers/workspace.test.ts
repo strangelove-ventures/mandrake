@@ -27,10 +27,12 @@ describe('WorkspaceManager', () => {
       const dirs = await readdir(paths.root, { withFileTypes: true });
       
       // Check required directories exist
-      expect(dirs.some(d => d.isDirectory() && d.name === 'config')).toBe(true);
-      expect(dirs.some(d => d.isDirectory() && d.name === 'files')).toBe(true);
-      expect(dirs.some(d => d.isDirectory() && d.name === 'src')).toBe(true);
-      expect(dirs.some(d => d.isDirectory() && d.name === 'mcpdata')).toBe(true);
+      expect(dirs.some(d => d.isDirectory() && d.name === '.ws')).toBe(true);
+
+      const wsDirs = await readdir(join(paths.root, '.ws'), { withFileTypes: true });
+      expect(wsDirs.some(d => d.isDirectory() && d.name === 'config')).toBe(true);
+      expect(wsDirs.some(d => d.isDirectory() && d.name === 'files')).toBe(true);
+      expect(wsDirs.some(d => d.isDirectory() && d.name === 'mcpdata')).toBe(true);
     });
 
     test('should create initial workspace config', async () => {
@@ -60,7 +62,7 @@ describe('WorkspaceManager', () => {
 
       // Rest stays the same
       const prompt = await workspaceManager.prompt.getConfig();
-      expect(prompt.instructions).toBe('You are a helpful AI assistant.');
+      expect(prompt.instructions).toContain('Mandrake');
 
       const contexts = await workspaceManager.dynamic.list();
       expect(contexts).toEqual([]);

@@ -52,7 +52,7 @@ describe('MandrakeManager', () => {
       // Check prompt
       await manager.prompt.init();
       const prompt = await manager.prompt.getConfig();
-      expect(prompt.instructions).toBe('You are a helpful AI assistant.');
+      expect(prompt.instructions).toContain('Mandrake');
     });
   });
 

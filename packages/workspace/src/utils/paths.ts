@@ -20,16 +20,16 @@ export interface MandrakePaths {
 
 export interface WorkspacePaths {
   root: string;          // ~/.mandrake/workspaces/{name}
-  config: string;        // ~/.mandrake/workspaces/{name}/config
-  workspace: string;     // ~/.mandrake/workspaces/{name}/workspace.json
-  tools: string;         // ~/.mandrake/workspaces/{name}/config/tools.json
-  models: string;        // ~/.mandrake/workspaces/{name}/config/models.json
-  context: string;       // ~/.mandrake/workspaces/{name}/config/context.json
-  systemPrompt: string;  // ~/.mandrake/workspaces/{name}/config/prompt.json
-  files: string;         // ~/.mandrake/workspaces/{name}/files
-  src: string;           // ~/.mandrake/workspaces/{name}/src
-  mcpdata: string;       // ~/.mandrake/workspaces/{name}/mcpdata
-  db: string;           // ~/.mandrake/workspaces/{name}/session.db
+  wsDir: string;         // ~/.mandrake/workspaces/{name}/.ws
+  config: string;        // ~/.mandrake/workspaces/{name}/.ws/config
+  workspace: string;     // ~/.mandrake/workspaces/{name}/.ws/workspace.json
+  tools: string;         // ~/.mandrake/workspaces/{name}/.ws/config/tools.json
+  models: string;        // ~/.mandrake/workspaces/{name}/.ws/config/models.json
+  context: string;       // ~/.mandrake/workspaces/{name}/.ws/config/context.json
+  systemPrompt: string;  // ~/.mandrake/workspaces/{name}/.ws/config/prompt.json
+  files: string;         // ~/.mandrake/workspaces/{name}/.ws/files
+  mcpdata: string;       // ~/.mandrake/workspaces/{name}/.ws/mcpdata
+  db: string;           // ~/.mandrake/workspaces/{name}/.ws/session.db
 }
 
 export function getMandrakePaths(root: string): MandrakePaths {  
@@ -45,19 +45,19 @@ export function getMandrakePaths(root: string): MandrakePaths {
 
 export function getWorkspacePath(workspaceDir: string, name: string): WorkspacePaths {
   const root = join(workspaceDir, name);
-  const config = join(root, 'config');
-
+  const wsDir = join(root, '.ws');
+  const config = join(wsDir, 'config');
   return {
     root,
+    wsDir,
     config,
-    workspace: join(root, 'workspace.json'),
+    workspace: join(wsDir, 'workspace.json'),
     tools: join(config, 'tools.json'),
     models: join(config, 'models.json'),
     context: join(config, 'context.json'),
     systemPrompt: join(config, 'prompt.json'),
-    files: join(root, 'files'),
-    src: join(root, 'src'),
-    mcpdata: join(root, 'mcpdata'),
-    db: join(root, 'session.db')
+    files: join(wsDir, 'files'),
+    mcpdata: join(wsDir, 'mcpdata'),
+    db: join(wsDir, 'session.db')
   };
 }
