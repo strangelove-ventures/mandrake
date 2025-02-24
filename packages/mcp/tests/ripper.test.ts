@@ -103,7 +103,6 @@ describe('Ripper Server', () => {
         await manager.startServer('ripper', SERVER_CONFIG)
 
         const hiddenPath = join(WORKSPACE_DIR, '.ws', 'hidden.txt')
-        console.log('Hidden file path:', hiddenPath)
 
         const result = await manager.invokeTool('ripper', 'read_files', {
             paths: [hiddenPath],
@@ -111,10 +110,8 @@ describe('Ripper Server', () => {
             allowedDirs: [WORKSPACE_DIR]
         })
 
-        // Log raw response
-        console.log('Read result:', JSON.stringify(JSON.parse((result.content as any)[0].text), null, 2))
-
         const files = JSON.parse((result.content as any)[0].text)
-        expect(files[0].content).toBe('hidden content')
+        expect(files[0].error).toContain('Path matches exclude pattern')
+        expect(files[0].content).toBe('')
     })
 })
