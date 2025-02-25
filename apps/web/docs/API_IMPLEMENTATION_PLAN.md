@@ -8,7 +8,7 @@ This document outlines the implementation plan for the Mandrake API. It provides
 
 ### System-level Resources
 
-```
+```sh
 /api/config
   GET  - Fetch system config
   PUT  - Update system config
@@ -72,7 +72,7 @@ This document outlines the implementation plan for the Mandrake API. It provides
 
 ### Workspace Resources
 
-```
+```sh
 /api/workspaces
   GET  - List workspaces
   POST - Create workspace
@@ -85,7 +85,7 @@ This document outlines the implementation plan for the Mandrake API. It provides
 
 ### Workspace-scoped Resources
 
-```
+```sh
 /api/workspaces/[id]/dynamic
   GET  - List workspace dynamic contexts
   POST - Add dynamic context to workspace
@@ -158,7 +158,7 @@ To avoid code duplication between system-level and workspace-level resources, we
 
 ### File Structure
 
-```
+```sh
 apps/web/src/
   └── lib/
       └── api/
