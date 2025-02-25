@@ -29,8 +29,9 @@ class ServiceRegistry implements IServiceRegistry {
    */
   async getWorkspaceManager(name: string, path: string): Promise<WorkspaceManager> {
     if (!this.workspaceManagers.has(name)) {
-      logger.info(`Creating new WorkspaceManager for workspace: ${name}`);
-      const manager = new WorkspaceManager(name, path);
+      logger.info(`Creating new WorkspaceManager for workspace: ${name}`, { workspace: name, path });
+      // FIX: WorkspaceManager constructor expects (path, name), not (name, path)
+      const manager = new WorkspaceManager(path, name);
       await manager.init();
       this.workspaceManagers.set(name, manager);
       
@@ -57,7 +58,6 @@ class ServiceRegistry implements IServiceRegistry {
     if (!this.mcpManagers.has(workspace)) {
       logger.info(`Creating new MCPServerManager for workspace: ${workspace}`);
       const workspaceManager = await this.getWorkspaceManager(workspace, path);
-      new MCPManager
       const manager = new MCPManager();
       const tools = await workspaceManager.tools.getConfigSet(await workspaceManager.tools.getActive())
       for (const [name, config] of Object.entries(tools)) {

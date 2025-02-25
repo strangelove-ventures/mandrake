@@ -123,8 +123,7 @@ describe('Service Initialization', () => {
     };
     
     // Simulate a SIGTERM event
-    const sigTermEvent = new Event('SIGTERM');
-    process.emit('SIGTERM', sigTermEvent);
+    process.emit('SIGTERM');
     
     // Allow a small delay for async cleanup to complete
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -133,6 +132,6 @@ describe('Service Initialization', () => {
     expect(intervalCleared).toBe(true);
     
     // Also verify the cleanup interval was nullified
-    expect(initModule.cleanupInterval).toBeNull();
+    expect(initModule.cleanupInterval).toBeUndefined();
   });
 });

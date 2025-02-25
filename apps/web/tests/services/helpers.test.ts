@@ -54,9 +54,9 @@ describe('Service Helpers', () => {
   describe('getWorkspaceManagerForRequest', () => {
     test('should return a workspace manager', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       
-      const manager = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+      // Fix: workspace manager uses params as (path, name) not (name, path)
+      const manager = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
       
       expect(manager).toBeInstanceOf(WorkspaceManager);
       expect(manager.paths.root).toContain(workspaceName);
@@ -64,10 +64,9 @@ describe('Service Helpers', () => {
     
     test('should return the same workspace manager for the same workspace', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       
-      const manager1 = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
-      const manager2 = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+      const manager1 = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
+      const manager2 = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
       
       expect(manager2).toBe(manager1);
     });
@@ -76,28 +75,26 @@ describe('Service Helpers', () => {
   describe('getMCPManagerForRequest', () => {
     test('should return an MCP manager', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       
       // Initialize workspace first
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
       await workspace.init('Test workspace');
       
-      const mcpManager = await getMCPManagerForRequest(workspaceName, workspacePath);
+      const mcpManager = await getMCPManagerForRequest(workspaceName, tempDirPath);
       
       expect(mcpManager).toBeInstanceOf(MCPManager);
     }, MCP_TEST_TIMEOUT);
     
     test('should create a workspace manager if needed', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       
       // Get MCP manager without initializing workspace first
-      const mcpManager = await getMCPManagerForRequest(workspaceName, workspacePath);
+      const mcpManager = await getMCPManagerForRequest(workspaceName, tempDirPath);
       
       expect(mcpManager).toBeInstanceOf(MCPManager);
       
       // Verify workspace was created
-      const manager = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+      const manager = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
       expect(manager).toBeInstanceOf(WorkspaceManager);
     }, MCP_TEST_TIMEOUT);
   });
@@ -105,48 +102,45 @@ describe('Service Helpers', () => {
   describe('getSessionCoordinatorForRequest', () => {
     test('should return a session coordinator', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       const sessionId = 'test-session';
       
       // Initialize workspace first
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
       await workspace.init('Test workspace');
       
-      const coordinator = await getSessionCoordinatorForRequest(workspaceName, workspacePath, sessionId);
+      const coordinator = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
       
       expect(coordinator).toBeInstanceOf(SessionCoordinator);
     }, SESSION_TEST_TIMEOUT);
     
     test('should create necessary managers', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       const sessionId = 'test-session';
       
       // Get session coordinator without initializing anything first
-      await getSessionCoordinatorForRequest(workspaceName, workspacePath, sessionId);
+      await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
       
       // Verify workspace and MCP managers were created
       const registry = getServiceRegistry();
       
       // Get the managers and verify they exist
-      const workspace = await registry.getWorkspaceManager(workspaceName, workspacePath);
+      const workspace = await registry.getWorkspaceManager(workspaceName, tempDirPath);
       expect(workspace).toBeInstanceOf(WorkspaceManager);
       
-      const mcpManager = await registry.getMCPManager(workspaceName, workspacePath);
+      const mcpManager = await registry.getMCPManager(workspaceName, tempDirPath);
       expect(mcpManager).toBeInstanceOf(MCPManager);
     }, SESSION_TEST_TIMEOUT);
     
     test('should return the same coordinator for the same session', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       const sessionId = 'test-session';
       
       // Initialize workspace first
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
       await workspace.init('Test workspace');
       
-      const coordinator1 = await getSessionCoordinatorForRequest(workspaceName, workspacePath, sessionId);
-      const coordinator2 = await getSessionCoordinatorForRequest(workspaceName, workspacePath, sessionId);
+      const coordinator1 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
+      const coordinator2 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
       
       expect(coordinator2).toBe(coordinator1);
     });
@@ -155,15 +149,14 @@ describe('Service Helpers', () => {
   describe('releaseSessionResources', () => {
     test('should clean up a session', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       const sessionId = 'test-session';
       
       // Initialize workspace
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
       await workspace.init('Test workspace');
       
       // Create a session
-      const coordinator = await getSessionCoordinatorForRequest(workspaceName, workspacePath, sessionId);
+      const coordinator = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
       
       // Create a spy on the cleanup method
       const originalCleanup = coordinator.cleanup;
@@ -184,7 +177,7 @@ describe('Service Helpers', () => {
       const registry = getServiceRegistry();
       
       // Create a new session with the same ID - it should be a different instance
-      const newCoordinator = await registry.getSessionCoordinator(workspaceName, workspacePath, sessionId);
+      const newCoordinator = await registry.getSessionCoordinator(workspaceName, tempDirPath, sessionId);
       expect(newCoordinator).not.toBe(coordinator);
     }, SESSION_TEST_TIMEOUT);
     
@@ -206,18 +199,17 @@ describe('Service Helpers', () => {
   describe('releaseWorkspaceResources', () => {
     test('should clean up a workspace and its resources', async () => {
       const workspaceName = 'test-workspace';
-      const workspacePath = tempDirPath;
       
       // Initialize workspace
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
       await workspace.init('Test workspace');
       
       // Create MCP manager
-      const mcpManager = await getMCPManagerForRequest(workspaceName, workspacePath);
+      const mcpManager = await getMCPManagerForRequest(workspaceName, tempDirPath);
       
       // Create sessions
-      const session1 = await getSessionCoordinatorForRequest(workspaceName, workspacePath, 'session1');
-      const session2 = await getSessionCoordinatorForRequest(workspaceName, workspacePath, 'session2');
+      const session1 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, 'session1');
+      const session2 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, 'session2');
       
       // Create spies
       const originalMcpCleanup = mcpManager.cleanup;
@@ -256,10 +248,10 @@ describe('Service Helpers', () => {
       const registry = getServiceRegistry();
       
       // Create new resources with the same IDs - they should be different instances
-      const newWorkspace = await registry.getWorkspaceManager(workspaceName, workspacePath);
+      const newWorkspace = await registry.getWorkspaceManager(workspaceName, tempDirPath);
       expect(newWorkspace).not.toBe(workspace);
       
-      const newMcpManager = await registry.getMCPManager(workspaceName, workspacePath);
+      const newMcpManager = await registry.getMCPManager(workspaceName, tempDirPath);
       expect(newMcpManager).not.toBe(mcpManager);
     }, RESOURCE_CLEANUP_TIMEOUT);
     

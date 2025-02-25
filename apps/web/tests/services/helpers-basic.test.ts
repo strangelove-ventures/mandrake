@@ -29,10 +29,9 @@ describe('Service Helpers', () => {
   test('getWorkspaceManagerForRequest should return a workspace manager', async () => {
     // This is a minimal test to verify the helper can be called
     const workspaceName = 'test-workspace';
-    const workspacePath = tempDirPath;
     
     // Just verify we can call the function without errors
-    const manager = await getWorkspaceManagerForRequest(workspaceName, workspacePath);
+    const manager = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
     
     // Basic verification that we got something back
     expect(manager).toBeDefined();
