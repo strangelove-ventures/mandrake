@@ -73,7 +73,7 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
 
     // Remove any models using this provider
     const updatedModels = Object.entries(current.models).reduce((acc, [modelId, model]) => {
-      if (model.providerId !== id) {
+      if ((model as any).providerId !== id) {
         acc[modelId] = model;
       }
       return acc;
@@ -168,24 +168,35 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
     });
   }
   protected getDefaults(): ModelsConfig {
-    const defaultProvider = 'anthropic';
-    const model = getDefaultModel(defaultProvider);
+    const anthropic = 'anthropic';
+    const ollama = 'ollama';
+    const anthropicModel = getDefaultModel(anthropic);
+    const ollamaModel = getDefaultModel(ollama);
     return {
-      active: model,
+      active: anthropicModel,
       providers: {
         'anthropic': {
-          type: defaultProvider,
+          type: anthropic,
           apiKey: "your-api-key-here",
         }
       },
       models: {
         "claude-3-5-sonnet-20241022": {
           enabled: true,
-          providerId: defaultProvider,
-          modelId: model,
+          providerId: anthropic,
+          modelId: anthropicModel,
           config: {
-            temperature: 0,
+            temperature: 0.7,
             maxTokens: 8400,
+          }
+        },
+        "llama3.2:3b": {
+          enabled: true,
+          providerId: ollama,
+          modelId: ollamaModel,
+          config: {
+            temperature: 0.7,
+            maxTokens: 1024,
           }
         }
       }

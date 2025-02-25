@@ -3,14 +3,9 @@ import type { SessionCoordinatorOptions, Context } from './types';
 import { ContextBuildError, MessageProcessError, ToolCallError } from './errors';
 import { XmlTags } from './prompt/types';
 import { setupProviderFromManager } from './utils/provider';
+import type { Message } from "@mandrake/provider"
 import { convertSessionToMessages } from './utils/messages';
 import { type SystemPromptBuilderConfig, SystemPromptBuilder } from './prompt/builder';
-
-interface ParsedContent {
-  tools: Array<{ serverName: string; methodName: string; arguments: any }>;
-  content: string;
-  remaining: string;
-}
 
 export class SessionCoordinator {
   private logger: Logger;
@@ -21,13 +16,12 @@ export class SessionCoordinator {
 
   async handleRequest(sessionId: string, requestContent: string): Promise<void> {
     try {
-      // Setup provider
       const provider = await setupProviderFromManager(this.opts.modelsManager);
-      this.logger.info('Created provider for request', { sessionId });
+      this.logger.debug('Created provider for request', { sessionId });
 
       // Build context
       const context = await this.buildContext(sessionId);
-      this.logger.info('Built context for request', { sessionId });
+      this.logger.debug('Built context for request', { sessionId });
 
       // Create round and initial response
       const { response } = await this.opts.sessionManager.createRound({
@@ -35,10 +29,11 @@ export class SessionCoordinator {
         content: requestContent
       });
 
-      // Initial empty turn
+      let conversationHistory = [...context.history, { role: 'user', content: requestContent }];
+
       let currentTurn = await this.opts.sessionManager.createTurn({
         responseId: response.id,
-        content: [''],
+        content: '',
         rawResponse: '',
         inputTokens: 0,
         outputTokens: 0,
@@ -46,14 +41,130 @@ export class SessionCoordinator {
         outputCost: 0
       });
 
-      // Create provider message stream
-      const messageStream = provider.createMessage(
-        context.systemPrompt,
-        [...context.history, { role: 'user', content: requestContent }]
-      );
+      let isComplete = false;
+      while (!isComplete) {
 
-      // Process the message stream
-      await this.processMessageStream(sessionId, response.id, currentTurn.id, messageStream);
+        this.logger.info('Sending message to provider', {
+          historyLength: conversationHistory.length,
+          lastRole: conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1].role : 'none'
+        });
+
+        const messageStream = provider.createMessage(
+          context.systemPrompt,
+          conversationHistory as Message[]
+        );
+
+        const {
+          text,
+          toolCalls,
+          isCompleted
+        } = await this.processStreamForToolCalls(messageStream, currentTurn);
+
+        if (toolCalls.length > 0) {
+          const tool = toolCalls[0];
+
+          this.logger.info('FOUND_TOOL_CALL', {
+            server: tool.serverName,
+            method: tool.methodName
+          });
+
+          await this.opts.sessionManager.updateTurn(currentTurn.id, {
+            toolCalls: JSON.stringify({
+              call: {
+                serverName: tool.serverName,
+                methodName: tool.methodName,
+                arguments: tool.arguments
+              },
+              response: null // Will be filled after execution
+            }),
+            status: 'completed',
+            streamEndTime: Math.floor(Date.now() / 1000)
+          });
+
+          try {
+            this.logger.info('EXECUTING_TOOL', {
+              server: tool.serverName,
+              method: tool.methodName
+            });
+
+            const result = await this.executeToolCall(
+              sessionId,
+              tool.serverName,
+              tool.methodName,
+              tool.arguments
+            );
+
+
+            await this.opts.sessionManager.updateTurn(currentTurn.id, {
+              toolCalls: JSON.stringify({
+                call: {
+                  serverName: tool.serverName,
+                  methodName: tool.methodName,
+                  arguments: tool.arguments
+                },
+                response: result
+              })
+            });
+
+            conversationHistory.push({
+              role: 'assistant',
+              content: text + toolResponseFormat(result)
+            });
+
+          } catch (error) {
+            this.logger.error('TOOL_EXECUTION_ERROR', {
+              server: tool.serverName,
+              method: tool.methodName,
+              error: (error as Error).message
+            });
+
+            await this.opts.sessionManager.updateTurn(currentTurn.id, {
+              toolCalls: JSON.stringify({
+                call: {
+                  serverName: tool.serverName,
+                  methodName: tool.methodName,
+                  arguments: tool.arguments
+                },
+                response: {
+                  error: (error as Error).message
+                }
+              })
+            });
+
+            // Add assistant's message with the tool call and error to conversation history
+            conversationHistory.push({
+              role: 'assistant',
+              content: text + toolErrorFormat(error)
+            });
+          }
+
+          // Create a new turn for the next part of the conversation
+          currentTurn = await this.opts.sessionManager.createTurn({
+            responseId: response.id,
+            content: '',
+            rawResponse: '',
+            inputTokens: 0,
+            outputTokens: 0,
+            inputCost: 0,
+            outputCost: 0
+          });
+
+          this.logger.debug('NEW_TURN_CREATED', { turnId: currentTurn.id });
+
+        } else {
+          await this.opts.sessionManager.updateTurn(currentTurn.id, {
+            status: 'completed',
+            streamEndTime: Math.floor(Date.now() / 1000)
+          });
+
+          conversationHistory.push({
+            role: 'assistant',
+            content: text
+          });
+
+          isComplete = true;
+        }
+      }
 
     } catch (error) {
       this.logger.error('Failed to process request', {
@@ -68,126 +179,152 @@ export class SessionCoordinator {
     }
   }
 
-  // Process the message stream from the provider
-  // Refactored processMessageStream method for SessionCoordinator
-  private async processMessageStream(
-    sessionId: string,
-    responseId: string,
-    initialTurnId: string,
-    messageStream: AsyncIterable<any>
-  ): Promise<void> {
-    let currentTurnId = initialTurnId;
-    let xmlBuffer = '';
+  // Process a message stream and extract any tool calls
+  private async processStreamForToolCalls(
+    messageStream: AsyncIterable<any>,
+    currentTurn: any
+  ): Promise<{ text: string; toolCalls: any[]; isCompleted: boolean }> {
     let textBuffer = '';
-    let usageData = { inputTokens: 0, outputTokens: 0 };
+    let xmlBuffer = '';
+    let toolCalls = [];
+    let isCompleted = false;
 
-    // Process each chunk
     for await (const chunk of messageStream) {
       switch (chunk.type) {
         case 'text':
-          // Add text to buffers
-          xmlBuffer += chunk.text;
           textBuffer += chunk.text;
+          xmlBuffer += chunk.text;
 
-          // Extract any complete tool calls
-          const { tools, extractedContent, remaining } = this.extractToolCalls(xmlBuffer);
-          xmlBuffer = remaining;
-
-          // Update the current turn with new content
-          await this.opts.sessionManager.updateTurn(currentTurnId, {
+          await this.opts.sessionManager.updateTurn(currentTurn.id, {
             rawResponse: textBuffer,
-            content: this.splitContent(textBuffer),
+            content: textBuffer
           });
 
-          // If we found tool calls
-          if (tools.length > 0) {
-            this.logger.debug('Found tool calls', { count: tools.length });
+          if (xmlBuffer.includes('<tool_call>') && xmlBuffer.includes('</tool_call>')) {
+            const { tools, remaining } = this.extractCompleteToolCalls(xmlBuffer);
+            xmlBuffer = remaining;
 
-            // 1. Complete the current turn with the tool calls
-            await this.opts.sessionManager.updateTurn(currentTurnId, {
-              status: 'completed',
-              streamEndTime: Math.floor(Date.now() / 1000),
-              toolCalls: JSON.stringify(tools.map(tool => ({
-                call: {
-                  serverName: tool.serverName,
-                  methodName: tool.methodName,
-                  arguments: tool.arguments
-                },
-                result: null // Will be filled in after execution
-              })))
-            });
-
-            // 2. Process each tool call and create a new turn for each one
-            for (let i = 0; i < tools.length; i++) {
-              const tool = tools[i];
-              try {
-                // Execute the tool
-                const result = await this.executeToolCall(
-                  sessionId,
-                  tool.serverName,
-                  tool.methodName,
-                  tool.arguments
-                );
-
-                // Update the turn with the result
-                const turn = await this.opts.sessionManager.getTurn(currentTurnId);
-                const currentToolCalls = JSON.parse(turn.toolCalls);
-                currentToolCalls[i].result = result;
-
-                await this.opts.sessionManager.updateTurn(currentTurnId, {
-                  toolCalls: JSON.stringify(currentToolCalls)
-                });
-
-                // 3. Create a new turn for the continuation after each tool call
-                // This is crucial for maintaining the conversation flow
-                const newTurn = await this.opts.sessionManager.createTurn({
-                  responseId: responseId,
-                  content: [''],
-                  rawResponse: '',
-                  inputTokens: usageData.inputTokens,
-                  outputTokens: usageData.outputTokens,
-                  inputCost: 0,
-                  outputCost: 0
-                });
-
-                // Update the current turn ID and reset text buffer for new content
-                currentTurnId = newTurn.id;
-                textBuffer = '';
-              } catch (error) {
-                this.logger.error('Tool execution failed', {
-                  tool: tool.serverName,
-                  method: tool.methodName,
-                  error
-                });
-              }
+            if (tools.length > 0) {
+              toolCalls = tools;
+              return { text: textBuffer, toolCalls, isCompleted: false };
             }
           }
           break;
 
-        case 'usage':
-          // Update usage data
-          usageData = {
-            inputTokens: chunk.inputTokens,
-            outputTokens: chunk.outputTokens
-          };
+        case 'done':
+          isCompleted = true;
+          break;
 
-          // Update the current turn with usage info
-          await this.opts.sessionManager.updateTurn(currentTurnId, {
+        case 'usage':
+          await this.opts.sessionManager.updateTurn(currentTurn.id, {
             inputTokens: chunk.inputTokens,
             outputTokens: chunk.outputTokens,
-            inputCost: 0, // Calculate from provider rates
-            outputCost: 0  // Calculate from provider rates
+            inputCost: 0,
+            outputCost: 0
           });
           break;
       }
     }
 
-    // Complete the final turn if needed
-    const finalTurn = await this.opts.sessionManager.updateTurn(currentTurnId, {
-      status: 'completed',
-      streamEndTime: Math.floor(Date.now() / 1000)
-    });
+    return { text: textBuffer, toolCalls: [], isCompleted: true };
   }
+
+  private extractCompleteToolCalls(content: string): { tools: any[], remaining: string } {
+    const result = {
+      tools: [] as Array<{ serverName: string, methodName: string, arguments: any }>,
+      remaining: content
+    };
+
+    const tagStart = '<tool_call>';
+    const tagEnd = '</tool_call>';
+
+    let startIndex = content.indexOf(tagStart);
+
+    if (startIndex === -1) {
+      return result;
+    }
+
+    while (startIndex !== -1) {
+      const endIndex = content.indexOf(tagEnd, startIndex);
+
+      if (endIndex === -1) {
+        return result;
+      }
+
+      const completeToolCall = content.substring(startIndex, endIndex + tagEnd.length);
+
+      this.logger.debug("COMPLETE_TOOL_CALL_FOUND", {
+        length: completeToolCall.length,
+        snippet: completeToolCall.substring(0, 50) + "..."
+      });
+
+      try {
+        // Try to parse the tool call
+        const parsed = this.parseCompleteToolCall(completeToolCall);
+        if (parsed) {
+          result.tools.push(parsed);
+        }
+      } catch (error) {
+        this.logger.error("PARSE_TOOL_CALL_ERROR", error as Error);
+      }
+
+      // Remove this tool call from the content for the next search
+      content = content.substring(0, startIndex) + content.substring(endIndex + tagEnd.length);
+
+      // Look for more tool calls
+      startIndex = content.indexOf(tagStart);
+    }
+
+    result.remaining = content;
+    return result;
+  }
+
+  // Parse a complete tool call XML string
+  private parseCompleteToolCall(xml: string): { serverName: string, methodName: string, arguments: any } | null {
+    this.logger.debug("PARSING_TOOL_CALL", { xmlLength: xml.length });
+
+    // Extract server
+    const serverMatch = xml.match(/<server>(.*?)<\/server>/s);
+    if (!serverMatch) {
+      this.logger.debug("NO_SERVER_MATCH");
+      return null;
+    }
+
+    // Extract method
+    const methodMatch = xml.match(/<method>(.*?)<\/method>/s);
+    if (!methodMatch) {
+      this.logger.debug("NO_METHOD_MATCH");
+      return null;
+    }
+
+    // Extract arguments - use careful regex to handle nested JSON
+    const argsMatch = xml.match(/<arguments>\s*([\s\S]*?)\s*<\/arguments>/s);
+    if (!argsMatch) {
+      this.logger.debug("NO_ARGS_MATCH");
+      return null;
+    }
+
+    this.logger.debug("EXTRACTED_PARTS", {
+      server: serverMatch[1],
+      method: methodMatch[1],
+      argsLength: argsMatch[1].length
+    });
+
+    try {
+      // Parse the arguments as JSON
+      const args = JSON.parse(argsMatch[1]);
+
+      return {
+        serverName: serverMatch[1],
+        methodName: methodMatch[1],
+        arguments: args
+      };
+    } catch (error) {
+      this.logger.error("ARGS_PARSE_ERROR", error as Error);
+      return null;
+    }
+  }
+
 
   private async executeToolCall(
     sessionId: string,
@@ -218,105 +355,6 @@ export class SessionCoordinator {
       });
       throw error;
     }
-  }
-
-  private extractToolCalls(content: string): {
-    tools: Array<{ serverName: string, methodName: string, arguments: any }>,
-    extractedContent: string,
-    remaining: string
-  } {
-    const result = {
-      tools: [] as Array<{ serverName: string, methodName: string, arguments: any }>,
-      extractedContent: '',
-      remaining: ''
-    };
-
-    const tagStart = '<tool_call>';
-    const tagEnd = '</tool_call>';
-
-    let currentIndex = 0;
-
-    while (true) {
-      // Find next tool call
-      const startIndex = content.indexOf(tagStart, currentIndex);
-      if (startIndex === -1) {
-        // No more tool calls
-        result.extractedContent += content.slice(currentIndex);
-        break;
-      }
-
-      // Add content before tool call
-      result.extractedContent += content.slice(currentIndex, startIndex);
-
-      // Look for end of tool call
-      const endIndex = content.indexOf(tagEnd, startIndex);
-      if (endIndex === -1) {
-        // Incomplete tool call
-        result.remaining = content.slice(currentIndex);
-        break;
-      }
-
-      // Extract complete tool call
-      const toolCallXml = content.slice(startIndex, endIndex + tagEnd.length);
-
-      try {
-        const parsed = this.parseToolCallXml(toolCallXml);
-        if (parsed) {
-          result.tools.push(parsed);
-
-          // Include the tool call in extracted content
-          result.extractedContent += toolCallXml;
-        }
-      } catch (error) {
-        this.logger.warn('Failed to parse tool call', { error, xml: toolCallXml });
-
-        // Include the tool call even if parsing failed
-        result.extractedContent += toolCallXml;
-      }
-
-      // Move past this tool call
-      currentIndex = endIndex + tagEnd.length;
-    }
-
-    return result;
-  }
-
-  private parseToolCallXml(xml: string): { serverName: string; methodName: string; arguments: any } | null {
-    // Use regex with 's' flag to match across newlines
-    const serverRegex = new RegExp(`<${XmlTags.SERVER}>(.*?)</${XmlTags.SERVER}>`, 's');
-    const methodRegex = new RegExp(`<${XmlTags.METHOD}>(.*?)</${XmlTags.METHOD}>`, 's');
-    const argsRegex = new RegExp(`<${XmlTags.ARGUMENTS}>([\s\S]*?)</${XmlTags.ARGUMENTS}>`, 's');
-
-    const serverMatch = xml.match(serverRegex);
-    const methodMatch = xml.match(methodRegex);
-    const argsMatch = xml.match(argsRegex);
-
-    if (!serverMatch || !methodMatch || !argsMatch) {
-      this.logger.warn('Missing tags in tool call', {
-        hasServer: !!serverMatch,
-        hasMethod: !!methodMatch,
-        hasArgs: !!argsMatch,
-        xml
-      });
-      return null;
-    }
-
-    try {
-      return {
-        serverName: serverMatch[1].trim(),
-        methodName: methodMatch[1].trim(),
-        arguments: JSON.parse(argsMatch[1].trim())
-      };
-    } catch (error) {
-      this.logger.warn('Failed to parse tool call arguments', { error, args: argsMatch[1] });
-      return null;
-    }
-  }
-
-  // Split content into an array for storage
-  private splitContent(content: string): string[] {
-    // Simple implementation - you can enhance this
-    return content.split('').map(c => c === '' ? '' : c);
   }
 
   private async buildSystemPrompt(): Promise<string> {
@@ -425,4 +463,19 @@ export class SessionCoordinator {
     return results;
   }
 
+}
+export function toolResponseFormat(result: any): string {
+  return `<tool_result>
+<result>
+${JSON.stringify(result, null, 2)}
+</result>
+</tool_result>`;
+}
+
+export function toolErrorFormat(error: any): string {
+  return `<tool_result>
+<error>
+${JSON.stringify(error, null, 2)}
+</error>
+</tool_result>`;
 }

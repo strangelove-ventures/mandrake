@@ -1,5 +1,5 @@
 import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { eq } from 'drizzle-orm';
+import { eq, count } from 'drizzle-orm';
 import { join, dirname } from 'path';
 import { migrate } from 'drizzle-orm/bun-sqlite/migrator';
 import { mkdir } from 'fs/promises';
@@ -275,7 +275,7 @@ export class SessionManager {
     // Turn Operations
     async createTurn(opts: {
         responseId: string;
-        content: string[];
+        content: string;
         rawResponse: string;
         toolCalls?: {
             call: any;
@@ -288,12 +288,19 @@ export class SessionManager {
         outputCost: number;
     }): Promise<Turn> {
         this.ensureInitialized();
+        const existingTurns = await this.db
+            .select({ count: count() })
+            .from(schema.turns)
+            .where(eq(schema.turns.responseId, opts.responseId));
+
+        const turnIndex = existingTurns[0]?.count || 0;
+
         const [turn] = await this.db.insert(schema.turns)
             .values({
                 responseId: opts.responseId,
-                index: 0, // TODO: Calculate proper index
+                index: turnIndex,
                 rawResponse: opts.rawResponse,
-                content: JSON.stringify(opts.content),
+                content: opts.content,
                 toolCalls: JSON.stringify(opts.toolCalls || []),
                 status: opts.status || 'streaming',
                 inputTokens: opts.inputTokens,
@@ -314,8 +321,8 @@ export class SessionManager {
     async updateTurn(id: string, updates: {
         // Content fields
         rawResponse?: string;
-        content?: string[];  // Will be JSON stringified
-        toolCalls?: any[];   // Will be JSON stringified
+        content?: string;
+        toolCalls?: string;
 
         // Streaming status fields  
         status?: 'streaming' | 'completed' | 'error';
@@ -379,6 +386,12 @@ export class SessionManager {
             throw new Error(`Turn not found: ${id}`);
         }
         return turn;
+    }
+
+    async deleteTurn(id: string): Promise<void> {
+        this.ensureInitialized();
+        await this.db.delete(schema.turns)
+            .where(eq(schema.turns.id, id));
     }
 
     async listTurns(responseId: string): Promise<Turn[]> {
