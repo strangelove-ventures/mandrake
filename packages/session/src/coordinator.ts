@@ -14,6 +14,11 @@ export class SessionCoordinator {
     this.logger = opts.logger || createLogger('SessionCoordinator');
   }
 
+  async cleanup(): Promise<void> {
+    // We don't really do any cleanup yet but maybe want to later?
+    this.logger.info('Cleaning up session coordinator');
+  }
+
   async handleRequest(sessionId: string, requestContent: string): Promise<void> {
     try {
       const provider = await setupProviderFromManager(this.opts.modelsManager);

@@ -1,200 +1,243 @@
-# MCP (Model Context Protocol) Package
-
-The MCP package manages Model Context Protocol servers for the Mandrake platform. It provides robust server lifecycle management, tool calling capabilities, and standardized error handling.
+# MCP (Model Context Protocol)
 
 ## Overview
 
-The package manages server processes that implement the [Model Context Protocol](https://github.com/modelcontextprotocol/protocol), providing a standardized way to:
+The MCP package provides management for Model Context Protocol servers in Mandrake. It handles server lifecycle, communication transport, tool discovery and invocation, error handling, and log management. This package enables Mandrake to connect with external tools like filesystem access, git operations, and web requests through a standardized protocol.
 
-- Start, stop, and manage server processes
-- Execute tool calls across multiple servers
-- Handle server errors and logging
-- Enable tool discovery and management
+## Core Concepts
 
-## Installation
+### MCP Servers
 
-```bash
-bun install
-```
+MCP servers are external processes that expose tools via the Model Context Protocol. Each server:
 
-## Usage
+- Has a unique identifier
+- Can be started, stopped, and restarted
+- Exposes a set of tools
+- Maintains state and logs
 
-Basic usage example:
+### Tools
 
-```typescript
-import { MCPManager } from './src/manager'
-import type { ServerConfig } from './src/types'
+Tools are capabilities exposed by MCP servers that can be invoked by Mandrake. Each tool:
 
-// Create manager instance
-const manager = new MCPManager()
+- Has a name, description, and parameters
+- Can be called with arguments
+- Returns structured results
+- May be auto-approved for certain operations
 
-// Configure a filesystem server
-const config: ServerConfig = {
-  command: 'docker',
-  args: [
-    'run', '--rm', '-i',
-    '--mount', 'type=bind,src=/path/to/dir,dst=/projects',
-    'mcp/filesystem',
-    '/projects'
-  ]
-}
+### Transports
 
-// Start server
-await manager.startServer('filesystem', config)
+The MCP package supports multiple transport mechanisms:
 
-// List available tools
-const tools = await manager.listAllTools()
+- **Stdio Transport**: Communication via standard input/output with spawned processes
+- **SSE Transport**: Communication via Server-Sent Events over HTTP
 
-// Call a tool
-const result = await manager.invokeTool('filesystem', 'read_file', {
-  path: '/projects/myfile.txt'
-})
+### Server Configuration
 
-// Clean up
-await manager.cleanup()
-```
-
-## Core Components
-
-### MCPManager
-
-Top-level manager that handles multiple MCP servers:
-
-- Server lifecycle management (start/stop/cleanup)
-- Tool discovery and invocation
-- Status tracking
-
-```typescript
-const manager = new MCPManager()
-await manager.startServer('server-id', config)
-const tools = await manager.listAllTools()
-await manager.cleanup()
-```
-
-### MCPServer
-
-Individual server implementation that manages:
-
-- Server process lifecycle
-- Tool calls
-- Error handling
-- State management
-- Log buffering
-
-```typescript
-const server = new MCPServerImpl('server-id', config)
-await server.start()
-const tools = await server.listTools()
-await server.stop()
-```
-
-### TransportFactory
-
-Creates appropriate transport based on configuration:
-
-- StdioClientTransport for process-based servers
-- SSEClientTransport for HTTP-based servers (planned)
-
-## Server Support
-
-The package currently supports:
-
-1. Filesystem Server
-   - File operations (read/write)
-   - Directory management
-   - File search capabilities
-
-2. Fetch Server
-   - Web content retrieval
-   - Markdown conversion
-   - Pagination support
-
-## Testing
-
-The package includes comprehensive testing using Bun's test runner.
-
-### Test Server
-
-A test server implementation is provided in `tests/server/` for development and testing. It implements basic MCP functionality with three tools:
-
-1. add - Adds two numbers
-2. echo - Returns input
-3. error - Generates test error
-
-This server is used extensively in the test suite to verify MCP behavior without external dependencies.
-
-### Test Structure
-
-Tests are organized into two main categories:
-
-1. Integration Tests (`integration.test.ts`)
-   - Basic server lifecycle
-   - Tool discovery and calling
-   - Multi-server operations
-
-2. Server Tests (`servers.test.ts`)
-   - Specific server implementations
-   - Error handling
-   - Server state management
-   - Log capturing
-
-### Running Tests
-
-```bash
-# Run all tests
-bun test
-
-# Run specific test file
-bun test tests/integration.test.ts
-```
-
-## Error Handling
-
-The package implements robust error handling:
-
-1. Server Errors
-   - Process startup failures
-   - Tool execution errors
-   - Transport errors
-
-2. Log Management
-   - Error logs are captured in a buffer
-   - Standard output is passed through
-   - Log rotation for buffer management
-
-## Configuration
-
-Server configuration follows the Model Context Protocol specification:
+Servers are configured with:
 
 ```typescript
 interface ServerConfig {
-  command: string             // Server executable
-  args?: string[]            // Command arguments
-  env?: Record<string, string> // Environment variables
-  disabled?: boolean         // Server state
+  command: string;              // Command to execute
+  args?: string[];              // Command arguments
+  env?: Record<string, string>; // Environment variables
+  autoApprove?: string[];       // Methods to auto-approve
+  disabled?: boolean;           // Whether server is disabled
 }
 ```
 
-## Development
+## Architecture
 
-For development:
+The MCP package consists of these key components:
 
-1. Install dependencies:
+### MCPServerImpl
 
-```bash
-bun install
+Manages an individual MCP server instance:
+
+- Handles server lifecycle (start/stop)
+- Establishes and maintains transport
+- Provides tool discovery and invocation
+- Manages error handling and retry logic
+- Buffers server logs
+
+### MCPManager
+
+Provides top-level management of multiple MCP servers:
+
+- Creates and manages server instances
+- Provides access to tools across all servers
+- Enables tool invocation by server name
+- Handles cleanup and resource management
+
+### Transport Layer
+
+Abstracts the communication mechanism:
+
+- **TransportFactory**: Creates appropriate transport based on configuration
+- **StdioClientTransport**: Communicates via stdin/stdout with child processes
+- **SSEClientTransport**: Communicates via HTTP Server-Sent Events
+
+### LogBuffer
+
+Manages server logs with size limits:
+
+- Maintains a rolling buffer of recent logs
+- Truncates long log entries
+- Provides access to current log state
+
+## Usage
+
+### Basic Server Management
+
+```typescript
+import { MCPManager } from '@mandrake/mcp';
+
+// Create manager
+const manager = new MCPManager();
+
+// Start a server
+await manager.startServer('filesystem', {
+  command: '/path/to/mcp-fs',
+  args: ['--workspace', '/path/to/workspace']
+});
+
+// Get server state
+const state = manager.getServerState('filesystem');
+console.log('Server logs:', state.logs);
+
+// Stop a server
+await manager.stopServer('filesystem');
+
+// Cleanup all servers
+await manager.cleanup();
 ```
 
-1. Build test server:
+### Tool Discovery and Invocation
 
-```bash
-cd tests/server
-bun install
-bun build
+```typescript
+import { MCPManager } from '@mandrake/mcp';
+
+const manager = new MCPManager();
+
+// Start servers
+await manager.startServer('filesystem', { command: '/path/to/mcp-fs' });
+await manager.startServer('git', { command: '/path/to/mcp-git' });
+
+// List all available tools across servers
+const allTools = await manager.listAllTools();
+console.log('Available tools:', allTools.map(t => `${t.server}/${t.name}`));
+
+// Invoke a tool on a specific server
+const result = await manager.invokeTool('filesystem', 'readFile', { 
+  path: '/some/file.txt' 
+});
+
+// Handle tool result
+console.log('File contents:', result.content[0].text);
 ```
 
-1. Run tests:
+### Low-level Server API
 
-```bash
-bun test
+```typescript
+import { MCPServerImpl } from '@mandrake/mcp';
+
+// Create a server instance
+const server = new MCPServerImpl('filesystem', {
+  command: '/path/to/mcp-fs',
+  args: ['--workspace', '/path/to/workspace']
+});
+
+// Start the server
+await server.start();
+
+// Get available tools
+const tools = await server.listTools();
+console.log('Tools:', tools);
+
+// Call a tool
+const result = await server.invokeTool('readFile', {
+  path: '/some/file.txt'
+});
+
+// Get server logs
+const state = server.getState();
+console.log('Recent logs:', state.logs);
+
+// Stop the server
+await server.stop();
 ```
+
+## Key Interfaces
+
+### MCPConnection
+
+```typescript
+interface MCPConnection {
+  server: {
+    name: string;
+    status: 'connected' | 'disconnected' | 'connecting';
+    error?: string;
+    tools?: Tool[];
+    disabled?: boolean;
+  };
+  client: Client;
+  transport: StdioClientTransport | SSEClientTransport;
+}
+```
+
+### ServerConfig
+
+```typescript
+interface ServerConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  autoApprove?: string[];
+  disabled?: boolean;
+}
+```
+
+### ServerState
+
+```typescript
+interface ServerState {
+  error?: string;
+  lastRetryTimestamp?: number;
+  retryCount: number;
+  logs: string[];
+}
+```
+
+### ToolWithServer
+
+```typescript
+interface ToolWithServer extends Tool {
+  serverName: string;
+}
+```
+
+## Integration Points
+
+The MCP package integrates with several other components in Mandrake:
+
+### Workspace Package
+
+- Uses tool configurations defined in the workspace
+- Provides tools for dynamic context execution
+- Accesses workspace files for tool operations
+
+### Session Package
+
+- Enables tool execution from LLM sessions
+- Provides tool capabilities to the provider
+
+### Provider Package
+
+- Uses MCP tools to enhance LLM capabilities
+- Translates between LLM tool calls and MCP tool invocations
+
+## Future Improvements
+
+- **Docker Integration**: Transition to Docker-based MCP server management
+- **Enhanced Transport**: Add more transport options for better performance
+- **Tool Authorization**: Implement more granular tool permission controls
+- **Improved Resilience**: Better error recovery and reconnection strategies
