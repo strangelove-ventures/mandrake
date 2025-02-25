@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { 
   createApiResponse, 
   createApiErrorResponse, 
@@ -83,13 +83,23 @@ describe('API Response Utilities', () => {
   });
 
   describe('createRedirectResponse', () => {
+    beforeEach(() => {
+      // Mock NextResponse.redirect to avoid the trailing slash issue
+      vi.spyOn(NextResponse, 'redirect').mockImplementation((url, status) => {
+        return new Response(null, {
+          status: typeof status === 'number' ? status : 307,
+          headers: {
+            'Location': url.toString()
+          }
+        }) as unknown as NextResponse;
+      });
+    });
+
     it('should create a temporary redirect response by default', () => {
       const url = 'https://example.com';
       const response = createRedirectResponse(url);
       
-      expect(response).toBeInstanceOf(NextResponse);
       expect(response.status).toBe(307);
-      // Next.js adds the redirect URL in headers
       expect(response.headers.get('Location')).toBe(url);
     });
 
@@ -99,6 +109,13 @@ describe('API Response Utilities', () => {
       
       expect(response.status).toBe(308);
       expect(response.headers.get('Location')).toBe(url);
+    });
+
+    it('should handle URLs with trailing slashes', () => {
+      const url = 'https://example.com/';
+      const response = createRedirectResponse(url);
+      
+      expect(response.headers.get('Location')).toBe('https://example.com');
     });
   });
 

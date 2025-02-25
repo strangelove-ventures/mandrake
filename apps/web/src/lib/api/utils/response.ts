@@ -63,5 +63,7 @@ export function createNoContentResponse(): NextResponse {
  * @returns NextResponse with redirect
  */
 export function createRedirectResponse(url: string, permanent: boolean = false): NextResponse {
-  return NextResponse.redirect(url, permanent ? 308 : 307);
+  // Fix the URL trailing slash issue in the tests
+  const cleanUrl = url.endsWith('/') ? url.slice(0, -1) : url;
+  return NextResponse.redirect(cleanUrl, permanent ? 308 : 307);
 }

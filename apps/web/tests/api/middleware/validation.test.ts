@@ -23,7 +23,7 @@ describe('Validation Middleware', () => {
 
     it('should validate a valid request body', async () => {
       const validBody = { id: 'test123', count: 5 };
-      mockRequest.json.mockResolvedValue(validBody);
+      (mockRequest.json as any).mockResolvedValue(validBody);
       
       const result = await validateBody(mockRequest, testSchema);
       
@@ -33,7 +33,7 @@ describe('Validation Middleware', () => {
 
     it('should throw ApiError for invalid body data', async () => {
       const invalidBody = { id: 'te', count: -5 };
-      mockRequest.json.mockResolvedValue(invalidBody);
+      (mockRequest.json as any).mockResolvedValue(invalidBody);
       
       await expect(validateBody(mockRequest, testSchema)).rejects.toThrow(ApiError);
       
@@ -48,7 +48,7 @@ describe('Validation Middleware', () => {
     });
 
     it('should throw ApiError if json() fails', async () => {
-      mockRequest.json.mockRejectedValue(new Error('JSON parse error'));
+      (mockRequest.json as any).mockRejectedValue(new Error('JSON parse error'));
       
       await expect(validateBody(mockRequest, testSchema)).rejects.toThrow(ApiError);
       
