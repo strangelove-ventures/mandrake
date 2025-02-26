@@ -171,10 +171,15 @@ export class ToolsHandler {
    */
   async updateConfigSet(setId: string, req: NextRequest): Promise<void> {
     try {
-      const data = await validateBody(req, toolConfigSchema);
+      const partialToolConfigSchema = z.record(
+        z.string(),
+        serverConfigSchema.partial()
+      );
+
+      const data = await validateBody(req, partialToolConfigSchema);
       
       if (this.workspaceId && this.workspaceManager) {
-        await this.workspaceManager.tools.updateConfigSet(setId, data);
+        await this.workspaceManager.tools.updateConfigSet(setId, (data as any));
       } else {
         throw new ApiError(
           'System-level tools not implemented yet',
