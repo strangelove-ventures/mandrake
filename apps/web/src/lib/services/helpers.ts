@@ -3,12 +3,23 @@
  */
 import { getServiceRegistry } from './registry';
 import { initializeServices } from './init';
-import { WorkspaceManager } from '@mandrake/workspace';
+import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
 import { createLogger } from '@mandrake/utils';
 
 const logger = createLogger('ServiceHelpers');
+
+/**
+ * Get the MandrakeManager for system-level operations
+ */
+export async function getMandrakeManagerForRequest(): Promise<MandrakeManager> {
+  await initializeServices();
+  const registry = getServiceRegistry();
+  
+  logger.debug('Getting MandrakeManager');
+  return registry.getMandrakeManager();
+}
 
 /**
  * Get a session coordinator for a specific session
@@ -56,12 +67,40 @@ export async function getMCPManagerForRequest(
 /**
  * List all available workspaces
  */
-export async function listWorkspaces() {
+export async function listWorkspacesForRequest(): Promise<string[]> {
   await initializeServices();
+  const registry = getServiceRegistry();
+  const mandrakeManager = await registry.getMandrakeManager();
   
   logger.debug('Listing all workspaces');
+  return mandrakeManager.listWorkspaces();
+}
+
+/**
+ * Create a new workspace
+ */
+export async function createWorkspaceForRequest(
+  name: string,
+  description?: string
+): Promise<WorkspaceManager> {
+  await initializeServices();
+  const registry = getServiceRegistry();
+  const mandrakeManager = await registry.getMandrakeManager();
   
-  // Placeholder: we should get this list of workspaces from the mandrake manager
+  logger.debug(`Creating workspace: ${name}`);
+  return mandrakeManager.createWorkspace(name, description);
+}
+
+/**
+ * Delete a workspace
+ */
+export async function deleteWorkspaceForRequest(name: string): Promise<void> {
+  await initializeServices();
+  const registry = getServiceRegistry();
+  const mandrakeManager = await registry.getMandrakeManager();
+  
+  logger.debug(`Deleting workspace: ${name}`);
+  await mandrakeManager.deleteWorkspace(name);
 }
 
 /**

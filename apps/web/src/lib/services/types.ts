@@ -3,7 +3,7 @@
  */
 
 // Import actual types from respective packages
-import { WorkspaceManager } from '@mandrake/workspace';
+import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
 
@@ -14,9 +14,11 @@ export interface IServiceRegistry {
   getWorkspaceManager(name: string, path: string): Promise<WorkspaceManager>;
   getMCPManager(workspace: string, path: string): Promise<MCPManager>;
   getSessionCoordinator(workspace: string, path: string, sessionId: string): Promise<SessionCoordinator>;
+  getMandrakeManager(): Promise<MandrakeManager>;
   
   releaseSessionCoordinator(workspace: string, sessionId: string): Promise<void>;
   releaseWorkspaceResources(workspace: string): Promise<void>;
+  releaseMandrakeManager(): Promise<void>;
   performCleanup(): Promise<void>;
 }
 

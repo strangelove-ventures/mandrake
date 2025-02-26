@@ -5,9 +5,11 @@ import { WorkspaceManager } from '@mandrake/workspace';
 import { createTestDirectory } from '@mandrake/workspace/tests/utils/utils';
 import * as workspaceUtils from '@/lib/api/utils/workspace';
 import { FilesHandler } from '@/lib/api/handlers/FilesHandler';
+import { readFile, writeFile } from 'fs/promises';
+import { join } from 'path';
 
 // Helper function to create mock requests
-function createMockRequest(method: string, body?: any, url: string = 'http://localhost/api/test'): NextRequest {
+function createMockRequest(method: string, body?: any, url: string = 'http://localhost/api/workspaces/test-workspace/files'): NextRequest {
   const request = {
     method,
     headers: new Headers({
@@ -35,6 +37,10 @@ describe('createFilesRoutes', () => {
     workspaceManager = new WorkspaceManager(testDir.path, workspaceId);
     await workspaceManager.init('Test workspace for API testing');
     
+    // Create the files directory structure
+    const filesDir = join(testDir.path, 'test-workspace', '.ws', 'files');
+    await workspaceManager.files.init();
+    
     // Create a file handler instance for direct file operations
     filesHandler = new FilesHandler(workspaceId, workspaceManager);
     
@@ -60,9 +66,17 @@ describe('createFilesRoutes', () => {
 
   describe('Workspace-level routes', () => {
     it('GET should list files', async () => {
-      // First create a file using the handler (as the API would)
-      const createReq = createMockRequest('POST', { content: 'Test content' });
-      await filesHandler.createFile('test-file.txt', createReq);
+      // Create file directly to ensure it exists
+      const filesDir = join(testDir.path, 'test-workspace', '.ws', 'files');
+      await writeFile(join(filesDir, 'test-file.txt'), 'Test content');
+      
+      // Verify file exists
+      const fileContent = await readFile(join(filesDir, 'test-file.txt'), 'utf-8');
+      console.log('File content:', fileContent);
+      
+      // Use the handler to verify file exists in API
+      const filesList = await filesHandler.listFiles();
+      console.log('Files from handler:', filesList);
       
       const routes = createFilesRoutes();
       const req = createMockRequest('GET');
@@ -71,9 +85,10 @@ describe('createFilesRoutes', () => {
         params: { id: workspaceId } 
       });
       
-      expect(response.status).toBe(200);
-      
       const body = await response.json();
+      console.log('Response from routes:', body);
+      
+      expect(response.status).toBe(200);
       expect(body.success).toBe(true);
       expect(Array.isArray(body.data)).toBe(true);
       expect(body.data.length).toBe(1);

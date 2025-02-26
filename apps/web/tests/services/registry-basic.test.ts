@@ -10,10 +10,14 @@ import { join } from 'node:path';
 describe('ServiceRegistry', () => {
   // Create a new temporary directory for each test
   let tempDirPath: string;
+  const originalEnv = { ...process.env };
   
   beforeEach(async () => {
     // Create a fresh temporary directory
     tempDirPath = await mkdtemp(join(tmpdir(), 'mandrake-test-'));
+    
+    // Set environment variable for MandrakeManager
+    process.env.MANDRAKE_ROOT = tempDirPath;
     
     // Clear the registry singleton (assuming it uses a non-readonly property)
     try {
@@ -25,6 +29,9 @@ describe('ServiceRegistry', () => {
   });
   
   afterEach(async () => {
+    // Restore original environment
+    process.env = { ...originalEnv };
+    
     // Clean up the temporary directory
     try {
       await rm(tempDirPath, { recursive: true, force: true });
@@ -49,8 +56,10 @@ describe('ServiceRegistry', () => {
     expect(typeof registry.getWorkspaceManager).toBe('function');
     expect(typeof registry.getMCPManager).toBe('function');
     expect(typeof registry.getSessionCoordinator).toBe('function');
+    expect(typeof registry.getMandrakeManager).toBe('function');
     expect(typeof registry.releaseSessionCoordinator).toBe('function');
     expect(typeof registry.releaseWorkspaceResources).toBe('function');
+    expect(typeof registry.releaseMandrakeManager).toBe('function');
     expect(typeof registry.performCleanup).toBe('function');
   });
 });

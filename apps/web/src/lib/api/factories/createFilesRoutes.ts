@@ -11,9 +11,12 @@ const fileNameSchema = z.object({
   fileName: z.string().min(1, "File name is required")
 });
 
+// Fixed schema to properly handle string to boolean conversion
 const activeQuerySchema = z.object({
-  active: z.enum(['true', 'false']).optional().transform(val => val === 'true')
-});
+  active: z.enum(['true', 'false']).optional()
+}).transform(data => ({
+  active: data.active === 'true' ? true : data.active === 'false' ? false : undefined
+}));
 
 /**
  * Creates route handlers for files endpoints in workspace context
@@ -42,9 +45,17 @@ export function createFilesRoutes() {
           return createApiResponse(file);
         }
         
-        // Check for active query parameter
-        const query = validateQuery(req, activeQuerySchema);
-        const active = query.active ?? true;
+        // Get active status from query or default to true
+        let active = true;
+        try {
+          const url = new URL(req.url);
+          const activeParam = url.searchParams.get('active');
+          if (activeParam === 'false') {
+            active = false;
+          }
+        } catch (e) {
+          // Default to true if URL parsing fails
+        }
         
         // List all files
         const files = await handler.listFiles(active);

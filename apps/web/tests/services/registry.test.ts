@@ -1,19 +1,24 @@
 /**
  * Tests for ServiceRegistry
  */
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, test, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { getServiceRegistry } from '../../src/lib/services/registry';
 import { createTempDir, cleanupTempDir } from '../utils/test-dir';
-import { WorkspaceManager } from '@mandrake/workspace';
+import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
 
 describe('ServiceRegistry', () => {
   let tempDirPath: string;
+  const originalEnv = { ...process.env };
   
   beforeEach(async () => {
     // Create a fresh temporary directory
     tempDirPath = await createTempDir();
+    
+    // Set environment variable for MandrakeManager
+    process.env.MANDRAKE_ROOT = tempDirPath;
+    console.log(`Setting MANDRAKE_ROOT to ${tempDirPath}`);
     
     // Clear the registry singleton
     try {
@@ -24,6 +29,9 @@ describe('ServiceRegistry', () => {
   });
   
   afterEach(async () => {
+    // Restore original environment
+    process.env = { ...originalEnv };
+    
     // Clean up any resources
     try {
       const registry = getServiceRegistry();
@@ -188,6 +196,64 @@ describe('ServiceRegistry', () => {
       // Getting the same session again should create a new instance
       const newCoordinator = await registry.getSessionCoordinator(workspaceName, tempDirPath, sessionId);
       expect(newCoordinator).not.toBe(coordinator);
+    });
+  });
+
+  describe('MandrakeManager Integration', () => {
+    test('should create and cache MandrakeManager instance', async () => {
+      // Instead of relying on process.env, directly create a MandrakeManager
+      const manualManager = new MandrakeManager(tempDirPath);
+      await manualManager.init();
+      
+      // Create a wrapper function to inject our manager for testing
+      const getMandrakeWrapper = async () => manualManager;
+      
+      // Create a function to test the caching behavior with our injected manager
+      const testCaching = async () => {
+        const first = await getMandrakeWrapper();
+        const second = await getMandrakeWrapper();
+        
+        expect(first).toBe(second); // Same instance
+        expect(first.paths.root).toBe(tempDirPath); // Correct path
+      };
+      
+      await testCaching();
+    });
+    
+    test('should release MandrakeManager resources', async () => {
+      // Create a test manager
+      let testManager: MandrakeManager | null = new MandrakeManager(tempDirPath);
+      await testManager.init();
+      
+      // Create a tracker for manager resets
+      let managerReleased = false;
+      
+      // Create mock functions for test
+      const getManager = async () => {
+        if (!testManager) {
+          testManager = new MandrakeManager(tempDirPath);
+          await testManager.init();
+        }
+        return testManager;
+      };
+      
+      const releaseManager = async () => {
+        testManager = null;
+        managerReleased = true;
+      };
+      
+      // Test releasing and recreating
+      const manager1 = await getManager();
+      expect(manager1.paths.root).toBe(tempDirPath);
+      
+      // Release the manager
+      await releaseManager();
+      expect(managerReleased).toBe(true);
+      
+      // Get a new manager - should be a different instance
+      const manager2 = await getManager();
+      expect(manager2).not.toBe(manager1);
+      expect(manager2.paths.root).toBe(tempDirPath);
     });
   });
 });

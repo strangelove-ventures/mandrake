@@ -1,11 +1,12 @@
 /**
  * Service Registry implementation
  */
-import { WorkspaceManager } from '@mandrake/workspace';
+import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator, type SessionMetadata } from '@mandrake/session';
 import { createLogger } from '@mandrake/utils';
 import { IServiceRegistry, ServiceActivity } from './types';
+import { join } from 'path';
 
 const logger = createLogger('ServiceRegistry');
 
@@ -16,24 +17,58 @@ class ServiceRegistry implements IServiceRegistry {
   private workspaceManagers: Map<string, WorkspaceManager> = new Map();
   private mcpManagers: Map<string, MCPManager> = new Map();
   private sessionCoordinators: Map<string, SessionCoordinator> = new Map();
+  private mandrakeManager: MandrakeManager | null = null;
   
   // Activity tracking
   private workspaceActivity: Map<string, ServiceActivity> = new Map();
   private sessionActivity: Map<string, ServiceActivity> = new Map();
+  private mandrakeActivity: ServiceActivity | null = null;
   
   // Resource limits
   private readonly maxConcurrentSessions: number = 10; // Configurable
 
   /**
+   * Get the MandrakeManager instance
+   */
+  async getMandrakeManager(): Promise<MandrakeManager> {
+    // Update activity tracking
+    this.mandrakeActivity = {
+      lastUsed: new Date(),
+      isActive: true
+    };
+    
+    if (!this.mandrakeManager) {
+      const mandrakeRoot = process.env.MANDRAKE_ROOT || join(process.env.HOME || '', '.mandrake');
+      logger.info(`Creating new MandrakeManager`, { path: mandrakeRoot });
+      
+      const manager = new MandrakeManager(mandrakeRoot);
+      await manager.init();
+      this.mandrakeManager = manager;
+    }
+    
+    return this.mandrakeManager;
+  }
+  
+  /**
    * Get or create a workspace manager for a specific workspace
    */
   async getWorkspaceManager(name: string, path: string): Promise<WorkspaceManager> {
     if (!this.workspaceManagers.has(name)) {
-      logger.info(`Creating new WorkspaceManager for workspace: ${name}`, { workspace: name, path });
-      // FIX: WorkspaceManager constructor expects (path, name), not (name, path)
-      const manager = new WorkspaceManager(path, name);
-      await manager.init();
-      this.workspaceManagers.set(name, manager);
+      // Check if this is a valid workspace
+      try {
+        // Use MandrakeManager if possible to get the workspace
+        const mandrakeManager = await this.getMandrakeManager();
+        const manager = await mandrakeManager.getWorkspace(name);
+        this.workspaceManagers.set(name, manager);
+        
+        logger.info(`Retrieved WorkspaceManager for workspace: ${name}`, { workspace: name });
+      } catch (error) {
+        // Fall back to direct creation if MandrakeManager can't find it
+        logger.info(`Creating new WorkspaceManager for workspace: ${name}`, { workspace: name, path });
+        const manager = new WorkspaceManager(path, name);
+        await manager.init();
+        this.workspaceManagers.set(name, manager);
+      }
       
       // Track activity
       this.workspaceActivity.set(name, {
@@ -170,6 +205,21 @@ class ServiceRegistry implements IServiceRegistry {
   }
   
   /**
+   * Release MandrakeManager resources
+   */
+  async releaseMandrakeManager(): Promise<void> {
+    if (this.mandrakeManager) {
+      logger.info('Cleaning up MandrakeManager resources');
+      
+      // No cleanup method in MandrakeManager yet, may need to be added
+      // await this.mandrakeManager.cleanup();
+      
+      this.mandrakeManager = null;
+      this.mandrakeActivity = null;
+    }
+  }
+  
+  /**
    * Perform periodic cleanup of unused resources
    */
   async performCleanup(): Promise<void> {
@@ -201,6 +251,20 @@ class ServiceRegistry implements IServiceRegistry {
         if (!hasActiveSessions) {
           logger.info(`Workspace ${workspaceId} inactive for ${elapsed/1000/60} minutes with no active sessions, releasing`);
           await this.releaseWorkspaceResources(workspaceId);
+        }
+      }
+    }
+    
+    // Check MandrakeManager for inactivity
+    if (this.mandrakeActivity && this.mandrakeActivity.isActive) {
+      const elapsed = now.getTime() - this.mandrakeActivity.lastUsed.getTime();
+      if (elapsed > inactivityThreshold) {
+        // Check if any workspaces still need it
+        const hasActiveWorkspaces = this.workspaceActivity.size > 0;
+        
+        if (!hasActiveWorkspaces) {
+          logger.info(`MandrakeManager inactive for ${elapsed/1000/60} minutes with no active workspaces, releasing`);
+          await this.releaseMandrakeManager();
         }
       }
     }
