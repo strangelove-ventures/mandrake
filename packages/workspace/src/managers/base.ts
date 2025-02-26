@@ -11,16 +11,18 @@ export class ConfigError extends Error {
 
 export abstract class BaseConfigManager<T> {
   protected logger;
+  protected options: Record<string, string>;
 
   constructor(
     protected path: string,
     protected schema: z.ZodType<T>,
-    loggerMetadata: Record<string, string>
+    options: Record<string, string>
   ) {
+    this.options = options;
     this.logger = createLogger('workspace').child({ 
       meta: {
         component: 'config-manager',
-        ...loggerMetadata
+        ...options
       }
     });
   }

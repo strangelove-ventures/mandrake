@@ -51,7 +51,7 @@ export function getWorkspacePath(workspaceDir: string, name: string): WorkspaceP
     root,
     wsDir,
     config,
-    workspace: join(wsDir, 'workspace.json'),
+    workspace: join(config, 'workspace.json'),
     tools: join(config, 'tools.json'),
     models: join(config, 'models.json'),
     context: join(config, 'context.json'),

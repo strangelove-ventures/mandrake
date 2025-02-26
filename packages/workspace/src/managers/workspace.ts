@@ -18,6 +18,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
   public readonly dynamic: DynamicContextManager;
   public readonly files: FilesManager;
   public readonly sessions: SessionManager;
+  public readonly name: string;
 
   constructor(workspaceDir: string, name: string) {
     const paths = getWorkspacePath(workspaceDir, name);
@@ -26,6 +27,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
       name 
     });
 
+    this.name = name;
     this.paths = paths;
     this.logger = createLogger('workspace').child({
       meta: {
@@ -66,7 +68,7 @@ export class WorkspaceManager extends BaseConfigManager<Workspace> {
     // Write initial workspace config
     const config: Workspace = {
       id: crypto.randomUUID(),
-      name: this.paths.root.split('/').pop()!,
+      name: this.name,
       description,
       created: new Date().toISOString(),
       metadata: {}

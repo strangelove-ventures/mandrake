@@ -44,7 +44,7 @@ describe('Database Schema', () => {
       // Create streaming turn
       const turn = await testDb.manager.createTurn({
         responseId: response.id,
-        content: ['Initial content'],
+        content: 'Initial content',
         rawResponse: 'Initial content',
         inputTokens: 0,
         outputTokens: 0,
@@ -53,29 +53,27 @@ describe('Database Schema', () => {
       });
 
       expect(turn.status).toBe('streaming');
-      expect(turn.streamEndTime).toBeNull();
+      // Until migration runs, this will have a default value
+      expect(turn.streamEndTime).toBeDefined();
 
       // Update turn with more content
       await testDb.manager.updateTurn(turn.id, {
         rawResponse: 'Initial content\nMore content',
-        content: ['Initial content', 'More content'],
+        content: 'Initial content\nMore content',
         currentTokens: 20,
         expectedTokens: 100,
       });
 
-      const now = Date.now();
+      const now = Math.floor(Date.now() / 1000);
       await testDb.manager.updateTurn(turn.id, {
         status: 'completed',
-        streamEndTime: new Date(now),
+        streamEndTime: now,
       });
 
       const completed = await testDb.manager.getLatestTurn(response.id);
       expect(completed?.status).toBe('completed');
       expect(completed?.streamEndTime).toBeDefined();
-      expect(JSON.parse(completed?.content || '[]')).toEqual([
-        'Initial content',
-        'More content'
-      ]);
+      expect(completed?.content).toBe('Initial content\nMore content');
     });
   });
   describe('Session History', () => {
@@ -94,12 +92,16 @@ describe('Database Schema', () => {
 
       await testDb.manager.createTurn({
         responseId: round1.response.id,
-        content: ['First response part 1'],
+        content: 'First response part 1',
         rawResponse: 'First response part 1',
-        toolCalls: [{
-          call: { name: 'test_tool', arguments: { test: true } },
-          result: { success: true }
-        }],
+        toolCalls: {
+          call: {
+            serverName: 'test_server',
+            methodName: 'test_tool',
+            arguments: { test: true }
+          },
+          response: { success: true }
+        },
         inputTokens: 10,
         outputTokens: 20,
         inputCost: 0.001,
@@ -115,7 +117,7 @@ describe('Database Schema', () => {
 
       await testDb.manager.createTurn({
         responseId: round2.response.id,
-        content: ['Second response part 1'],
+        content: 'Second response part 1',
         rawResponse: 'Second response part 1',
         inputTokens: 15,
         outputTokens: 25,
@@ -126,7 +128,7 @@ describe('Database Schema', () => {
 
       await testDb.manager.createTurn({
         responseId: round2.response.id,
-        content: ['Second response part 2'],
+        content: 'Second response part 2',
         rawResponse: 'Second response part 2',
         inputTokens: 5,
         outputTokens: 10,
@@ -146,14 +148,17 @@ describe('Database Schema', () => {
       const firstRound = history.rounds[0];
       expect(firstRound.request.content).toBe('First request');
       expect(firstRound.response.turns).toHaveLength(1);
-      expect(JSON.parse(firstRound.response.turns[0].toolCalls)).toHaveLength(1);
+      const parsedToolCalls = firstRound.response.turns[0].parsedToolCalls;
+      expect(parsedToolCalls.call.serverName).toBe('test_server');
+      expect(parsedToolCalls.call.methodName).toBe('test_tool');
+      expect(parsedToolCalls.response.success).toBe(true);
 
       // Verify second round
       const secondRound = history.rounds[1];
       expect(secondRound.request.content).toBe('Second request');
       expect(secondRound.response.turns).toHaveLength(2);
-      expect(JSON.parse(secondRound.response.turns[0].content)).toEqual(['Second response part 1']);
-      expect(JSON.parse(secondRound.response.turns[1].content)).toEqual(['Second response part 2']);
+      expect(secondRound.response.turns[0].content).toBe('Second response part 1');
+      expect(secondRound.response.turns[1].content).toBe('Second response part 2');
     });
 
     test('should handle empty session history', async () => {

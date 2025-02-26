@@ -32,7 +32,8 @@ describe('MandrakeManager', () => {
       expect(config).toEqual({
         theme: 'system',
         telemetry: true,
-        metadata: {}
+        metadata: {},
+        workspaces: []
       });
     });
 
@@ -107,7 +108,28 @@ describe('MandrakeManager', () => {
       expect(config.description).toBe('Test Description');
 
       const workspaces = await manager.listWorkspaces();
-      expect(workspaces).toEqual(['test-workspace']);
+      expect(workspaces.length).toBe(1);
+      expect(workspaces[0].name).toBe('test-workspace');
+    });
+
+    test('should create workspace with custom path', async () => {
+      // Create a subdirectory for the custom workspace
+      const customDir = join(testDir.path, 'custom');
+      await mkdir(customDir, { recursive: true });
+      
+      // Create workspace at custom path
+      const path = join(customDir, 'custom-ws');
+      const workspace = await manager.createWorkspace('custom-workspace', 'Custom workspace', path);
+      expect(workspace).toBeDefined();
+
+      const config = await workspace.getConfig();
+      expect(config.name).toBe('custom-workspace');
+      
+      // The workspace should be registered
+      const workspaces = await manager.listWorkspaces();
+      expect(workspaces.length).toBe(1);
+      expect(workspaces[0].name).toBe('custom-workspace');
+      expect(workspaces[0].path).toBe(path);
     });
 
     test('should prevent duplicate workspace names', async () => {
@@ -155,9 +177,10 @@ describe('MandrakeManager', () => {
 
       const workspaces = await manager.listWorkspaces();
       expect(workspaces).toHaveLength(3);
-      expect(workspaces).toContain('workspace1');
-      expect(workspaces).toContain('workspace2');
-      expect(workspaces).toContain('workspace3');
+      const workspaceNames = workspaces.map(ws => ws.name);
+      expect(workspaceNames).toContain('workspace1');
+      expect(workspaceNames).toContain('workspace2');
+      expect(workspaceNames).toContain('workspace3');
     });
   });
 
@@ -171,7 +194,8 @@ describe('MandrakeManager', () => {
       expect(config).toEqual({
         theme: 'system',
         telemetry: true,
-        metadata: {}
+        metadata: {},
+        workspaces: []
       });
     });
 
@@ -183,7 +207,8 @@ describe('MandrakeManager', () => {
       // Should still work
       await manager.createWorkspace('test-workspace');
       const workspaces = await manager.listWorkspaces();
-      expect(workspaces).toEqual(['test-workspace']);
+      expect(workspaces.length).toBe(1);
+      expect(workspaces[0].name).toBe('test-workspace');
     });
   });
 });

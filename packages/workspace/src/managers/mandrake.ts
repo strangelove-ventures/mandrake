@@ -1,6 +1,6 @@
 import { createLogger } from '@mandrake/utils';
 import { mkdir, rm } from 'fs/promises';
-import { join } from 'path';
+import { join, dirname, basename } from 'path';
 import { readdir } from 'fs/promises';
 import { ToolsManager } from './tools';
 import { ModelsManager } from './models';
@@ -8,7 +8,7 @@ import { PromptManager } from './prompt';
 import { getMandrakePaths, type MandrakePaths } from '../utils/paths';
 import { BaseConfigManager } from './base';
 import { SessionManager } from './session';
-import { mandrakeConfigSchema, type MandrakeConfig } from '../types';
+import { mandrakeConfigSchema, type MandrakeConfig, type Workspace } from '../types';
 import { validateWorkspaceName } from '../utils/validation';
 import { WorkspaceManager } from './workspace';
 
@@ -22,7 +22,7 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
 
   constructor(root: string) {
     const paths = getMandrakePaths(root);
-    super(paths.config, mandrakeConfigSchema, { type: 'mandrake-config' });
+    super(paths.config, mandrakeConfigSchema, { type: 'mandrake-config', workspaces: [] });
 
     this.paths = paths;
     this.logger = createLogger('workspace').child({
@@ -76,60 +76,232 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
     return {
       theme: 'system',
       telemetry: true,
-      metadata: {}
+      metadata: {},
+      workspaces: []
     };
   }
 
-  async createWorkspace(name: string, description?: string): Promise<WorkspaceManager> {
+  async createWorkspace(name: string, description?: string, path?: string): Promise<WorkspaceManager> {
     validateWorkspaceName(name);
 
-    // Check if workspace already exists
-    const existingWorkspaces = await this.listWorkspaces();
-    if (existingWorkspaces.includes(name)) {
+    // Check if workspace name already exists
+    const config = await this.getConfig();
+    if (config.workspaces.some(ws => ws.name === name)) {
       throw new Error(`Workspace "${name}" already exists`);
     }
 
+    // Split path to get directory and name correctly
+    const workspacePath = path || join(this.paths.root, 'workspaces', name);
+    const workspaceParentDir = dirname(workspacePath);
+    const workspaceName = name;
+
     // Create workspace
-    const workspace = new WorkspaceManager(join(this.paths.root, 'workspaces'), name);
+    const workspace = new WorkspaceManager(workspaceParentDir, workspaceName);
     await workspace.init(description);
 
+    // Register the workspace
+    const wsConfig = await workspace.getConfig();
+    await this.registerWorkspace({
+      id: wsConfig.id,
+      name,
+      path: workspacePath,
+      description: wsConfig.description,
+      lastOpened: new Date().toISOString()
+    });
+
     return workspace;
+  }
+
+  async registerWorkspace(workspace: {
+    id: string;
+    name: string;
+    path: string;
+    description?: string;
+    lastOpened?: string;
+  }): Promise<void> {
+    const config = await this.getConfig();
+
+    // Check if workspace already exists
+    const existingIndex = config.workspaces.findIndex(ws => ws.name === workspace.name);
+    if (existingIndex >= 0) {
+      // Update existing workspace
+      config.workspaces[existingIndex] = {
+        ...config.workspaces[existingIndex],
+        ...workspace,
+        lastOpened: workspace.lastOpened || new Date().toISOString()
+      };
+    } else {
+      // Add new workspace
+      config.workspaces.push({
+        ...workspace,
+        lastOpened: workspace.lastOpened || new Date().toISOString()
+      });
+    }
+
+    await this.updateConfig(config);
   }
 
   async getWorkspace(name: string): Promise<WorkspaceManager> {
     validateWorkspaceName(name);
 
-    const workspace = new WorkspaceManager(join(this.paths.root, 'workspaces'), name);
+    // Find workspace in registry
+    const config = await this.getConfig();
+    const workspaceInfo = config.workspaces.find(ws => ws.name === name);
+
+    if (!workspaceInfo) {
+      // Try legacy path for backward compatibility
+      const legacyWorkspace = new WorkspaceManager(join(this.paths.root, 'workspaces'), name);
+      try {
+        const wsConfig = await legacyWorkspace.getConfig();
+
+        // Register it if found
+        await this.registerWorkspace({
+          id: wsConfig.id,
+          name,
+          path: join(this.paths.root, 'workspaces', name),
+          description: wsConfig.description,
+          lastOpened: new Date().toISOString()
+        });
+
+        return legacyWorkspace;
+      } catch (error) {
+        throw new Error(`Workspace "${name}" not found`);
+      }
+    }
+
+    // Update last opened timestamp
+    await this.updateWorkspaceTimestamp(name);
+
+    // Get workspace directory from the path
+    const workspaceParentDir = dirname(workspaceInfo.path);
+    const workspaceName = name; // Use the name, not basename
+
+    const workspace = new WorkspaceManager(workspaceParentDir, workspaceName);
     await workspace.getConfig(); // This will throw if workspace doesn't exist
     return workspace;
   }
 
+  async updateWorkspaceTimestamp(name: string): Promise<void> {
+    const config = await this.getConfig();
+    const workspaceIndex = config.workspaces.findIndex(ws => ws.name === name);
+
+    if (workspaceIndex >= 0) {
+      config.workspaces[workspaceIndex].lastOpened = new Date().toISOString();
+      await this.updateConfig(config);
+    }
+  }
+
   async deleteWorkspace(name: string): Promise<void> {
     validateWorkspaceName(name);
-    
-    const workspacePath = join(this.paths.root, 'workspaces', name);
+
+    // Find workspace in registry
+    const config = await this.getConfig();
+    const workspaceInfo = config.workspaces.find(ws => ws.name === name);
+
+    if (!workspaceInfo) {
+      // Try legacy path for backward compatibility
+      const workspacePath = join(this.paths.root, 'workspaces', name);
+      try {
+        await rm(workspacePath, { recursive: true, force: true });
+        this.logger.info('Legacy workspace deleted', { name });
+        return;
+      } catch (error) {
+        if ((error as any)?.code !== 'ENOENT') {
+          throw error;
+        }
+        throw new Error(`Workspace "${name}" not found`);
+      }
+    }
+
+    // Remove from registry
+    config.workspaces = config.workspaces.filter(ws => ws.name !== name);
+    await this.updateConfig(config);
+
+    // Delete the workspace files
     try {
-      await rm(workspacePath, { recursive: true, force: true });
-      this.logger.info('Workspace deleted', { name });
+      await rm(workspaceInfo.path, { recursive: true, force: true });
+      this.logger.info('Workspace deleted', { name, path: workspaceInfo.path });
     } catch (error) {
       if ((error as any)?.code !== 'ENOENT') {
         throw error;
       }
+      this.logger.info('Workspace unregistered (files not found)', { name, path: workspaceInfo.path });
     }
   }
 
-  async listWorkspaces(): Promise<string[]> {
-    const workspacesPath = join(this.paths.root, 'workspaces');
+  async unregisterWorkspace(name: string): Promise<void> {
+    validateWorkspaceName(name);
+
+    // Find workspace in registry
+    const config = await this.getConfig();
+    const workspaceInfo = config.workspaces.find(ws => ws.name === name);
+
+    if (!workspaceInfo) {
+      throw new Error(`Workspace "${name}" not found`);
+    }
+
+    // Remove from registry
+    config.workspaces = config.workspaces.filter(ws => ws.name !== name);
+    await this.updateConfig(config);
+
+    this.logger.info('Workspace unregistered', { name });
+  }
+
+  async listWorkspaces(): Promise<{
+    name: string;
+    path: string;
+    description?: string;
+    lastOpened?: string;
+  }[]> {
+    // Get registered workspaces
+    const config = await this.getConfig();
+    const registeredWorkspaces = config.workspaces;
+
+    // For backward compatibility, also check legacy workspaces directory
     try {
+      const workspacesPath = join(this.paths.root, 'workspaces');
       const entries = await readdir(workspacesPath, { withFileTypes: true });
-      return entries
+      const legacyWorkspaces = entries
         .filter(entry => entry.isDirectory())
         .map(entry => entry.name);
-    } catch (error) {
-      if ((error as any)?.code === 'ENOENT') {
-        return [];
+
+      // Add any legacy workspaces that aren't already registered
+      for (const name of legacyWorkspaces) {
+        if (!registeredWorkspaces.some(ws => ws.name === name)) {
+          try {
+            const legacyWorkspace = new WorkspaceManager(join(this.paths.root, 'workspaces'), name);
+            const wsConfig = await legacyWorkspace.getConfig();
+
+            // Register it
+            registeredWorkspaces.push({
+              id: wsConfig.id,
+              name,
+              path: join(this.paths.root, 'workspaces', name),
+              description: wsConfig.description
+            });
+          } catch (error) {
+            // Skip if can't read config
+            this.logger.warn('Could not read legacy workspace config', { name, error });
+          }
+        }
       }
-      throw error;
+
+      // Save updated registry
+      if (registeredWorkspaces.length !== config.workspaces.length) {
+        await this.updateConfig({ ...config, workspaces: registeredWorkspaces });
+      }
+
+    } catch (error) {
+      if ((error as any)?.code !== 'ENOENT') {
+        this.logger.error('Error reading workspaces directory', { error });
+      }
     }
+
+    return registeredWorkspaces.map(ws => ({
+      name: ws.name,
+      path: ws.path,
+      description: ws.description,
+      lastOpened: ws.lastOpened
+    }));
   }
 }

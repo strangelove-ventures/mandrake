@@ -33,6 +33,10 @@ describe('WorkspaceManager', () => {
       expect(wsDirs.some(d => d.isDirectory() && d.name === 'config')).toBe(true);
       expect(wsDirs.some(d => d.isDirectory() && d.name === 'files')).toBe(true);
       expect(wsDirs.some(d => d.isDirectory() && d.name === 'mcpdata')).toBe(true);
+      
+      // Check workspace.json is in the config directory
+      const configDirs = await readdir(join(paths.root, '.ws', 'config'), { withFileTypes: true });
+      expect(configDirs.some(f => f.isFile() && f.name === 'workspace.json')).toBe(true);
     });
 
     test('should create initial workspace config', async () => {
@@ -168,7 +172,7 @@ describe('WorkspaceManager', () => {
       await workspaceManager.init();
       
       // Corrupt the workspace config
-      await Bun.write(workspaceManager.paths.workspace, 'invalid json');
+      await Bun.write(join(workspaceManager.paths.root, '.ws', 'config', 'workspace.json'), 'invalid json');
 
       // Should fail to read corrupted config
       await expect(workspaceManager.getConfig()).rejects.toThrow();
