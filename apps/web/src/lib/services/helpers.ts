@@ -26,14 +26,19 @@ export async function getMandrakeManagerForRequest(): Promise<MandrakeManager> {
  */
 export async function getSessionCoordinatorForRequest(
   workspace: string,
-  path: string,
+  path: string, // This is ignored now, we'll get it from the registry
   sessionId: string
 ): Promise<SessionCoordinator> {
   await initializeServices(); // Ensures initialization has happened
   const registry = getServiceRegistry();
   
   logger.debug(`Getting SessionCoordinator for workspace: ${workspace}, session: ${sessionId}`);
-  return registry.getSessionCoordinator(workspace, path, sessionId);
+  
+  // Get the workspace manager to get the correct workspace path
+  const mandrakeManager = await registry.getMandrakeManager();
+  const workspaceManager = await mandrakeManager.getWorkspace(workspace);
+  const workspacePath = workspaceManager.paths.root;
+  return registry.getSessionCoordinator(workspace, workspacePath, sessionId);
 }
 
 /**

@@ -5,6 +5,7 @@ import { createApiResponse, createNoContentResponse } from '../utils/response';
 import { getWorkspaceManager } from '../utils/workspace';
 import { validateParams, validateQuery } from '../middleware/validation';
 import { z } from 'zod';
+import { getMandrakeManagerForRequest } from '../../services/helpers';
 
 // Parameter schemas
 const modelIdSchema = z.object({
@@ -39,9 +40,11 @@ export function createModelRoutes(isWorkspaceScope: boolean = false) {
         if (isWorkspaceScope && params?.id) {
           workspaceId = params.id as string;
           const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new ModelsHandler(workspaceId, workspaceManager);
+          handler = new ModelsHandler(workspaceId, workspaceManager.models);
         } else {
-          handler = new ModelsHandler();
+          // Use the MandrakeManager for system-level
+          const mandrakeManager = await getMandrakeManagerForRequest();
+          handler = new ModelsHandler(undefined, mandrakeManager.models);
         }
         
         // Check if we're requesting active model
@@ -89,9 +92,11 @@ export function createModelRoutes(isWorkspaceScope: boolean = false) {
         if (isWorkspaceScope && params?.id) {
           workspaceId = params.id as string;
           const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new ModelsHandler(workspaceId, workspaceManager);
+          handler = new ModelsHandler(workspaceId, workspaceManager.models);
         } else {
-          handler = new ModelsHandler();
+          // Use the MandrakeManager for system-level
+          const mandrakeManager = await getMandrakeManagerForRequest();
+          handler = new ModelsHandler(undefined, mandrakeManager.models);
         }
         
         // Handle setting active model
@@ -153,9 +158,11 @@ export function createModelRoutes(isWorkspaceScope: boolean = false) {
         if (isWorkspaceScope && params?.id) {
           workspaceId = params.id as string;
           const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new ModelsHandler(workspaceId, workspaceManager);
+          handler = new ModelsHandler(workspaceId, workspaceManager.models);
         } else {
-          handler = new ModelsHandler();
+          // Use the MandrakeManager for system-level
+          const mandrakeManager = await getMandrakeManagerForRequest();
+          handler = new ModelsHandler(undefined, mandrakeManager.models);
         }
         
         // Handle provider update
@@ -210,9 +217,11 @@ export function createModelRoutes(isWorkspaceScope: boolean = false) {
         if (isWorkspaceScope && params?.id) {
           workspaceId = params.id as string;
           const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new ModelsHandler(workspaceId, workspaceManager);
+          handler = new ModelsHandler(workspaceId, workspaceManager.models);
         } else {
-          handler = new ModelsHandler();
+          // Use the MandrakeManager for system-level
+          const mandrakeManager = await getMandrakeManagerForRequest();
+          handler = new ModelsHandler(undefined, mandrakeManager.models);
         }
         
         // Handle provider deletion

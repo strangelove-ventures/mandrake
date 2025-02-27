@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { WorkspaceManager } from '@mandrake/workspace';
+import { ModelsManager } from '@mandrake/workspace';
 import { ApiError, ErrorCode } from '../middleware/errorHandling';
 import { validateBody } from '../middleware/validation';
 import { ModelConfig, modelConfigSchema, ProviderConfig, providerConfigSchema } from '@mandrake/utils';
@@ -9,8 +9,7 @@ import { ModelConfig, modelConfigSchema, ProviderConfig, providerConfigSchema } 
  */
 export class ModelsHandler {
   constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
+    private modelsManager: ModelsManager
   ) {}
 
   /**
@@ -19,17 +18,7 @@ export class ModelsHandler {
    */
   async listModels(): Promise<Record<string, ModelConfig>> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        return this.workspaceManager.models.listModels();
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level models not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.modelsManager.listModels();;
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -49,17 +38,7 @@ export class ModelsHandler {
    */
   async listProviders(): Promise<Record<string, ProviderConfig>> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        return this.workspaceManager.models.listProviders();
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level providers not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.modelsManager.listProviders();
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -82,18 +61,7 @@ export class ModelsHandler {
     try {
       // Import the schema from workspace package
       const data = await validateBody(req, modelConfigSchema);
-      
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        return this.workspaceManager.models.addModel(modelId, data);
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level models not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.modelsManager.addModel(modelId, data);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -116,18 +84,7 @@ export class ModelsHandler {
   async addProvider(providerId: string, req: NextRequest): Promise<void> {
     try {
       const data = await validateBody(req, providerConfigSchema);
-      
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        return this.workspaceManager.models.addProvider(providerId, data);
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level providers not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.modelsManager.addProvider(providerId, data);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -148,25 +105,7 @@ export class ModelsHandler {
    */
   async getModelDetails(modelId: string): Promise<ModelConfig> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        try {
-          return await this.workspaceManager.models.getModel(modelId);
-        } catch (error) {
-          throw new ApiError(
-            `Model not found: ${modelId}`,
-            ErrorCode.RESOURCE_NOT_FOUND,
-            404
-          );
-        }
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level models not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return await this.modelsManager.getModel(modelId);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -187,25 +126,7 @@ export class ModelsHandler {
    */
   async getProviderDetails(providerId: string): Promise<ProviderConfig> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        try {
-          return await this.workspaceManager.models.getProvider(providerId);
-        } catch (error) {
-          throw new ApiError(
-            `Provider not found: ${providerId}`,
-            ErrorCode.RESOURCE_NOT_FOUND,
-            404
-          );
-        }
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level providers not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return await this.modelsManager.getProvider(providerId);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -228,28 +149,8 @@ export class ModelsHandler {
     try {
       // Make schema partial for updates
       const data = await validateBody(req, modelConfigSchema.partial());
-      
-      if (this.workspaceId && this.workspaceManager) {
-        try {
-          // Check if model exists first
-          await this.workspaceManager.models.getModel(modelId);
-          return await this.workspaceManager.models.updateModel(modelId, data);
-        } catch (error) {
-          if (error instanceof ApiError) throw error;
-          throw new ApiError(
-            `Model not found: ${modelId}`,
-            ErrorCode.RESOURCE_NOT_FOUND,
-            404
-          );
-        }
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level models not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.modelsManager.getModel(modelId);
+      return await this.modelsManager.updateModel(modelId, data);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -271,28 +172,8 @@ export class ModelsHandler {
   async updateProvider(providerId: string, req: NextRequest): Promise<void> {
     try {
       const data = await validateBody(req, providerConfigSchema.partial());
-      
-      if (this.workspaceId && this.workspaceManager) {
-        try {
-          // Check if provider exists first
-          await this.workspaceManager.models.getProvider(providerId);
-          return await this.workspaceManager.models.updateProvider(providerId, data);
-        } catch (error) {
-          if (error instanceof ApiError) throw error;
-          throw new ApiError(
-            `Provider not found: ${providerId}`,
-            ErrorCode.RESOURCE_NOT_FOUND,
-            404
-          );
-        }
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level providers not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.modelsManager.getProvider(providerId);
+      return await this.modelsManager.updateProvider(providerId, data);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -312,27 +193,8 @@ export class ModelsHandler {
    */
   async removeModel(modelId: string): Promise<void> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        try {
-          // Check if model exists first
-          await this.workspaceManager.models.getModel(modelId);
-          return await this.workspaceManager.models.removeModel(modelId);
-        } catch (error) {
-          if (error instanceof ApiError) throw error;
-          throw new ApiError(
-            `Model not found: ${modelId}`,
-            ErrorCode.RESOURCE_NOT_FOUND,
-            404
-          );
-        }
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level models not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.modelsManager.getModel(modelId);
+      return await this.modelsManager.removeModel(modelId);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -352,27 +214,8 @@ export class ModelsHandler {
    */
   async removeProvider(providerId: string): Promise<void> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        try {
-          // Check if provider exists first  
-          await this.workspaceManager.models.getProvider(providerId);
-          return await this.workspaceManager.models.removeProvider(providerId);
-        } catch (error) {
-          if (error instanceof ApiError) throw error;
-          throw new ApiError(
-            `Provider not found: ${providerId}`,
-            ErrorCode.RESOURCE_NOT_FOUND,
-            404
-          );
-        }
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level providers not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.modelsManager.getProvider(providerId);
+      return await this.modelsManager.removeProvider(providerId);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -391,16 +234,7 @@ export class ModelsHandler {
    */
   async getActiveModel(): Promise<string> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        return this.workspaceManager.models.getActive();
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level models not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.modelsManager.getActive();
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -420,16 +254,7 @@ export class ModelsHandler {
    */
   async setActiveModel(modelId: string): Promise<void> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        return this.workspaceManager.models.setActive(modelId);
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level models not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.modelsManager.setActive(modelId);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;

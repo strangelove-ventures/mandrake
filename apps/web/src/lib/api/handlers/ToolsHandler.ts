@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { WorkspaceManager } from '@mandrake/workspace';
+import { ToolsManager } from '@mandrake/workspace';
 import { ApiError, ErrorCode } from '../middleware/errorHandling';
 import { validateBody } from '../middleware/validation';
 import { ToolConfig, ServerConfig, serverConfigSchema, toolConfigSchema } from '@mandrake/workspace';
@@ -10,8 +10,7 @@ import { z } from 'zod';
  */
 export class ToolsHandler {
   constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
+    private tools: ToolsManager
   ) {}
 
   /**
@@ -20,15 +19,7 @@ export class ToolsHandler {
    */
   async listConfigSets(): Promise<string[]> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        return this.workspaceManager.tools.listConfigSets();
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.tools.listConfigSets();
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(
@@ -46,15 +37,7 @@ export class ToolsHandler {
    */
   async getActive(): Promise<string> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        return this.workspaceManager.tools.getActive();
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.tools.getActive();
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(
@@ -72,15 +55,7 @@ export class ToolsHandler {
    */
   async setActive(setId: string): Promise<void> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        await this.workspaceManager.tools.setActive(setId);
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.tools.setActive(setId);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(
@@ -99,15 +74,7 @@ export class ToolsHandler {
    */
   async getConfigSet(setId: string): Promise<ToolConfig> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        return await this.workspaceManager.tools.getConfigSet(setId);
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return await this.tools.getConfigSet(setId);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).message.includes('not found')) {
@@ -135,16 +102,7 @@ export class ToolsHandler {
   async addConfigSet(setId: string, req: NextRequest): Promise<void> {
     try {
       const data = await validateBody(req, toolConfigSchema);
-      
-      if (this.workspaceId && this.workspaceManager) {
-        await this.workspaceManager.tools.addConfigSet(setId, data);
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.tools.addConfigSet(setId, data);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).message.includes('already exists')) {
@@ -177,16 +135,7 @@ export class ToolsHandler {
       );
 
       const data = await validateBody(req, partialToolConfigSchema);
-      
-      if (this.workspaceId && this.workspaceManager) {
-        await this.workspaceManager.tools.updateConfigSet(setId, (data as any));
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.tools.updateConfigSet(setId, (data as any));
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).message.includes('not found')) {
@@ -212,15 +161,7 @@ export class ToolsHandler {
    */
   async removeConfigSet(setId: string): Promise<void> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        await this.workspaceManager.tools.removeConfigSet(setId);
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.tools.removeConfigSet(setId);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).message.includes('not found')) {
@@ -248,15 +189,7 @@ export class ToolsHandler {
    */
   async getServerConfig(setId: string, serverId: string): Promise<ServerConfig> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        return await this.workspaceManager.tools.getServerConfig(setId, serverId);
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return await this.tools.getServerConfig(setId, serverId);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).message.includes('not found')) {
@@ -285,16 +218,7 @@ export class ToolsHandler {
   async addServerConfig(setId: string, serverId: string, req: NextRequest): Promise<void> {
     try {
       const data = await validateBody(req, serverConfigSchema);
-      
-      if (this.workspaceId && this.workspaceManager) {
-        await this.workspaceManager.tools.addServerConfig(setId, serverId, data);
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.tools.addServerConfig(setId, serverId, data);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).message.includes('not found')) {
@@ -331,16 +255,7 @@ export class ToolsHandler {
   async updateServerConfig(setId: string, serverId: string, req: NextRequest): Promise<void> {
     try {
       const data = await validateBody(req, serverConfigSchema.partial());
-      
-      if (this.workspaceId && this.workspaceManager) {
-        await this.workspaceManager.tools.updateServerConfig(setId, serverId, data);
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.tools.updateServerConfig(setId, serverId, data);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).message.includes('not found')) {
@@ -367,15 +282,7 @@ export class ToolsHandler {
    */
   async removeServerConfig(setId: string, serverId: string): Promise<void> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        await this.workspaceManager.tools.removeServerConfig(setId, serverId);
-      } else {
-        throw new ApiError(
-          'System-level tools not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.tools.removeServerConfig(setId, serverId);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       if ((error as Error).message.includes('not found')) {

@@ -3,6 +3,7 @@ import { PromptHandler } from '../handlers/PromptHandler';
 import { handleApiError } from '../middleware/errorHandling';
 import { createApiResponse } from '../utils/response';
 import { getWorkspaceManager } from '../utils/workspace';
+import { getMandrakeManagerForRequest } from '../../services/helpers';
 
 /**
  * Creates route handlers for prompt endpoints
@@ -24,9 +25,11 @@ export function createPromptRoutes(isWorkspaceScope: boolean = false) {
         if (isWorkspaceScope && params?.id) {
           workspaceId = params.id as string;
           const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new PromptHandler(workspaceId, workspaceManager);
+          handler = new PromptHandler(workspaceId, workspaceManager.prompt);
         } else {
-          handler = new PromptHandler();
+          // Use MandrakeManager for system-level
+          const mandrakeManager = await getMandrakeManagerForRequest();
+          handler = new PromptHandler(undefined, mandrakeManager.prompt);
         }
         
         // Get prompt config
@@ -50,9 +53,11 @@ export function createPromptRoutes(isWorkspaceScope: boolean = false) {
         if (isWorkspaceScope && params?.id) {
           workspaceId = params.id as string;
           const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new PromptHandler(workspaceId, workspaceManager);
+          handler = new PromptHandler(workspaceId, workspaceManager.prompt);
         } else {
-          handler = new PromptHandler();
+          // Use MandrakeManager for system-level
+          const mandrakeManager = await getMandrakeManagerForRequest();
+          handler = new PromptHandler(undefined, mandrakeManager.prompt);
         }
         
         // Update prompt config

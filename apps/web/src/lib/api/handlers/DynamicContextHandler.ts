@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { WorkspaceManager } from '@mandrake/workspace';
+import { DynamicContextManager } from '@mandrake/workspace';
 import { ApiError, ErrorCode } from '../middleware/errorHandling';
 import { validateBody } from '../middleware/validation';
 import { DynamicContextMethodConfig, dynamicContextMethodSchema } from '@mandrake/workspace';
@@ -9,8 +9,7 @@ import { DynamicContextMethodConfig, dynamicContextMethodSchema } from '@mandrak
  */
 export class DynamicContextHandler {
   constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
+    private dynamic: DynamicContextManager
   ) {}
 
   /**
@@ -19,17 +18,7 @@ export class DynamicContextHandler {
    */
   async listContexts(): Promise<DynamicContextMethodConfig[]> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        return this.workspaceManager.dynamic.list();
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level dynamic contexts not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.dynamic.list();
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -52,18 +41,7 @@ export class DynamicContextHandler {
     try {
       // Import the schema from workspace package
       const data = await validateBody(req, dynamicContextMethodSchema);
-      
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        return this.workspaceManager.dynamic.create(data);
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level dynamic contexts not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.dynamic.create(data);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -84,27 +62,17 @@ export class DynamicContextHandler {
    */
   async getContextDetails(contextId: string): Promise<DynamicContextMethodConfig> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        const context = await this.workspaceManager.dynamic.get(contextId);
-        
-        if (!context) {
-          throw new ApiError(
-            `Dynamic context not found: ${contextId}`,
-            ErrorCode.RESOURCE_NOT_FOUND,
-            404
-          );
-        }
-        
-        return context;
-      } else {
-        // System-level implementation
+      const context = await this.dynamic.get(contextId);
+      
+      if (!context) {
         throw new ApiError(
-          'System-level dynamic contexts not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
+          `Dynamic context not found: ${contextId}`,
+          ErrorCode.RESOURCE_NOT_FOUND,
+          404
         );
       }
+      
+      return context;
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -129,9 +97,8 @@ export class DynamicContextHandler {
       // Import the schema from workspace package and make it partial
       const data = await validateBody(req, dynamicContextMethodSchema.partial());
       
-      if (this.workspaceId && this.workspaceManager) {
         // Workspace-specific implementation
-        const existing = await this.workspaceManager.dynamic.get(contextId);
+        const existing = await this.dynamic.get(contextId);
         
         if (!existing) {
           throw new ApiError(
@@ -141,18 +108,10 @@ export class DynamicContextHandler {
           );
         }
         
-        return this.workspaceManager.dynamic.update(contextId, {
+        return this.dynamic.update(contextId, {
           ...existing,
           ...data
         });
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level dynamic contexts not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -172,10 +131,7 @@ export class DynamicContextHandler {
    */
   async removeContext(contextId: string): Promise<void> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        const existing = await this.workspaceManager.dynamic.get(contextId);
-        
+        const existing = await this.dynamic.get(contextId);
         if (!existing) {
           throw new ApiError(
             `Dynamic context not found: ${contextId}`,
@@ -183,16 +139,7 @@ export class DynamicContextHandler {
             404
           );
         }
-        
-        await this.workspaceManager.dynamic.delete(contextId);
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level dynamic contexts not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+        await this.dynamic.delete(contextId);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;

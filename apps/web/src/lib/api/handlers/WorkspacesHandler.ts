@@ -15,6 +15,7 @@ import {
 const createWorkspaceSchema = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9-_]+$/, 'Workspace name must contain only letters, numbers, hyphens, and underscores'),
   description: z.string().optional(),
+  path: z.string().optional(),
   metadata: z.record(z.string()).optional()
 });
 
@@ -127,13 +128,36 @@ export class WorkspacesHandler {
       const data = await validateBody(req, createWorkspaceSchema);
       
       try {
-        const workspaceManager = await createWorkspaceForRequest(data.name, data.description);
-        
+        let workspaceManager;
+
+        // If path is provided, attempt to adopt existing workspace or create at custom path
+        if (data.path) {
+          try {
+            // First try to adopt an existing workspace
+            workspaceManager = await adoptWorkspaceForRequest(
+              data.name,
+              data.path,
+              data.description
+            );
+          } catch (err) {
+            // If adoption fails, create a new workspace at the specified path
+            const manager = await this.getMandrakeManager();
+            workspaceManager = await manager.createWorkspace(
+              data.name,
+              data.description,
+              data.path
+            );
+          }
+        } else {
+          // Create in default location
+          workspaceManager = await createWorkspaceForRequest(data.name, data.description);
+        }
+
         // If metadata is provided, update the workspace config
         if (data.metadata) {
           await workspaceManager.updateConfig({ metadata: data.metadata });
         }
-        
+
         return workspaceManager.getConfig();
       } catch (err) {
         if (err instanceof Error && err.message.includes('already exists')) {

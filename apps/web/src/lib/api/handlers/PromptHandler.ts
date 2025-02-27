@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { WorkspaceManager } from '@mandrake/workspace';
+import { PromptManager } from '@mandrake/workspace';
 import { ApiError, ErrorCode } from '../middleware/errorHandling';
 import { validateBody } from '../middleware/validation';
 import { PromptConfig } from '@mandrake/workspace';
@@ -18,8 +18,7 @@ const promptConfigSchema = z.object({
  */
 export class PromptHandler {
   constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
+    private promptManager: PromptManager
   ) {}
 
   /**
@@ -28,17 +27,7 @@ export class PromptHandler {
    */
   async getConfig(): Promise<PromptConfig> {
     try {
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        return this.workspaceManager.prompt.getConfig();
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level prompt not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      return this.promptManager.getConfig();
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;
@@ -59,18 +48,7 @@ export class PromptHandler {
   async updateConfig(req: NextRequest): Promise<void> {
     try {
       const data = await validateBody(req, promptConfigSchema);
-      
-      if (this.workspaceId && this.workspaceManager) {
-        // Workspace-specific implementation
-        await this.workspaceManager.prompt.updateConfig(data);
-      } else {
-        // System-level implementation
-        throw new ApiError(
-          'System-level prompt not implemented yet',
-          ErrorCode.NOT_IMPLEMENTED,
-          501
-        );
-      }
+      await this.promptManager.updateConfig(data);
     } catch (error) {
       if (error instanceof ApiError) {
         throw error;

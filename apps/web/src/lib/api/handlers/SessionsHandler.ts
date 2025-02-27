@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { WorkspaceManager } from '@mandrake/workspace';
+import { SessionManager } from '@mandrake/workspace';
 import { ApiError, ErrorCode } from '../middleware/errorHandling';
 import { validateBody } from '../middleware/validation';
 import { z } from 'zod';
@@ -33,8 +33,8 @@ const sendMessageSchema = z.object({
  */
 export class SessionsHandler {
   constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
+    private sessionManager: SessionManager,
+    private workspaceId?: string
   ) {}
 
   /**
@@ -43,21 +43,13 @@ export class SessionsHandler {
    */
   async listSessions(): Promise<any[]> {
     try {
-      if (!this.workspaceManager) {
-        throw new ApiError(
-          'Workspace manager not initialized',
-          ErrorCode.INTERNAL_ERROR,
-          500
-        );
-      }
-
       if (this.workspaceId) {
-        return this.workspaceManager.sessions.listSessions({
+        return this.sessionManager.listSessions({
           workspaceId: this.workspaceId
         });
       } else {
         // For system-level, list all sessions
-        return this.workspaceManager.sessions.listSessions();
+        return this.sessionManager.listSessions();
       }
     } catch (error) {
       if (error instanceof ApiError) throw error;
@@ -77,16 +69,8 @@ export class SessionsHandler {
    */
   async getSession(sessionId: string): Promise<any> {
     try {
-      if (!this.workspaceManager) {
-        throw new ApiError(
-          'Workspace manager not initialized',
-          ErrorCode.INTERNAL_ERROR,
-          500
-        );
-      }
-
       try {
-        return await this.workspaceManager.sessions.getSession(sessionId);
+        return await this.sessionManager.getSession(sessionId);
       } catch (err) {
         // Convert workspace error to ApiError
         if (err instanceof Error && err.message.includes('not found')) {
@@ -119,15 +103,7 @@ export class SessionsHandler {
     try {
       const data = await validateBody(req, createSessionSchema);
       
-      if (!this.workspaceManager) {
-        throw new ApiError(
-          'Workspace manager not initialized',
-          ErrorCode.INTERNAL_ERROR,
-          500
-        );
-      }
-      
-      return this.workspaceManager.sessions.createSession({
+      return this.sessionManager.createSession({
         workspaceId: this.workspaceId,
         title: data.title,
         description: data.description,
@@ -154,16 +130,8 @@ export class SessionsHandler {
     try {
       const data = await validateBody(req, updateSessionSchema);
       
-      if (!this.workspaceManager) {
-        throw new ApiError(
-          'Workspace manager not initialized',
-          ErrorCode.INTERNAL_ERROR,
-          500
-        );
-      }
-      
       try {
-        return await this.workspaceManager.sessions.updateSession(sessionId, {
+        return await this.sessionManager.updateSession(sessionId, {
           title: data.title,
           description: data.description,
           metadata: data.metadata
@@ -197,17 +165,9 @@ export class SessionsHandler {
    */
   async deleteSession(sessionId: string): Promise<void> {
     try {
-      if (!this.workspaceManager) {
-        throw new ApiError(
-          'Workspace manager not initialized',
-          ErrorCode.INTERNAL_ERROR,
-          500
-        );
-      }
-      
       // First check if session exists to provide proper error handling
       try {
-        await this.workspaceManager.sessions.getSession(sessionId);
+        await this.sessionManager.getSession(sessionId);
       } catch (err) {
         if (err instanceof Error && err.message.includes('not found')) {
           throw new ApiError(
@@ -221,7 +181,7 @@ export class SessionsHandler {
       }
       
       // If we get here, the session exists so we can delete it
-      await this.workspaceManager.sessions.deleteSession(sessionId);
+      await this.sessionManager.deleteSession(sessionId);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(
@@ -240,16 +200,8 @@ export class SessionsHandler {
    */
   async getMessages(sessionId: string): Promise<any> {
     try {
-      if (!this.workspaceManager) {
-        throw new ApiError(
-          'Workspace manager not initialized',
-          ErrorCode.INTERNAL_ERROR,
-          500
-        );
-      }
-      
       try {
-        return await this.workspaceManager.sessions.renderSessionHistory(sessionId);
+        return await this.sessionManager.renderSessionHistory(sessionId);
       } catch (err) {
         // Convert workspace error to ApiError
         if (err instanceof Error && err.message.includes('not found')) {
@@ -283,9 +235,9 @@ export class SessionsHandler {
     try {
       const data = await validateBody(req, sendMessageSchema);
       
-      if (!this.workspaceId || !this.workspaceManager) {
+      if (!this.workspaceId) {
         throw new ApiError(
-          'Workspace not initialized',
+          'Workspace ID required for sending messages',
           ErrorCode.INTERNAL_ERROR,
           500
         );
@@ -293,7 +245,7 @@ export class SessionsHandler {
       
       // First check if session exists
       try {
-        await this.workspaceManager.sessions.getSession(sessionId);
+        await this.sessionManager.getSession(sessionId);
       } catch (err) {
         if (err instanceof Error && err.message.includes('not found')) {
           throw new ApiError(
@@ -309,7 +261,7 @@ export class SessionsHandler {
       // Get the session coordinator from the services registry
       const coordinator = await getSessionCoordinatorForRequest(
         this.workspaceId,
-        dirname(this.workspaceManager.paths.root),
+        '', // Path is obtained inside the helper function
         sessionId
       );
       
@@ -317,7 +269,7 @@ export class SessionsHandler {
       await coordinator.handleRequest(sessionId, data.content);
       
       // Return the updated session history
-      return this.workspaceManager.sessions.renderSessionHistory(sessionId);
+      return this.sessionManager.renderSessionHistory(sessionId);
     } catch (error) {
       if (error instanceof ApiError) throw error;
       throw new ApiError(
@@ -339,9 +291,9 @@ export class SessionsHandler {
     try {
       const data = await validateBody(req, sendMessageSchema);
       
-      if (!this.workspaceId || !this.workspaceManager) {
+      if (!this.workspaceId) {
         throw new ApiError(
-          'Workspace not initialized',
+          'Workspace ID required for streaming messages',
           ErrorCode.INTERNAL_ERROR,
           500
         );
@@ -349,7 +301,7 @@ export class SessionsHandler {
       
       // Check if session exists first
       try {
-        await this.workspaceManager.sessions.getSession(sessionId);
+        await this.sessionManager.getSession(sessionId);
       } catch (err) {
         if (err instanceof Error && err.message.includes('not found')) {
           throw new ApiError(
@@ -364,8 +316,7 @@ export class SessionsHandler {
       
       // Store these values for use in the ReadableStream
       const workspaceId = this.workspaceId;
-      const workspacePath = dirname(this.workspaceManager.paths.root);
-      const sessionManager = this.workspaceManager.sessions;
+      const sessionManager = this.sessionManager;
       
       // Create a readable stream for the response
       const stream = new ReadableStream({
@@ -374,7 +325,7 @@ export class SessionsHandler {
             // Get the session coordinator from the services registry
             const coordinator = await getSessionCoordinatorForRequest(
               workspaceId,
-              workspacePath,
+              '',
               sessionId
             );
             
