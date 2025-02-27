@@ -15,8 +15,8 @@ The Mandrake application stores its configuration and workspaces in the `~/.mand
 ├── models.json                # Global model configurations
 ├── prompt.json                # Global prompt template
 ├── mandrake.db                # Global session database
-└── workspaces/                # Legacy directory for workspace storage
-    └── [workspace-name]/      # Individual workspace directories (legacy location)
+└── workspaces/                # Directory for workspace storage
+    └── [workspace-name]/      # Individual workspace directories
 ```
 
 ### Global Configuration
@@ -192,6 +192,13 @@ await manager.deleteWorkspace('my-project');
 
 // Unregister a workspace (removes from registry but keeps files)
 await manager.unregisterWorkspace('my-project');
+
+// Adopt an existing workspace from another location
+const adoptedWorkspace = await manager.adoptWorkspace(
+  'existing-project',
+  '/path/to/existing/workspace',
+  'Optional description'
+);
 ```
 
 ### Legacy Workspace Detection
@@ -345,6 +352,8 @@ class MandrakeManager {
   async getWorkspace(name: string): Promise<WorkspaceManager>;
   async listWorkspaces(): Promise<{ name: string; path: string; description?: string; }[]>;
   async deleteWorkspace(name: string): Promise<void>;
+  async unregisterWorkspace(name: string): Promise<void>;
+  async adoptWorkspace(name: string, workspacePath: string, description?: string): Promise<WorkspaceManager>;
   
   // Config management
   async getConfig(): Promise<MandrakeConfig>;

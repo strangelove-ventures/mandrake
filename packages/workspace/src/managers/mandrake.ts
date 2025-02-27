@@ -270,6 +270,48 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
     this.logger.info('Workspace unregistered', { name });
   }
 
+  async adoptWorkspace(name: string, workspacePath: string, description?: string): Promise<WorkspaceManager> {
+    validateWorkspaceName(name);
+
+    const config = await this.getConfig();
+    if (!config.workspaces) {
+      config.workspaces = [];
+    }
+    
+    // Check if workspace name already exists
+    if ((config.workspaces).some(ws => ws.name === name)) {
+      throw new Error(`Workspace "${name}" already exists`);
+    }
+
+    // Check if the workspace has a valid structure
+    const workspaceParentDir = dirname(workspacePath);
+    const workspaceName = basename(workspacePath);
+    
+    // Create a workspace manager to test if it's a valid workspace
+    const workspace = new WorkspaceManager(workspaceParentDir, workspaceName);
+    
+    try {
+      // Try to get the workspace config to verify it exists
+      const wsConfig = await workspace.getConfig();
+      
+      // Register the workspace
+      await this.registerWorkspace({
+        id: wsConfig.id,
+        name,
+        path: workspacePath,
+        description: description || wsConfig.description,
+        lastOpened: new Date().toISOString()
+      });
+      
+      this.logger.info('Workspace adopted', { name, path: workspacePath });
+      return workspace;
+    } catch (error) {
+      // If the workspace doesn't exist or isn't properly structured
+      this.logger.error('Failed to adopt workspace', { name, path: workspacePath, error });
+      throw new Error(`Cannot adopt "${workspacePath}" as workspace "${name}": ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }
+
   async listWorkspaces(): Promise<{
     name: string;
     path: string;
