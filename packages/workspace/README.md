@@ -19,8 +19,30 @@ The Mandrake application stores its configuration and workspaces in the `~/.mand
     └── [workspace-name]/      # Individual workspace directories (legacy location)
 ```
 
+### Global Configuration
+
+The MandrakeManager stores configuration in `mandrake.json` with the following structure:
+
+```json
+{
+  "theme": "light" | "dark" | "system",
+  "telemetry": boolean,
+  "metadata": { [key: string]: string },
+  "workspaces": [
+    {
+      "id": "uuid",
+      "name": "workspace-name",
+      "path": "/absolute/path/to/workspace",
+      "description": "Optional workspace description",
+      "lastOpened": "ISO8601 datetime string"
+    }
+  ]
+}
+```
+
 ### Important Note
-As of the latest update, all workspace management must be done through the `MandrakeManager`. This ensures proper registration of workspaces in the central registry (`mandrake.json`). While the system still supports workspaces in the legacy `~/.mandrake/workspaces/` directory for backward compatibility, new workspaces can be created in any location on the filesystem as long as they are properly registered through the MandrakeManager.
+
+All workspace creation should happen through the MandrakeManager to ensure proper registration in the central registry. While the system supports workspaces in the `~/.mandrake/workspaces/` directory, new workspaces can be created in any location on the filesystem as long as they are properly registered through the MandrakeManager. The MandrakeManager can also adopt workspaces that are created elsewhere and add them to the registry.
 
 ## Core Concepts
 
@@ -40,6 +62,7 @@ A Mandrake workspace follows a well-defined directory structure:
 │   ├── files/              # Context files managed by FilesManager
 │   ├── mcpdata/            # Data storage for MCP servers
 │   └── session.db          # SQLite database for session history
+├──                         # The rest of the directory is operating space
 ```
 
 ### Manager Hierarchy
@@ -69,8 +92,10 @@ The `MandrakeManager` stores global configuration in `~/.mandrake/mandrake.json`
 ```json
 {
   "theme": "light" | "dark" | "system",
-  "telemetry": boolean,
-  "metadata": { [key: string]: string },
+  "telemetry": true,
+  "metadata": { 
+    "key": "value"
+  },
   "workspaces": [
     {
       "id": "uuid",
@@ -85,6 +110,7 @@ The `MandrakeManager` stores global configuration in `~/.mandrake/mandrake.json`
 ```
 
 The `workspaces` array serves as the central registry for all workspaces managed by Mandrake. Each workspace entry contains:
+
 - `id`: Unique identifier for the workspace
 - `name`: User-friendly name (must be alphanumeric with dashes/underscores)
 - `path`: Absolute filesystem path to the workspace
@@ -398,16 +424,3 @@ The Workspace package integrates with other Mandrake components:
 - **Utils Package**: Leverages logger and type definitions from the utils package
 
 The Workspace is the central state management component that ties together all aspects of the Mandrake experience, from configuration to execution.
-
-## Key Changes
-
-### Centralized Workspace Registry
-
-As of the latest update, all workspaces must be created and managed through the MandrakeManager. This ensures:
-
-1. All workspaces are properly registered in the central registry (`mandrake.json`)
-2. Workspace metadata is consistently tracked (last opened timestamp, etc.)
-3. Workspaces can be located anywhere on the filesystem, not just in `~/.mandrake/workspaces/`
-4. Legacy workspaces are automatically discovered and migrated to the registry
-
-Direct instantiation of WorkspaceManager should only be done after retrieving the workspace through MandrakeManager, or in very specific cases where the workspace is already registered.
