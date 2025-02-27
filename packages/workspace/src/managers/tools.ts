@@ -12,13 +12,6 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
     super(path, toolsConfigSchema, { type: 'tools' });
   }
 
-  async init(): Promise<void> {
-    const current = await this.read();
-    if (Object.keys(current.configs).length === 0) {
-      await this.write(this.getDefaults());
-    }
-  }
-
   // Config set operations
   async listConfigSets(): Promise<string[]> {
     const config = await this.read();
@@ -187,12 +180,14 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
     return {
       active: 'default',
       configs: {
+        // The default tool set is ripper and fetch
+        // we should consider adding search and other tools here
         default: {
           ripper: {
             command: 'bun',
             args: [
               'run',
-              '../ripper/dist/server.js', // Or use the correct path to the ripper server
+              '../ripper/dist/server.js',
               '--transport=stdio',
               `--workspaceDir=${workspacePath}`,
               '--excludePatterns=\\.ws'
@@ -202,6 +197,19 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
             command: 'mcp-fetch-server'
           }
         },
+        // The system tool set is to make changes to the workspace
+        // We should consider adding other useful system tools
+        system: {
+          workspace: {
+            command: 'bun',
+            args: [
+              'run',
+              '../workspace-tools/dist/server.js',
+              '--transport=stdio',
+              `--workspaceDir=${workspacePath}`
+            ]
+          }
+        }
       },
     };
   }

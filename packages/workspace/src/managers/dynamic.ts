@@ -6,9 +6,7 @@ import {
 
 export class DynamicContextManager extends BaseConfigManager<DynamicContextMethodConfig[]> {
   constructor(path: string) {
-    super(path, contextConfigSchema, { 
-      type: 'dynamic-context'
-    });
+    super(path, contextConfigSchema, { type: 'dynamic-context' });
   }
 
   async list(): Promise<DynamicContextMethodConfig[]> {
@@ -62,6 +60,7 @@ export class DynamicContextManager extends BaseConfigManager<DynamicContextMetho
   }
 
   protected getDefaults(): DynamicContextMethodConfig[] {
+    // TODO: lets add some default contexts here
     return [];
   }
 }

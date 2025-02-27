@@ -26,7 +26,7 @@ export class SessionManager {
     
     // Event emitter for turn updates
     private turnUpdateListeners = new Map<string, Set<(turn: Turn) => void>>();
-
+    
     constructor(dbPath: string) {
         this.dbPath = dbPath;
         this.logger = createLogger('session').child({
@@ -80,7 +80,6 @@ export class SessionManager {
 
     // Session Operations
     async createSession(opts: {
-        workspaceId?: string;
         title?: string;
         description?: string;
         metadata?: Record<string, string>;
@@ -89,7 +88,6 @@ export class SessionManager {
         const [session] = await this.db.insert(schema.sessions).values({
             title: opts.title,
             description: opts.description,
-            workspaceId: opts.workspaceId,
             metadata: JSON.stringify(opts.metadata || {})
         }).returning();
 
@@ -148,16 +146,11 @@ export class SessionManager {
     }
 
     async listSessions(opts?: {
-        workspaceId?: string;
         limit?: number;
         offset?: number;
     }): Promise<Session[]> {
         this.ensureInitialized();
         let query = this.db.select().from(schema.sessions);
-
-        if (opts?.workspaceId) {
-            query = query.where(eq(schema.sessions.workspaceId, opts.workspaceId)) as any;
-        }
 
         // TODO: Add limit/offset handling
 

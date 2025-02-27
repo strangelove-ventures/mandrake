@@ -29,6 +29,7 @@ describe('ModelsManager', () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'models-test-'));
     configPath = join(tmpDir, 'models.json');
     manager = new ModelsManager(configPath);
+    await manager.init();
   });
 
   afterEach(async () => {

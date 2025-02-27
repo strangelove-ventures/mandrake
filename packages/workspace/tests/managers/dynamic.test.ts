@@ -11,6 +11,7 @@ describe('DynamicContextManager', () => {
   beforeEach(async () => {
     testDir = await createTestDirectory('dynamic-test-');
     manager = new DynamicContextManager(join(testDir.path, 'context.json'));
+    await manager.init()
   });
 
   afterEach(async () => {
@@ -110,7 +111,13 @@ describe('DynamicContextManager', () => {
       // Corrupt the file
       await Bun.write(join(testDir.path, 'context.json'), 'invalid json');
 
-      // Should reset to defaults
+      // Now should throw an error when trying to read
+      await expect(manager.list()).rejects.toThrow();
+
+      // Init should repair the corrupted file
+      await manager.init();
+
+      // After initialization, should have empty context list
       const contexts = await manager.list();
       expect(contexts).toEqual([]);
     });

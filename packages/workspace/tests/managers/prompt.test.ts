@@ -11,6 +11,7 @@ describe('PromptManager', () => {
   beforeEach(async () => {
     testDir = await createTestDirectory('prompt-test-');
     manager = new PromptManager(join(testDir.path, 'prompt.json'));
+    await manager.init();
   });
 
   afterEach(async () => {
@@ -83,6 +84,14 @@ describe('PromptManager', () => {
   describe('Error Handling', () => {
     test('should handle missing file', async () => {
       const nonExistentManager = new PromptManager(join(testDir.path, 'nonexistent.json'));
+
+      // First call should throw because file doesn't exist
+      await expect(nonExistentManager.getConfig()).rejects.toThrow();
+
+      // Init should create the file with defaults
+      await nonExistentManager.init();
+
+      // Now we can read the config
       const config = await nonExistentManager.getConfig();
       expect(config.instructions).toInclude("Mandrake");
       expect(config.includeDateTime).toBeTrue();

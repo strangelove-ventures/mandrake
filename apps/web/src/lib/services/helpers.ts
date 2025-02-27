@@ -3,10 +3,13 @@
  */
 import { getServiceRegistry } from './registry';
 import { initializeServices } from './init';
-import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
+import { WorkspaceManager, MandrakeManager, SessionManager, DynamicContextManager, PromptManager, ModelsManager, ToolsManager, FilesManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
 import { createLogger } from '@mandrake/utils';
+
+// Re-export types for convenience
+export { WorkspaceManager, MandrakeManager, SessionManager, DynamicContextManager, PromptManager, ModelsManager, ToolsManager, FilesManager };
 
 const logger = createLogger('ServiceHelpers');
 
@@ -26,7 +29,6 @@ export async function getMandrakeManagerForRequest(): Promise<MandrakeManager> {
  */
 export async function getSessionCoordinatorForRequest(
   workspace: string,
-  path: string, // This is ignored now, we'll get it from the registry
   sessionId: string
 ): Promise<SessionCoordinator> {
   await initializeServices(); // Ensures initialization has happened
@@ -45,28 +47,29 @@ export async function getSessionCoordinatorForRequest(
  * Get a workspace manager for a specific workspace
  */
 export async function getWorkspaceManagerForRequest(
-  workspace: string,
-  path: string
+  workspace: string
 ): Promise<WorkspaceManager> {
   await initializeServices();
   const registry = getServiceRegistry();
   
   logger.debug(`Getting WorkspaceManager for workspace: ${workspace}`);
-  return registry.getWorkspaceManager(workspace, path);
+  
+  // Get the workspace through the MandrakeManager
+  const mandrakeManager = await registry.getMandrakeManager();
+  return mandrakeManager.getWorkspace(workspace);
 }
 
 /**
  * Get an MCP manager for a specific workspace
  */
 export async function getMCPManagerForRequest(
-  workspace: string,
-  path: string
+  workspace: string
 ): Promise<MCPManager> {
   await initializeServices();
   const registry = getServiceRegistry();
   
   logger.debug(`Getting MCPManager for workspace: ${workspace}`);
-  return registry.getMCPManager(workspace, path);
+  return registry.getMCPManager(workspace);
 }
 
 /**
@@ -160,4 +163,27 @@ export async function triggerResourceCleanup(): Promise<void> {
   
   logger.debug('Manually triggering resource cleanup');
   await registry.performCleanup();
+}
+
+/**
+ * Get a specific manager from a workspace
+ * @template T The type of manager to get
+ * @param workspace Workspace name
+ * @param managerKey The key of the manager in the workspace
+ * @returns The requested manager
+ */
+export async function getManagerForWorkspace<T>(workspace: string, managerKey: keyof WorkspaceManager): Promise<T> {
+  const workspaceManager = await getWorkspaceManagerForRequest(workspace);
+  return workspaceManager[managerKey] as unknown as T;
+}
+
+/**
+ * Get a specific manager from the MandrakeManager
+ * @template T The type of manager to get
+ * @param managerKey The key of the manager in the MandrakeManager
+ * @returns The requested manager
+ */
+export async function getManagerFromMandrake<T>(managerKey: keyof MandrakeManager): Promise<T> {
+  const mandrakeManager = await getMandrakeManagerForRequest();
+  return mandrakeManager[managerKey] as unknown as T;
 }

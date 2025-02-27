@@ -5,27 +5,28 @@ import { type FileInfo } from '../types/workspace/files';
 
 export class FilesManager {
   private logger;
-  private filesDir: string;
-  private inactiveDir: string;
+  private path: string;
+  private inactive: string;
 
-  constructor(wsConfigPath: string) {
-    this.filesDir = join(wsConfigPath, 'files');
-    this.inactiveDir = join(this.filesDir, 'inactive');
+  constructor(path: string) {
+    this.path = path;
+    this.inactive = join(this.path, 'inactive');
     this.logger = createLogger('workspace').child({
       meta: {
         component: 'files-manager',
-        path: wsConfigPath
+        path: this.path,
+        inactive: this.inactive
       }
     });
   }
 
   async init(): Promise<void> {
-    await mkdir(this.filesDir, { recursive: true });
-    await mkdir(this.inactiveDir, { recursive: true });
+    await mkdir(this.path, { recursive: true });
+    await mkdir(this.inactive, { recursive: true });
   }
 
   async list(active: boolean = true): Promise<FileInfo[]> {
-    const dir = active ? this.filesDir : this.inactiveDir;
+    const dir = active ? this.path : this.inactive;
     const files = await readdir(dir);
     
     const fileInfos = await Promise.all(
@@ -43,11 +44,11 @@ export class FilesManager {
 
   async get(name: string): Promise<FileInfo> {
     try {
-      const content = await readFile(join(this.filesDir, name), 'utf-8');
+      const content = await readFile(join(this.path, name), 'utf-8');
       return { name, content, active: true };
     } catch (error) {
       try {
-        const content = await readFile(join(this.inactiveDir, name), 'utf-8');
+        const content = await readFile(join(this.inactive, name), 'utf-8');
         return { name, content, active: false };
       } catch (error) {
         throw new Error(`File ${name} not found`);
@@ -57,7 +58,7 @@ export class FilesManager {
 
   async create(name: string, content: string, active: boolean = true): Promise<void> {
     await this.init();
-    const dir = active ? this.filesDir : this.inactiveDir;
+    const dir = active ? this.path : this.inactive;
     const path = join(dir, name);
 
     try {
@@ -74,16 +75,16 @@ export class FilesManager {
 
   async update(name: string, content: string): Promise<void> {
     const file = await this.get(name);
-    const dir = file.active ? this.filesDir : this.inactiveDir;
+    const dir = file.active ? this.path : this.inactive;
     await writeFile(join(dir, name), content);
   }
 
   async delete(name: string): Promise<void> {
     try {
-      await rm(join(this.filesDir, name));
+      await rm(join(this.path, name));
     } catch {
       try {
-        await rm(join(this.inactiveDir, name));
+        await rm(join(this.inactive, name));
       } catch {
         throw new Error(`File ${name} not found`);
       }
@@ -94,8 +95,8 @@ export class FilesManager {
     const file = await this.get(name);
     if (file.active === active) return;
 
-    const sourceDir = file.active ? this.filesDir : this.inactiveDir;
-    const targetDir = file.active ? this.inactiveDir : this.filesDir;
+    const sourceDir = file.active ? this.path : this.inactive;
+    const targetDir = file.active ? this.inactive : this.path;
 
     await writeFile(join(targetDir, name), file.content);
     await rm(join(sourceDir, name));

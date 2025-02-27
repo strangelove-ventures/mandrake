@@ -2,7 +2,6 @@ CREATE TABLE `sessions` (
 	`id` text PRIMARY KEY NOT NULL,
 	`title` text,
 	`description` text,
-	`workspaceId` text,
 	`metadata` text DEFAULT '{}' NOT NULL,
 	`createdAt` integer DEFAULT CURRENT_TIMESTAMP NOT NULL,
 	`updatedAt` integer DEFAULT CURRENT_TIMESTAMP NOT NULL
@@ -57,7 +56,6 @@ CREATE TABLE `turns` (
 	FOREIGN KEY (`responseId`) REFERENCES `responses`(`id`) ON UPDATE no action ON DELETE cascade
 );
 --> statement-breakpoint
-CREATE INDEX `idx_sessions_workspaceId` ON `sessions` (`workspaceId`);--> statement-breakpoint
 CREATE UNIQUE INDEX `rounds_requestId_unique` ON `rounds` (`requestId`);--> statement-breakpoint
 CREATE UNIQUE INDEX `rounds_responseId_unique` ON `rounds` (`responseId`);--> statement-breakpoint
 CREATE INDEX `idx_rounds_sessionId` ON `rounds` (`sessionId`);--> statement-breakpoint

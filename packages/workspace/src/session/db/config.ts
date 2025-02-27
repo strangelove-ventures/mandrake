@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS sessions (
   id TEXT PRIMARY KEY,
   title TEXT,
   description TEXT,
-  workspace_id TEXT,
   metadata JSON NOT NULL DEFAULT '{}',
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -81,7 +80,6 @@ CREATE TABLE IF NOT EXISTS turns (
 -- Indexes for foreign keys and common queries
 CREATE INDEX IF NOT EXISTS idx_rounds_session_id ON rounds(session_id);
 CREATE INDEX IF NOT EXISTS idx_turns_response_id ON turns(response_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_workspace_id ON sessions(workspace_id);
 `;
 
 // Initialize database with schema
@@ -96,7 +94,6 @@ export interface DBSession {
   id: string;
   title?: string;
   description?: string;
-  workspace_id?: string;
   metadata: string; // JSON string
   created_at: string;
   updated_at: string;

@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "sqlite",
-  "id": "6b7169c2-7f21-4324-b662-bb9178aee160",
+  "id": "9096e849-7978-4632-bf74-2cdcd7128461",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "tables": {
     "sessions": {
@@ -23,13 +23,6 @@
         },
         "description": {
           "name": "description",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "workspaceId": {
-          "name": "workspaceId",
           "type": "text",
           "primaryKey": false,
           "notNull": false,
@@ -60,15 +53,7 @@
           "default": "CURRENT_TIMESTAMP"
         }
       },
-      "indexes": {
-        "idx_sessions_workspaceId": {
-          "name": "idx_sessions_workspaceId",
-          "columns": [
-            "workspaceId"
-          ],
-          "isUnique": false
-        }
-      },
+      "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {}

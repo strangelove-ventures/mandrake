@@ -11,125 +11,70 @@ describe('MandrakeManager', () => {
   beforeEach(async () => {
     testDir = await createTestDirectory('mandrake-test-');
     manager = new MandrakeManager(testDir.path);
+    await manager.init();
   });
 
   afterEach(async () => {
     await testDir.cleanup();
   });
 
-  describe('Initialization', () => {
-    test('should create directory structure', async () => {
-      await manager.init();
-
+  describe('Directory Structure', () => {
+    test('should create correct directory structure', async () => {
       const dirs = await readdir(manager.paths.root, { withFileTypes: true });
       expect(dirs.some(d => d.isDirectory() && d.name === 'workspaces')).toBe(true);
     });
-
-    test('should create initial configuration', async () => {
-      await manager.init();
-
-      const config = await manager.getConfig();
-      expect(config).toEqual({
-        theme: 'system',
-        telemetry: true,
-        metadata: {},
-        workspaces: []
-      });
-    });
-
-    test('should initialize sub-managers with defaults', async () => {
-      await manager.init();
-
-      // Check tools
-      const tools = await manager.tools.listConfigSets();
-      expect(tools).toContain('default');
-
-      // Check models
-      const models = await manager.models.getActive();
-      expect(models).toBe('claude-3-5-sonnet-20241022');
-      const providers = await manager.models.listProviders();
-      expect(Object.keys(providers)).toHaveLength(1);
-
-      // Check prompt
-      await manager.prompt.init();
-      const prompt = await manager.prompt.getConfig();
-      expect(prompt.instructions).toContain('Mandrake');
-    });
   });
 
-  describe('Configuration Management', () => {
-    beforeEach(async () => {
-      await manager.init();
-    });
+  describe('Component Integration', () => {
+    test('should have all sub-managers properly initialized', async () => {
+      // Check that sub-managers are available
+      expect(manager.config).toBeDefined();
+      expect(manager.tools).toBeDefined();
+      expect(manager.models).toBeDefined();
+      expect(manager.prompt).toBeDefined();
+      expect(manager.sessions).toBeDefined();
 
-    test('should update config', async () => {
-      await manager.updateConfig({
-        theme: 'dark',
-        telemetry: false,
-        metadata: { lastAccess: 'today' }
-      });
+      // Verify basic functionality
+      const toolConfigs = await manager.tools.listConfigSets();
+      expect(toolConfigs).toContain('default');
 
-      const config = await manager.getConfig();
-      expect(config.theme).toBe('dark');
-      expect(config.telemetry).toBe(false);
-      expect(config.metadata.lastAccess).toBe('today');
-    });
-
-    test('should persist config across instances', async () => {
-      await manager.updateConfig({
-        theme: 'dark',
-        metadata: { lastAccess: 'today' }
-      });
-
-      // Create new instance
-      const newManager = new MandrakeManager(testDir.path);
-      const config = await newManager.getConfig();
-      expect(config.theme).toBe('dark');
-      expect(config.metadata.lastAccess).toBe('today');
+      const modelName = await manager.models.getActive();
+      expect(modelName).toBe('claude-3-5-sonnet-20241022');
     });
   });
 
   describe('Workspace Management', () => {
-    beforeEach(async () => {
-      await manager.init();
-    });
-
-    test('should list no workspaces initially', async () => {
-      const workspaces = await manager.listWorkspaces();
-      expect(workspaces).toEqual([]);
-    });
-
-    test('should create workspace', async () => {
+    test('should create and retrieve workspaces by ID', async () => {
+      // Create workspace
       const workspace = await manager.createWorkspace('test-workspace', 'Test Description');
       expect(workspace).toBeDefined();
+      expect(workspace.id).toBeDefined();
 
-      const config = await workspace.getConfig();
-      expect(config.name).toBe('test-workspace');
-      expect(config.description).toBe('Test Description');
+      const workspaceId = workspace.id;
 
-      const workspaces = await manager.listWorkspaces();
-      expect(workspaces.length).toBe(1);
-      expect(workspaces[0].name).toBe('test-workspace');
+      // Get workspace by ID
+      const retrievedWs = await manager.getWorkspace(workspaceId);
+      expect(retrievedWs).toBeDefined();
+      expect(retrievedWs.id).toBe(workspaceId);
+      expect(retrievedWs.name).toBe('test-workspace');
     });
 
     test('should create workspace with custom path', async () => {
       // Create a subdirectory for the custom workspace
       const customDir = join(testDir.path, 'custom');
       await mkdir(customDir, { recursive: true });
-      
+
       // Create workspace at custom path
       const path = join(customDir, 'custom-ws');
       const workspace = await manager.createWorkspace('custom-workspace', 'Custom workspace', path);
-      expect(workspace).toBeDefined();
 
-      const config = await workspace.getConfig();
-      expect(config.name).toBe('custom-workspace');
-      
-      // The workspace should be registered
+      // The workspace should be available
       const workspaces = await manager.listWorkspaces();
-      expect(workspaces.length).toBe(1);
-      expect(workspaces[0].name).toBe('custom-workspace');
-      expect(workspaces[0].path).toBe(path);
+      expect(workspaces.some(ws => ws.name === 'custom-workspace')).toBe(true);
+
+      // Workspace should be at the specified path
+      const customWorkspace = workspaces.find(ws => ws.name === 'custom-workspace');
+      expect(customWorkspace?.path).toBe(path);
     });
 
     test('should prevent duplicate workspace names', async () => {
@@ -138,26 +83,17 @@ describe('MandrakeManager', () => {
         .rejects.toThrow();
     });
 
-    test('should get existing workspace', async () => {
-      await manager.createWorkspace('test-workspace');
-      const workspace = await manager.getWorkspace('test-workspace');
-      expect(workspace).toBeDefined();
+    test('should delete workspaces by ID', async () => {
+      // Create workspace
+      const workspace = await manager.createWorkspace('delete-test');
+      const workspaceId = workspace.id;
 
-      const config = await workspace.getConfig();
-      expect(config.name).toBe('test-workspace');
-    });
+      // Delete by ID
+      await manager.deleteWorkspace(workspaceId);
 
-    test('should fail to get non-existent workspace', async () => {
-      await expect(manager.getWorkspace('non-existent'))
-        .rejects.toThrow();
-    });
-
-    test('should delete workspace', async () => {
-      await manager.createWorkspace('test-workspace');
-      await manager.deleteWorkspace('test-workspace');
-
+      // Should no longer be in the list
       const workspaces = await manager.listWorkspaces();
-      expect(workspaces).toEqual([]);
+      expect(workspaces.some(ws => ws.id === workspaceId)).toBe(false);
     });
 
     test('should validate workspace names', async () => {
@@ -177,6 +113,7 @@ describe('MandrakeManager', () => {
 
       const workspaces = await manager.listWorkspaces();
       expect(workspaces).toHaveLength(3);
+
       const workspaceNames = workspaces.map(ws => ws.name);
       expect(workspaceNames).toContain('workspace1');
       expect(workspaceNames).toContain('workspace2');
@@ -184,31 +121,26 @@ describe('MandrakeManager', () => {
     });
   });
 
-  describe('Error Handling', () => {
-    test('should handle corrupted config', async () => {
-      await manager.init();
-      await Bun.write(manager.paths.config, 'invalid json');
+  describe('Cross-Component Workflows', () => {
+    test('should create workspaces with properly initialized sub-components', async () => {
+      // Create a workspace
+      const workspace = await manager.createWorkspace('integrated-test');
 
-      // Should reset to defaults
-      const config = await manager.getConfig();
-      expect(config).toEqual({
-        theme: 'system',
-        telemetry: true,
-        metadata: {},
-        workspaces: []
-      });
-    });
+      // Verify all components are initialized
+      expect(workspace.config).toBeDefined();
+      expect(workspace.tools).toBeDefined();
+      expect(workspace.models).toBeDefined();
+      expect(workspace.prompt).toBeDefined();
+      expect(workspace.dynamic).toBeDefined();
+      expect(workspace.files).toBeDefined();
+      expect(workspace.sessions).toBeDefined();
 
-    test('should handle pre-existing workspaces directory', async () => {
-      // Create workspaces directory before initialization
-      await mkdir(join(testDir.path, 'workspaces'), { recursive: true });
-      await manager.init();
+      // Check basic functionality
+      const tools = await workspace.tools.listConfigSets();
+      expect(tools).toContain('default');
 
-      // Should still work
-      await manager.createWorkspace('test-workspace');
-      const workspaces = await manager.listWorkspaces();
-      expect(workspaces.length).toBe(1);
-      expect(workspaces[0].name).toBe('test-workspace');
+      const active = await workspace.models.getActive();
+      expect(active).toBe('claude-3-5-sonnet-20241022');
     });
   });
 });

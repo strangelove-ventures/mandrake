@@ -12,15 +12,6 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
     super(path, modelsConfigSchema, { type: 'models' });
   }
 
-  async init(): Promise<void> {
-    const current = await this.read();
-    if (Object.keys(current.providers).length === 0 &&
-      Object.keys(current.models).length === 0) {
-      await this.write(this.getDefaults());
-    }
-  }
-
-  // Provider operations
   async listProviders(): Promise<Record<string, ProviderConfig>> {
     const config = await this.read();
     return config.providers;

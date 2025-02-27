@@ -9,7 +9,7 @@ describe('FilesManager', () => {
   let manager: FilesManager;
 
   beforeEach(async () => {
-    tmpDir = await mkdtemp(join(tmpdir(), 'files-test-'));
+    tmpDir = await mkdtemp(tmpdir());
     manager = new FilesManager(tmpDir);
     await manager.init();
   });

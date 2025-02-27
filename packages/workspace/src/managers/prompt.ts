@@ -1,46 +1,23 @@
 import { readFile, writeFile } from 'fs/promises';
 import { createLogger } from '@mandrake/utils';
-import type { PromptConfig } from '../types/workspace/prompt';
+import { type PromptConfig, promptConfigSchema } from '../types/workspace/prompt';
+import { BaseConfigManager } from './base';
 
-export class PromptManager {
-  private logger;
+export class PromptManager extends BaseConfigManager<PromptConfig> {
 
-  constructor(private path: string) {
-    this.logger = createLogger('workspace').child({ 
-      meta: {
-        component: 'prompt-manager',
-        type: 'prompt'
-      }
-    });
-  }
-
-  async init(): Promise<void> {
-    try {
-      await this.getConfig();
-    } catch (error) {
-      this.logger.info('Initializing prompt config with defaults', { path: this.path });
-      await this.updateConfig(this.getDefaults());
-    }
+  constructor(public path: string) {
+    super(path, promptConfigSchema, { type: 'prompt' });
   }
 
   async getConfig(): Promise<PromptConfig> {
-    try {
-      const content = await readFile(this.path, 'utf-8');
-      return JSON.parse(content);
-    } catch (error) {
-      if ((error as any)?.code === 'ENOENT') {
-        this.logger.info('Prompt config not found, will create with defaults', { path: this.path });
-        return this.getDefaults();
-      }
-      throw error;
-    }
+    return this.read();
   }
 
   async updateConfig(config: PromptConfig): Promise<void> {
-    await writeFile(this.path, JSON.stringify(config, null, 2));
+    return this.write(config);
   }
 
-  private getDefaults(): PromptConfig {
+  getDefaults(): PromptConfig {
     return {
       instructions: `You are Mandrake, a seasoned AI assistant with deep expertise in software development and system operations. You've been "on deck" long enough to know every nook and cranny of the systems you work with. You engage with users through Sessions, focused conversations that are enriched with tools and anchored to Workspaces. Each Workspace is like a well organized ship's cabin, containing all the tools, files, and context needed for the task at hand.
 

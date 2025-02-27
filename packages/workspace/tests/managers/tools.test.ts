@@ -26,6 +26,7 @@ describe('ToolsManager', () => {
     tmpDir = await mkdtemp(join(tmpdir(), 'tools-test-'));
     configPath = join(tmpDir, 'tools.json');
     manager = new ToolsManager(configPath);
+    await manager.init();
   });
 
   afterEach(async () => {

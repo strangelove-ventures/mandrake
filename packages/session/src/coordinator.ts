@@ -10,7 +10,7 @@ import { type SystemPromptBuilderConfig, SystemPromptBuilder } from './prompt/bu
 export class SessionCoordinator {
   private logger: Logger;
 
-  constructor(private readonly opts: SessionCoordinatorOptions) {
+  constructor(readonly opts: SessionCoordinatorOptions) {
     this.logger = opts.logger || createLogger('SessionCoordinator');
   }
 
@@ -74,14 +74,14 @@ export class SessionCoordinator {
           });
 
           await this.opts.sessionManager.updateTurn(currentTurn.id, {
-            toolCalls: JSON.stringify({
+            toolCalls: {
               call: {
                 serverName: tool.serverName,
                 methodName: tool.methodName,
                 arguments: tool.arguments
               },
-              response: null // Will be filled after execution
-            }),
+              response: null
+            },
             status: 'completed',
             streamEndTime: Math.floor(Date.now() / 1000)
           });
@@ -101,14 +101,14 @@ export class SessionCoordinator {
 
 
             await this.opts.sessionManager.updateTurn(currentTurn.id, {
-              toolCalls: JSON.stringify({
+              toolCalls: {
                 call: {
                   serverName: tool.serverName,
                   methodName: tool.methodName,
                   arguments: tool.arguments
                 },
                 response: result
-              })
+              }
             });
 
             conversationHistory.push({
@@ -124,7 +124,7 @@ export class SessionCoordinator {
             });
 
             await this.opts.sessionManager.updateTurn(currentTurn.id, {
-              toolCalls: JSON.stringify({
+              toolCalls: {
                 call: {
                   serverName: tool.serverName,
                   methodName: tool.methodName,
@@ -133,7 +133,7 @@ export class SessionCoordinator {
                 response: {
                   error: (error as Error).message
                 }
-              })
+              }
             });
 
             // Add assistant's message with the tool call and error to conversation history
