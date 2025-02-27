@@ -67,7 +67,7 @@ export async function getMCPManagerForRequest(
 /**
  * List all available workspaces
  */
-export async function listWorkspacesForRequest(): Promise<string[]> {
+export async function listWorkspacesForRequest(): Promise<{name: string; path: string; description?: string; lastOpened?: string;}[]> {
   await initializeServices();
   const registry = getServiceRegistry();
   const mandrakeManager = await registry.getMandrakeManager();
@@ -89,6 +89,22 @@ export async function createWorkspaceForRequest(
   
   logger.debug(`Creating workspace: ${name}`);
   return mandrakeManager.createWorkspace(name, description);
+}
+
+/**
+ * Adopt an existing workspace from a specific location
+ */
+export async function adoptWorkspaceForRequest(
+  name: string,
+  path: string,
+  description?: string
+): Promise<WorkspaceManager> {
+  await initializeServices();
+  const registry = getServiceRegistry();
+  const mandrakeManager = await registry.getMandrakeManager();
+  
+  logger.debug(`Adopting workspace: ${name} from path: ${path}`);
+  return mandrakeManager.adoptWorkspace(name, path, description);
 }
 
 /**

@@ -78,7 +78,12 @@ describe('Service Helpers', () => {
       
       // Initialize workspace first
       const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       const mcpManager = await getMCPManagerForRequest(workspaceName, tempDirPath);
       
@@ -106,7 +111,12 @@ describe('Service Helpers', () => {
       
       // Initialize workspace first
       const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       const coordinator = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
       
@@ -137,7 +147,12 @@ describe('Service Helpers', () => {
       
       // Initialize workspace first
       const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       const coordinator1 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
       const coordinator2 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
@@ -153,7 +168,12 @@ describe('Service Helpers', () => {
       
       // Initialize workspace
       const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       // Create a session
       const coordinator = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
@@ -202,7 +222,12 @@ describe('Service Helpers', () => {
       
       // Initialize workspace
       const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       // Create MCP manager
       const mcpManager = await getMCPManagerForRequest(workspaceName, tempDirPath);

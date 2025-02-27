@@ -6,7 +6,7 @@ import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator, type SessionMetadata } from '@mandrake/session';
 import { createLogger } from '@mandrake/utils';
 import { IServiceRegistry, ServiceActivity } from './types';
-import { join } from 'path';
+import { join, dirname, basename } from 'path';
 
 const logger = createLogger('ServiceRegistry');
 
@@ -56,18 +56,58 @@ class ServiceRegistry implements IServiceRegistry {
     if (!this.workspaceManagers.has(name)) {
       // Check if this is a valid workspace
       try {
-        // Use MandrakeManager if possible to get the workspace
+        // Use MandrakeManager to get the workspace
         const mandrakeManager = await this.getMandrakeManager();
-        const manager = await mandrakeManager.getWorkspace(name);
-        this.workspaceManagers.set(name, manager);
         
-        logger.info(`Retrieved WorkspaceManager for workspace: ${name}`, { workspace: name });
+        try {
+          // Try to get the workspace from the registry
+          const manager = await mandrakeManager.getWorkspace(name);
+          this.workspaceManagers.set(name, manager);
+          logger.info(`Retrieved WorkspaceManager for workspace: ${name}`, { workspace: name });
+        } catch (error) {
+          // If not found and path provided, create a new workspace
+          if (path) {
+            // First attempt to create the workspace
+            logger.info(`Creating new workspace: ${name} at path: ${path}`, { workspace: name, path });
+            try {
+              // Try creating the workspace through the MandrakeManager
+              const manager = await mandrakeManager.createWorkspace(name, undefined, path);
+              this.workspaceManagers.set(name, manager);
+            } catch (createError) {
+              // If creation fails, it might be because the workspace already exists but isn't registered
+              // In that case, create the WorkspaceManager directly and initialize it
+              logger.info(`Initializing workspace directly: ${name} at path: ${path}`, { workspace: name, path });
+              const workspaceParentDir = dirname(path);
+              const workspaceName = basename(path);
+              const manager = new WorkspaceManager(workspaceParentDir, workspaceName);
+              
+              try {
+                // Try to get config to check if it's already initialized
+                await manager.getConfig();
+              } catch {
+                // If not initialized, initialize it
+                await manager.init();
+              }
+              
+              // Register it with MandrakeManager
+              const wsConfig = await manager.getConfig();
+              await mandrakeManager.registerWorkspace({
+                id: wsConfig.id,
+                name,
+                path,
+                description: wsConfig.description,
+                lastOpened: new Date().toISOString()
+              });
+              
+              this.workspaceManagers.set(name, manager);
+            }
+          } else {
+            throw error;
+          }
+        }
       } catch (error) {
-        // Fall back to direct creation if MandrakeManager can't find it
-        logger.info(`Creating new WorkspaceManager for workspace: ${name}`, { workspace: name, path });
-        const manager = new WorkspaceManager(path, name);
-        await manager.init();
-        this.workspaceManagers.set(name, manager);
+        logger.error(`Failed to get or create workspace: ${name}`, { workspace: name, path, error });
+        throw new Error(`Failed to get or create workspace: ${name}: ${error instanceof Error ? error.message : String(error)}`);
       }
       
       // Track activity

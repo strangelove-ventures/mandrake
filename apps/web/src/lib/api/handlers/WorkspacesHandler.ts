@@ -7,7 +7,8 @@ import {
   getMandrakeManagerForRequest,
   listWorkspacesForRequest,
   createWorkspaceForRequest,
-  deleteWorkspaceForRequest
+  deleteWorkspaceForRequest,
+  adoptWorkspaceForRequest
 } from '../../services/helpers';
 
 // Schema for creating a new workspace
@@ -20,6 +21,14 @@ const createWorkspaceSchema = z.object({
 // Schema for updating a workspace
 const updateWorkspaceSchema = z.object({
   name: z.string().min(1).regex(/^[a-zA-Z0-9-_]+$/, 'Workspace name must contain only letters, numbers, hyphens, and underscores').optional(),
+  description: z.string().optional(),
+  metadata: z.record(z.string()).optional()
+});
+
+// Schema for adopting an existing workspace
+const adoptWorkspaceSchema = z.object({
+  name: z.string().min(1).regex(/^[a-zA-Z0-9-_]+$/, 'Workspace name must contain only letters, numbers, hyphens, and underscores'),
+  path: z.string().min(1),
   description: z.string().optional(),
   metadata: z.record(z.string()).optional()
 });
@@ -49,14 +58,14 @@ export class WorkspacesHandler {
    */
   async listWorkspaces(): Promise<any[]> {
     try {
-      const workspaceNames = await listWorkspacesForRequest();
+      const workspaces = await listWorkspacesForRequest();
       
       // Get details for each workspace
       const manager = await this.getMandrakeManager();
-      const workspaces = await Promise.all(
-        workspaceNames.map(async (name) => {
+      const workspaceConfigs = await Promise.all(
+        workspaces.map(async (ws) => {
           try {
-            const workspaceManager = await manager.getWorkspace(name);
+            const workspaceManager = await manager.getWorkspace(ws.name);
             return workspaceManager.getConfig();
           } catch (error) {
             // Skip workspaces that can't be loaded
@@ -66,7 +75,7 @@ export class WorkspacesHandler {
       );
       
       // Filter out any null results
-      return workspaces.filter(Boolean);
+      return workspaceConfigs.filter(Boolean);
     } catch (error) {
       throw new ApiError(
         `Failed to list workspaces: ${error instanceof Error ? error.message : String(error)}`,
@@ -141,6 +150,46 @@ export class WorkspacesHandler {
       if (error instanceof ApiError) throw error;
       throw new ApiError(
         `Failed to create workspace: ${error instanceof Error ? error.message : String(error)}`,
+        ErrorCode.INTERNAL_ERROR,
+        500,
+        error instanceof Error ? error : undefined
+      );
+    }
+  }
+  
+  /**
+   * Adopts an existing workspace from a different location
+   * @param req HTTP request with workspace data
+   * @returns Adopted workspace
+   */
+  async adoptWorkspace(req: NextRequest): Promise<any> {
+    try {
+      const data = await validateBody(req, adoptWorkspaceSchema);
+      
+      try {
+        const workspaceManager = await adoptWorkspaceForRequest(data.name, data.path, data.description);
+        
+        // If metadata is provided, update the workspace config
+        if (data.metadata) {
+          await workspaceManager.updateConfig({ metadata: data.metadata });
+        }
+        
+        return workspaceManager.getConfig();
+      } catch (err) {
+        if (err instanceof Error && err.message.includes('already exists')) {
+          throw new ApiError(
+            `Workspace already exists: ${data.name}`,
+            ErrorCode.CONFLICT,
+            409,
+            err
+          );
+        }
+        throw err;
+      }
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(
+        `Failed to adopt workspace: ${error instanceof Error ? error.message : String(error)}`,
         ErrorCode.INTERNAL_ERROR,
         500,
         error instanceof Error ? error : undefined

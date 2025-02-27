@@ -7,6 +7,7 @@ import { createTempDir, cleanupTempDir } from '../utils/test-dir';
 import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
+import { join } from 'path';
 
 describe('ServiceRegistry', () => {
   let tempDirPath: string;
@@ -64,12 +65,16 @@ describe('ServiceRegistry', () => {
     
     test('should create different instances for different workspaces', async () => {
       const registry = getServiceRegistry();
+      const mgr = await registry.getMandrakeManager()
+      await mgr.init()
       const workspace1 = 'workspace1';
       const workspace2 = 'workspace2';
+      await mgr.createWorkspace('workspace1', 'test workspace 1', join(tempDirPath, workspace1));
+      await mgr.createWorkspace('workspace2', 'test workspace 2', join(tempDirPath, workspace2));
       
       // Create two different workspace managers
-      const manager1 = await registry.getWorkspaceManager(workspace1, tempDirPath);
-      const manager2 = await registry.getWorkspaceManager(workspace2, tempDirPath);
+      const manager1 = await registry.getWorkspaceManager(workspace1, join(tempDirPath, workspace1));
+      const manager2 = await registry.getWorkspaceManager(workspace2, join(tempDirPath, workspace2));
       
       // Should be different instances
       expect(manager1).not.toBe(manager2);
@@ -89,7 +94,12 @@ describe('ServiceRegistry', () => {
       
       // Initialize the workspace first
       const workspace = await registry.getWorkspaceManager(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       // Create an MCP manager
       const mcpManager1 = await registry.getMCPManager(workspaceName, tempDirPath);
@@ -131,7 +141,12 @@ describe('ServiceRegistry', () => {
       
       // Initialize the workspace
       const workspace = await registry.getWorkspaceManager(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       // Create a session coordinator
       const coordinator1 = await registry.getSessionCoordinator(workspaceName, tempDirPath, sessionId);
@@ -154,7 +169,12 @@ describe('ServiceRegistry', () => {
       
       // Initialize the workspace
       const workspace = await registry.getWorkspaceManager(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       // Create two different session coordinators
       const coordinator1 = await registry.getSessionCoordinator(workspaceName, tempDirPath, session1);
@@ -173,7 +193,12 @@ describe('ServiceRegistry', () => {
       
       // Initialize the workspace
       const workspace = await registry.getWorkspaceManager(workspaceName, tempDirPath);
-      await workspace.init('Test workspace');
+      // Make sure the workspace is initialized
+      try {
+        await workspace.getConfig();
+      } catch (error) {
+        await workspace.init('Test workspace');
+      }
       
       // Create a session coordinator
       const coordinator = await registry.getSessionCoordinator(workspaceName, tempDirPath, sessionId);
