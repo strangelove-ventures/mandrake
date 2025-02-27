@@ -42,7 +42,7 @@ The MandrakeManager stores configuration in `mandrake.json` with the following s
 
 ### Important Note
 
-All workspace creation should happen through the MandrakeManager to ensure proper registration in the central registry. While the system supports workspaces in the `~/.mandrake/workspaces/` directory, new workspaces can be created in any location on the filesystem as long as they are properly registered through the MandrakeManager. The MandrakeManager can also adopt workspaces that are created elsewhere and add them to the registry.
+All workspace operations must go through the MandrakeManager to ensure proper registration in the central registry. Each workspace is identified by a unique UUID, which is used consistently throughout the system. While the user-friendly name is important for display and filesystem organization, the UUID is the primary identifier for all operations.
 
 ## Core Concepts
 
@@ -67,16 +67,19 @@ A Mandrake workspace follows a well-defined directory structure:
 
 ### Manager Hierarchy
 
-The package implements a hierarchical manager pattern:
+The package implements a hierarchical manager pattern with dedicated configuration managers:
 
 - `MandrakeManager`: Manages global settings and workspace registration
-  - Maintains a central registry of all workspaces in `mandrake.json`
+  - Uses `MandrakeConfigManager` to handle configuration persistence
+  - Maintains a central registry of all workspaces
   - Controls global configurations (theme, telemetry, etc.)
   - Acts as the single entry point for workspace creation, access, and deletion
-  - Provides backward compatibility for legacy workspace locations
+
 - `WorkspaceManager`: The top-level manager for a specific workspace
-  - Manages workspace-specific configurations and resources
+  - Uses `WorkspaceConfigManager` to handle configuration persistence
   - Coordinates all sub-managers for the workspace context
+  - Manages workspace-specific resources
+
 - Sub-managers:
   - `ToolsManager`: Manages MCP tool configurations
   - `ModelsManager`: Manages LLM provider configurations
@@ -85,37 +88,22 @@ The package implements a hierarchical manager pattern:
   - `FilesManager`: Manages workspace files
   - `SessionManager`: Manages conversation history using SQLite/Drizzle ORM
 
-### Mandrake Configuration
+### Configuration Management
 
-The `MandrakeManager` stores global configuration in `~/.mandrake/mandrake.json` with the following structure:
+Each manager uses a dedicated configuration manager to handle persistence:
 
-```json
-{
-  "theme": "light" | "dark" | "system",
-  "telemetry": true,
-  "metadata": { 
-    "key": "value"
-  },
-  "workspaces": [
-    {
-      "id": "uuid",
-      "name": "workspace-name",
-      "path": "/absolute/path/to/workspace",
-      "description": "Optional workspace description",
-      "lastOpened": "ISO8601 datetime string"
-    },
-    // ... additional workspaces
-  ]
-}
-```
+- `BaseConfigManager`: Abstract base class for all configuration managers
+  - Provides file reading, writing, and validation
+  - Handles error conditions and default configurations
+  - Works with Zod schemas for type safety
 
-The `workspaces` array serves as the central registry for all workspaces managed by Mandrake. Each workspace entry contains:
+- `MandrakeConfigManager`: Manages the central configuration
+  - Handles workspace registration and lookup by ID or name
+  - Tracks workspace timestamps and metadata
 
-- `id`: Unique identifier for the workspace
-- `name`: User-friendly name (must be alphanumeric with dashes/underscores)
-- `path`: Absolute filesystem path to the workspace
-- `description`: Optional description
-- `lastOpened`: Timestamp tracking when the workspace was last accessed
+- `WorkspaceConfigManager`: Manages workspace-specific configuration
+  - Ensures ID consistency
+  - Provides access to workspace metadata
 
 ### Session State Model
 
@@ -134,21 +122,28 @@ The Workspace package is built around a modular architecture:
 1. **Base Configuration Layer**
    - `BaseConfigManager`: Abstract class providing JSON file operations
    - Uses Zod schemas for validation and type safety
+   - Implements idempotent initialization and error handling
 
-2. **Specialized Managers**
-   - Each manager extends `BaseConfigManager` for its specific domain
-   - Managers provide high-level operations (create, read, update, delete)
+2. **Configuration Managers**
+   - `MandrakeConfigManager`: Handles global configuration
+   - `WorkspaceConfigManager`: Handles workspace-specific configuration
+   - Each specialized manager has methods tailored to its domain
 
-3. **Database Layer**
+3. **Resource Managers**
+   - Each manager provides domain-specific operations
+   - Managers rely on configuration managers for persistence
+   - Clean separation of concerns
+
+4. **Database Layer**
    - Drizzle ORM with SQLite for session storage
-   - Migrations for schema versioning
+   - Sessions linked to workspaces via workspace ID
    - Structured queries for efficient data access
 
-4. **File System Interface**
+5. **File System Interface**
    - Path utilities for consistent directory structure
    - File system operations with proper error handling
 
-5. **Streaming Support**
+6. **Streaming Support**
    - Event-based system for real-time turn updates
    - Tool call handling with structured schema
    - Methods for tracking streaming status
@@ -168,6 +163,7 @@ await manager.init();
 
 // Create a workspace in the default location (under ~/.mandrake/workspaces/)
 const workspace = await manager.createWorkspace('my-project', 'My project description');
+const workspaceId = workspace.id; // Store this ID for future reference
 
 // Create a workspace in a custom location
 const customWorkspace = await manager.createWorkspace(
@@ -178,20 +174,17 @@ const customWorkspace = await manager.createWorkspace(
 
 // List all registered workspaces
 const workspaces = await manager.listWorkspaces();
-// This returns all workspaces registered in mandrake.json, including:
-// - Workspaces in the default ~/.mandrake/workspaces/ location
-// - Workspaces in custom locations
-// - Legacy workspaces that have been migrated to the registry
+// Returns array with: { id, name, path, description, lastOpened }
 
-// Get a specific workspace
-const existingWorkspace = await manager.getWorkspace('my-project');
+// Get a workspace by ID (recommended)
+const existingWorkspace = await manager.getWorkspace(workspaceId);
 // This will automatically update the lastOpened timestamp in the registry
 
-// Delete a workspace (removes from registry and deletes files)
-await manager.deleteWorkspace('my-project');
+// Delete a workspace by ID
+await manager.deleteWorkspace(workspaceId);
 
 // Unregister a workspace (removes from registry but keeps files)
-await manager.unregisterWorkspace('my-project');
+await manager.unregisterWorkspace(workspaceId);
 
 // Adopt an existing workspace from another location
 const adoptedWorkspace = await manager.adoptWorkspace(
@@ -199,16 +192,6 @@ const adoptedWorkspace = await manager.adoptWorkspace(
   '/path/to/existing/workspace',
   'Optional description'
 );
-```
-
-### Legacy Workspace Detection
-
-The MandrakeManager automatically discovers workspaces in the legacy `~/.mandrake/workspaces/` directory and adds them to the registry:
-
-```typescript
-// This will find and register any workspaces in ~/.mandrake/workspaces/
-// that aren't already in the registry
-const workspaces = await manager.listWorkspaces();
 ```
 
 ### Working with a Workspace
@@ -220,15 +203,18 @@ import { MandrakeManager } from '@mandrake/workspace';
 const manager = new MandrakeManager('~/.mandrake');
 await manager.init();
 
-// Get an existing workspace through the MandrakeManager
-const workspace = await manager.getWorkspace('my-project');
+// Get an existing workspace by ID through the MandrakeManager
+const workspace = await manager.getWorkspace(workspaceId);
 
 // Or create a new one if needed
 // const workspace = await manager.createWorkspace('new-project', 'Project description');
 
+// Access the workspace ID
+console.log(`Working with workspace ID: ${workspace.id}`);
+
 // Access and update workspace configuration
-const config = await workspace.getConfig();
-await workspace.updateConfig({ description: 'Updated description', metadata: { key: 'value' } });
+const config = await workspace.config.getConfig();
+await workspace.config.updateConfig({ description: 'Updated description', metadata: { key: 'value' } });
 
 // Work with sub-managers
 // Configure LLM models
@@ -247,7 +233,9 @@ await workspace.dynamic.create({
 });
 ```
 
-### Session and Streaming Management
+### Session Management
+
+Sessions are now implicitly associated with their workspace through the database file, removing the need to specify workspaceId in most operations:
 
 ```typescript
 // Create a session
@@ -262,7 +250,7 @@ const { round, request, response } = await workspace.sessions.createRound({
   content: 'Help me structure my new Node.js project'
 });
 
-// Create an initial streaming turn
+// Create a streaming turn
 const turn = await workspace.sessions.createTurn({
   responseId: response.id,
   content: 'I will help you structure',
@@ -285,49 +273,6 @@ await workspace.sessions.updateTurn(turn.id, {
   rawResponse: 'I will help you structure your Node.js project.',
 });
 
-// Add a tool call
-await workspace.sessions.updateTurn(turn.id, {
-  content: 'I will help you structure your Node.js project. Let me check your package.json first.',
-  toolCalls: {
-    call: {
-      serverName: 'fs',
-      methodName: 'readFile',
-      arguments: { path: 'package.json' }
-    },
-    response: null
-  }
-});
-
-// Update with tool call response
-await workspace.sessions.updateTurn(turn.id, {
-  content: 'I will help you structure your Node.js project. I see you are using Express.',
-  toolCalls: {
-    call: {
-      serverName: 'fs',
-      methodName: 'readFile',
-      arguments: { path: 'package.json' }
-    },
-    response: { dependencies: { express: '^4.18.2' } }
-  },
-  status: 'completed',
-  streamEndTime: Math.floor(Date.now() / 1000)
-});
-
-// Clean up listener
-removeListener();
-
-// Track all streaming turns for a response
-const stopTracking = workspace.sessions.trackStreamingTurns(response.id, (turn) => {
-  console.log(`Turn ${turn.id} updated:`, turn.status, turn.content.length);
-});
-
-// Check streaming status
-const status = await workspace.sessions.getStreamingStatus(response.id);
-console.log('Is streaming complete?', status.isComplete);
-
-// Stop tracking when done
-stopTracking();
-
 // Get full session history with parsed tool calls
 const history = await workspace.sessions.renderSessionHistory(session.id);
 ```
@@ -338,6 +283,10 @@ const history = await workspace.sessions.renderSessionHistory(session.id);
 
 ```typescript
 class MandrakeManager {
+  // Properties
+  readonly config: MandrakeConfigManager;
+  readonly paths: MandrakePaths;
+  
   // Sub-managers
   readonly tools: ToolsManager;
   readonly models: ModelsManager;
@@ -345,19 +294,16 @@ class MandrakeManager {
   readonly sessions: SessionManager;
   
   // Initialization
+  constructor(root: string);
   async init(): Promise<void>;
   
-  // Workspace management
+  // Workspace management by ID
   async createWorkspace(name: string, description?: string, path?: string): Promise<WorkspaceManager>;
-  async getWorkspace(name: string): Promise<WorkspaceManager>;
-  async listWorkspaces(): Promise<{ name: string; path: string; description?: string; }[]>;
-  async deleteWorkspace(name: string): Promise<void>;
-  async unregisterWorkspace(name: string): Promise<void>;
+  async getWorkspace(id: string): Promise<WorkspaceManager>;
+  async listWorkspaces(): Promise<{ id: string; name: string; path: string; description?: string; lastOpened?: string; }[]>;
+  async deleteWorkspace(id: string): Promise<void>;
+  async unregisterWorkspace(id: string): Promise<void>;
   async adoptWorkspace(name: string, workspacePath: string, description?: string): Promise<WorkspaceManager>;
-  
-  // Config management
-  async getConfig(): Promise<MandrakeConfig>;
-  async updateConfig(updates: Partial<MandrakeConfig>): Promise<void>;
 }
 ```
 
@@ -366,7 +312,10 @@ class MandrakeManager {
 ```typescript
 class WorkspaceManager {
   // Properties
+  readonly id: string;
   readonly name: string;
+  readonly paths: WorkspacePaths;
+  readonly config: WorkspaceConfigManager;
   
   // Sub-managers
   readonly tools: ToolsManager;
@@ -377,9 +326,39 @@ class WorkspaceManager {
   readonly sessions: SessionManager;
   
   // Initialization
+  constructor(path: string, name: string, id: string);
   async init(description?: string): Promise<void>;
+}
+```
+
+### Configuration Managers
+
+```typescript
+abstract class BaseConfigManager<T> {
+  // Core operations
+  protected async read(): Promise<T>;
+  protected async write(data: T): Promise<void>;
+  public async exists(): Promise<boolean>;
+  public async init(): Promise<void>;
+  protected abstract getDefaults(): T;
+}
+
+class MandrakeConfigManager extends BaseConfigManager<MandrakeConfig> {
+  // Registry operations
+  async registerWorkspace(workspace: RegisteredWorkspace): Promise<void>;
+  async unregisterWorkspaceById(id: string): Promise<RegisteredWorkspace | null>;
+  async updateWorkspaceTimestamp(id: string): Promise<boolean>;
+  async findWorkspaceById(id: string): Promise<RegisteredWorkspace | null>;
+  async findWorkspaceByName(name: string): Promise<RegisteredWorkspace | null>;
+  async listWorkspaces(): Promise<RegisteredWorkspace[]>;
   
-  // Config management
+  // Config operations
+  async getConfig(): Promise<MandrakeConfig>;
+  async updateConfig(updates: Partial<MandrakeConfig>): Promise<void>;
+}
+
+class WorkspaceConfigManager extends BaseConfigManager<Workspace> {
+  // Config operations
   async getConfig(): Promise<Workspace>;
   async updateConfig(updates: Partial<Workspace>): Promise<void>;
 }
@@ -391,11 +370,12 @@ class WorkspaceManager {
 class SessionManager {
   // Initialization
   async init(): Promise<void>;
+  setWorkspaceId(id: string): void;
   
   // Session operations
   async createSession(opts: { title?: string; description?: string; metadata?: Record<string, string>; }): Promise<Session>;
   async getSession(id: string): Promise<Session>;
-  async listSessions(opts?: { workspaceId?: string; limit?: number; offset?: number; }): Promise<Session[]>;
+  async listSessions(opts?: { limit?: number; offset?: number; }): Promise<Session[]>;
   async updateSession(id: string, updates: { title?: string; description?: string; metadata?: Record<string, string>; }): Promise<Session>;
   async deleteSession(id: string): Promise<void>;
   

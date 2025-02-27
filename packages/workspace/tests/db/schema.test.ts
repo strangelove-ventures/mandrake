@@ -149,8 +149,8 @@ describe('Database Schema', () => {
       expect(firstRound.request.content).toBe('First request');
       expect(firstRound.response.turns).toHaveLength(1);
       const parsedToolCalls = firstRound.response.turns[0].parsedToolCalls;
-      expect(parsedToolCalls.call.serverName).toBe('test_server');
-      expect(parsedToolCalls.call.methodName).toBe('test_tool');
+      expect((parsedToolCalls.call as any).serverName).toBe('test_server');
+      expect((parsedToolCalls.call as any).methodName).toBe('test_tool');
       expect(parsedToolCalls.response.success).toBe(true);
 
       // Verify second round
