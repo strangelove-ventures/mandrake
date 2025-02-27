@@ -12,7 +12,7 @@ export const mandrakeConfigSchema = z.object({
   theme: z.enum(['light', 'dark', 'system']),
   telemetry: z.boolean(),
   metadata: z.record(z.string(), z.string()),
-  workspaces: z.array(registeredWorkspaceSchema).default([])
+  workspaces: z.array(registeredWorkspaceSchema).default([]).optional()
 });
 
 export type RegisteredWorkspace = z.infer<typeof registeredWorkspaceSchema>;

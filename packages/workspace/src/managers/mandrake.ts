@@ -22,7 +22,7 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
 
   constructor(root: string) {
     const paths = getMandrakePaths(root);
-    super(paths.config, mandrakeConfigSchema, { type: 'mandrake-config', workspaces: [] });
+    super(paths.config, mandrakeConfigSchema, { type: 'mandrake-config'});
 
     this.paths = paths;
     this.logger = createLogger('workspace').child({
@@ -84,9 +84,13 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
   async createWorkspace(name: string, description?: string, path?: string): Promise<WorkspaceManager> {
     validateWorkspaceName(name);
 
-    // Check if workspace name already exists
     const config = await this.getConfig();
-    if (config.workspaces.some(ws => ws.name === name)) {
+    if (!config.workspaces) {
+      config.workspaces = [];
+    }
+    
+    // Check if workspace name already exists
+    if ((config.workspaces).some(ws => ws.name === name)) {
       throw new Error(`Workspace "${name}" already exists`);
     }
 
@@ -120,6 +124,9 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
     lastOpened?: string;
   }): Promise<void> {
     const config = await this.getConfig();
+    if (!config.workspaces) {
+      config.workspaces = [];
+    }
 
     // Check if workspace already exists
     const existingIndex = config.workspaces.findIndex(ws => ws.name === workspace.name);
@@ -144,8 +151,12 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
   async getWorkspace(name: string): Promise<WorkspaceManager> {
     validateWorkspaceName(name);
 
-    // Find workspace in registry
     const config = await this.getConfig();
+    if (!config.workspaces) {
+      config.workspaces = [];
+    }
+    
+    // Find workspace in registry
     const workspaceInfo = config.workspaces.find(ws => ws.name === name);
 
     if (!workspaceInfo) {
@@ -183,6 +194,10 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
 
   async updateWorkspaceTimestamp(name: string): Promise<void> {
     const config = await this.getConfig();
+    if (!config.workspaces) {
+      config.workspaces = [];
+    }
+
     const workspaceIndex = config.workspaces.findIndex(ws => ws.name === name);
 
     if (workspaceIndex >= 0) {
@@ -196,6 +211,10 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
 
     // Find workspace in registry
     const config = await this.getConfig();
+    if (!config.workspaces) {
+      config.workspaces = [];
+    }
+
     const workspaceInfo = config.workspaces.find(ws => ws.name === name);
 
     if (!workspaceInfo) {
@@ -234,6 +253,10 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
 
     // Find workspace in registry
     const config = await this.getConfig();
+    if (!config.workspaces) {
+      config.workspaces = [];
+    }
+
     const workspaceInfo = config.workspaces.find(ws => ws.name === name);
 
     if (!workspaceInfo) {
@@ -255,6 +278,10 @@ export class MandrakeManager extends BaseConfigManager<MandrakeConfig> {
   }[]> {
     // Get registered workspaces
     const config = await this.getConfig();
+    if (!config.workspaces) {
+      config.workspaces = [];
+    }
+
     const registeredWorkspaces = config.workspaces;
 
     // For backward compatibility, also check legacy workspaces directory
