@@ -1,6 +1,3 @@
-import { createModelRoutes } from '@/lib/api/factories/createModelRoutes';
+import { createActiveModelRoutes } from '@/lib/api/factories/models';
 
-/**
- * Route handlers for specific workspace-level model
- */
-export const { GET, PUT, DELETE } = createModelRoutes(true);
+export const { GET, PUT } = createActiveModelRoutes();

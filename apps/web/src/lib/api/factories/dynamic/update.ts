@@ -67,8 +67,9 @@ export async function updateContext(
       ...body
     };
     
-    const result = await dynamicManager.update(params.contextId, updated);
-    return createApiResponse(result);
+    await dynamicManager.update(params.contextId, updated);
+    const { id, ...restUpdated } = updated;
+    return createApiResponse({ id: params.contextId, ...restUpdated });
   } catch (error) {
     if (!(error instanceof ApiError)) {
       throw new ApiError(

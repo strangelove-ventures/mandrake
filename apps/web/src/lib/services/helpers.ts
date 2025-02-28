@@ -9,6 +9,9 @@ export { WorkspaceManager, MandrakeManager, SessionManager, DynamicContextManage
 
 const logger = createLogger('ServiceHelpers');
 
+// Keep a singleton for the system MCP manager
+let systemMCPManager: MCPManager | null = null;
+
 /**
  * Get the MandrakeManager for system-level operations
  */
@@ -54,12 +57,55 @@ export async function getWorkspaceManagerForRequest(
 }
 
 /**
+ * Get a system-level MCP manager
+ * This manager is shared across system-level operations
+ */
+export async function getSystemMCPManagerForRequest(): Promise<MCPManager> {
+  if (!systemMCPManager) {
+    logger.debug('Creating new system-level MCPManager');
+    
+    // Get mandrake tools manager to get tool configs
+    const mandrakeManager = await getMandrakeManagerForRequest();
+    const toolsManager = mandrakeManager.tools;
+    
+    // Create new MCP manager
+    systemMCPManager = new MCPManager();
+    
+    // Start servers from active set
+    try {
+      const activeSet = await toolsManager.getActive();
+      const tools = await toolsManager.getConfigSet(activeSet);
+      
+      for (const [name, config] of Object.entries(tools)) {
+        if (!config.disabled) {
+          try {
+            await systemMCPManager.startServer(name, config);
+            logger.debug(`Started system server: ${name}`);
+          } catch (error) {
+            logger.error(`Failed to start system server ${name}:`, (error as Error));
+          }
+        }
+      }
+    } catch (error) {
+      logger.error('Failed to initialize system MCP servers:', (error as Error));
+    }
+  }
+  
+  return systemMCPManager;
+}
+
+/**
  * Get an MCP manager for a specific workspace
  * @param workspaceId Unique identifier for the workspace
  */
 export async function getMCPManagerForRequest(
-  workspaceId: string
+  workspaceId?: string
 ): Promise<MCPManager> {
+  // If no workspace ID is provided, return the system MCP manager
+  if (!workspaceId) {
+    return getSystemMCPManagerForRequest();
+  }
+  
   const registry = getServiceRegistry();
   
   logger.debug(`Getting MCPManager for workspace: ${workspaceId}`);
@@ -209,4 +255,15 @@ export async function getWorkspaceConfigManager(workspaceId: string) {
 export async function getMandrakeConfigManager() {
   const mandrakeManager = await getMandrakeManagerForRequest();
   return mandrakeManager.config;
+}
+
+/**
+ * Clean up system resources during shutdown or testing
+ */
+export async function cleanupSystemResources(): Promise<void> {
+  if (systemMCPManager) {
+    logger.debug('Cleaning up system MCP manager');
+    await systemMCPManager.cleanup();
+    systemMCPManager = null;
+  }
 }

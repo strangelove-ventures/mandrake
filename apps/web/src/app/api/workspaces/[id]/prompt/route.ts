@@ -1,6 +1,3 @@
-import { createPromptRoutes } from '@/lib/api/factories/createPromptRoutes';
+import { createPromptRoutes } from '@/lib/api/factories/prompt';
 
-/**
- * Route handlers for workspace-level prompt
- */
 export const { GET, PUT } = createPromptRoutes(true);

@@ -1,6 +1,3 @@
-import { createDynamicContextRoutes } from '@/lib/api/factories/createDynamicContextRoutes';
+import { createDynamicContextRoutes } from '@/lib/api/factories/dynamic';
 
-/**
- * Route handlers for system-level dynamic contexts
- */
 export const { GET, POST } = createDynamicContextRoutes();

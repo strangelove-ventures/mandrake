@@ -1,6 +1,7 @@
-import { createToolsRoutes } from '@/lib/api/factories/createToolsRoutes';
+import { createToolsConfigRoutes } from '@/lib/api/factories/tools';
+import { handleApiError } from '@/lib/api/middleware/errorHandling';
 
-/**
- * Route handlers for workspace-level tools
- */
-export const { GET } = createToolsRoutes(true);
+const handlers = createToolsConfigRoutes(true);
+
+export const GET = handleApiError(handlers.GET);
+export const POST = handleApiError(handlers.POST);

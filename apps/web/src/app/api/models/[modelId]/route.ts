@@ -1,6 +1,4 @@
-import { createModelRoutes } from '@/lib/api/factories/createModelRoutes';
+// app/api/models/route.ts
+import { createModelRoutes } from '@/lib/api/factories/models';
 
-/**
- * Route handlers for specific system-level model
- */
-export const { GET, PUT, DELETE } = createModelRoutes();
+export const { GET, POST } = createModelRoutes();

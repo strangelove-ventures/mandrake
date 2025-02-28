@@ -1,3 +1,3 @@
-import { createFilesRoutes } from '@/lib/api/factories/createFilesRoutes';
+import { createFilesRoutes } from '@/lib/api/factories/files';
 
-export const { GET, PUT, DELETE } = createFilesRoutes();
+export const { GET, PUT, DELETE } = createFilesRoutes(true);

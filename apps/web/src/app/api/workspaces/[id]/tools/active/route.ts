@@ -1,6 +1,7 @@
-import { createToolsRoutes } from '@/lib/api/factories/createToolsRoutes';
+import { createActiveConfigSetRoutes } from '@/lib/api/factories/tools';
+import { handleApiError } from '@/lib/api/middleware/errorHandling';
 
-/**
- * Route handlers for workspace-level active tools config
- */
-export const { GET, POST } = createToolsRoutes(true);
+const handlers = createActiveConfigSetRoutes(true);
+
+export const GET = handleApiError(handlers.GET);
+export const PUT = handleApiError(handlers.PUT);
