@@ -335,3 +335,6 @@ export function getServiceRegistry(): ServiceRegistry {
   }
   return registryInstance;
 }
+export function resetServiceRegistryForTesting(): void {
+  registryInstance = null;
+}
