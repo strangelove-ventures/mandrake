@@ -1,194 +1,511 @@
 import { NextRequest } from 'next/server';
-import { SessionsHandler } from '../handlers/SessionsHandler';
-import { handleApiError } from '../middleware/errorHandling';
-import { createApiResponse, createApiStreamResponse, createNoContentResponse } from '../utils/response';
-import { getMandrakeManagerForRequest, getWorkspaceManagerForRequest } from '../../services/helpers';
-import { validateParams } from '../middleware/validation';
 import { z } from 'zod';
+import { ApiError, ErrorCode } from '../middleware/errorHandling';
+import { validateBody } from '../middleware/validation';
+import { createApiResponse, createApiStreamResponse, createNoContentResponse } from '../utils/response';
+import { createSystemSessionCoordinator, createWorkspaceSessionCoordinator, getMandrakeManager, getWorkspaceManagerById } from '../utils/workspace';
 
-// Parameter schemas
-const sessionIdSchema = z.object({
-  id: z.string().uuid("Invalid session ID format")
+// Validation schemas
+const sessionCreateSchema = z.object({
+  title: z.string().min(1),
+  description: z.string().optional()
+});
+
+const sessionUpdateSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().optional()
+});
+
+const messageSchema = z.object({
+  content: z.string().min(1)
 });
 
 /**
- * Creates route handlers for session endpoints
- * @param isWorkspaceScope Whether these routes are for workspace-specific sessions
- * @returns Route handler methods
+ * Creates handlers for session routes (both system and workspace-level)
+ * @param workspaceScoped Whether these routes are scoped to a workspace
  */
-export function createSessionRoutes(isWorkspaceScope: boolean = false) {
+export function createSessionRoutes(workspaceScoped = false) {
   return {
-    // GET handler for listing sessions or getting a specific session
+    /**
+     * GET - List sessions or get a specific session
+     */
     async GET(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params?: { id?: string, sessionId?: string } } = {}
     ) {
       try {
-        let workspaceId: string | undefined;
         let sessionManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManagerForRequest(workspaceId, process.env.MANDRAKE_ROOT || '');
-          sessionManager = workspaceManager.sessions;
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          sessionManager = workspace.sessions;
         } else {
-          workspaceId = undefined;
-          // Use the MandrakeManager's session manager for system-level operations
-          const mandrakeManager = await getMandrakeManagerForRequest();
+          const mandrakeManager = getMandrakeManager();
           sessionManager = mandrakeManager.sessions;
         }
         
-        const handler = new SessionsHandler(workspaceId, sessionManager);
-        
-        // Handle specific session request
         if (params?.sessionId) {
-          const { id } = validateParams(
-            { id: params.sessionId }, 
-            sessionIdSchema
-          );
-          const session = await handler.getSession(id);
+          // Get specific session details
+          const session = await sessionManager.getSession(params.sessionId);
+          if (!session) {
+            throw new ApiError(
+              `Session not found: ${params.sessionId}`,
+              ErrorCode.RESOURCE_NOT_FOUND,
+              404
+            );
+          }
           return createApiResponse(session);
+        } else {
+          // List all sessions
+          const sessions = await sessionManager.listSessions();
+          return createApiResponse(sessions);
         }
-        
-        // List all sessions
-        const sessions = await handler.listSessions();
-        return createApiResponse(sessions);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to get sessions: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // POST handler for creating a new session
+    /**
+     * POST - Create a new session or send a message
+     */
     async POST(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params?: { id?: string, sessionId?: string } } = {}
     ) {
       try {
-        let workspaceId: string | undefined;
-        let sessionManager;
+        let sessionManager, coordinator;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManagerForRequest(workspaceId, process.env.MANDRAKE_ROOT || '');
-          sessionManager = workspaceManager.sessions;
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          sessionManager = workspace.sessions;
+          coordinator = createWorkspaceSessionCoordinator(workspace);
         } else {
-          workspaceId = undefined;
-          // Use the MandrakeManager's session manager for system-level operations
-          const mandrakeManager = await getMandrakeManagerForRequest();
+          const mandrakeManager = getMandrakeManager();
           sessionManager = mandrakeManager.sessions;
+          coordinator = createSystemSessionCoordinator();
         }
         
-        const handler = new SessionsHandler(workspaceId, sessionManager);
-        
-        // Handle sending a message to an existing session
-        if (params?.sessionId && params?.messages) {
-          const { id } = validateParams(
-            { id: params.sessionId }, 
-            sessionIdSchema
-          );
+        if (params?.sessionId) {
+          // Send a message in existing session
+          const body = await validateBody(req, messageSchema);
           
-          const result = await handler.sendMessage(id, req);
-          return createApiResponse(result);
-        }
-        
-        // Handle streaming a message to an existing session
-        if (params?.sessionId && params?.stream) {
-          const { id } = validateParams(
-            { id: params.sessionId }, 
-            sessionIdSchema
-          );
+          // Check if session exists
+          const session = await sessionManager.getSession(params.sessionId);
+          if (!session) {
+            throw new ApiError(
+              `Session not found: ${params.sessionId}`,
+              ErrorCode.RESOURCE_NOT_FOUND,
+              404
+            );
+          }
           
-          const stream = await handler.streamMessage(id, req);
-          return createApiStreamResponse(stream);
+          // Check if client requests streaming response
+          if (req.headers.get('accept') === 'text/event-stream') {
+            // Create a streaming response
+            const stream = new ReadableStream({
+              async start(controller) {
+                try {
+                  // Create a function to handle stream events
+                  const handleStreamEvent = (event: any) => {
+                    // Format the event data as SSE
+                    const data = JSON.stringify(event);
+                    controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+                    
+                    // Close the stream when complete
+                    if (event.type === 'done') {
+                      controller.close();
+                    }
+                  };
+                  
+                  // Start processing the request with streaming
+                  await coordinator.handleRequest(params.sessionId!, body.content);
+                  
+                  // Send completion event
+                  handleStreamEvent({ type: 'done' });
+                } catch (error) {
+                  // Handle errors in the stream
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({
+                        type: 'error',
+                        error: error instanceof Error ? error.message : String(error)
+                      })}\n\n`
+                    )
+                  );
+                  controller.close();
+                }
+              }
+            });
+            
+            return createApiStreamResponse(stream);
+          } else {
+            // Normal request/response
+            await coordinator.handleRequest(params.sessionId, body.content);
+            
+            // Return the session with updated message count
+            const updatedSession = await sessionManager.getSession(params.sessionId);
+            return createApiResponse(updatedSession);
+          }
+        } else {
+          // Create a new session
+          const body = await validateBody(req, sessionCreateSchema);
+          
+          const session = await sessionManager.createSession({
+            title: body.title,
+            description: body.description || '',
+            metadata: {}
+          });
+          
+          return createApiResponse(session, 201);
         }
-        
-        // Create a new session
-        const session = await handler.createSession(req);
-        return createApiResponse(session, 201);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to process session request: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // PUT handler for updating a session
+    /**
+     * PUT - Update a session
+     */
     async PUT(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id?: string, sessionId: string } }
     ) {
       try {
-        let workspaceId: string | undefined;
         let sessionManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManagerForRequest(workspaceId, process.env.MANDRAKE_ROOT || '');
-          sessionManager = workspaceManager.sessions;
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          sessionManager = workspace.sessions;
         } else {
-          workspaceId = undefined;
-          // Use the MandrakeManager's session manager for system-level operations
-          const mandrakeManager = await getMandrakeManagerForRequest();
+          const mandrakeManager = getMandrakeManager();
           sessionManager = mandrakeManager.sessions;
         }
         
-        const handler = new SessionsHandler(workspaceId, sessionManager);
+        const body = await validateBody(req, sessionUpdateSchema);
         
-        // Update a session
-        if (params?.sessionId) {
-          const { id } = validateParams(
-            { id: params.sessionId }, 
-            sessionIdSchema
+        // Check if session exists
+        const session = await sessionManager.getSession(params.sessionId);
+        if (!session) {
+          throw new ApiError(
+            `Session not found: ${params.sessionId}`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404
           );
-          
-          const session = await handler.updateSession(id, req);
-          return createApiResponse(session);
         }
         
-        return handleApiError(new Error('Missing sessionId parameter'));
+        // Update session
+        const updates: any = {};
+        
+        if (body.name !== undefined) {
+          updates.name = body.name;
+        }
+        
+        if (body.description !== undefined) {
+          updates.description = body.description;
+        }
+        
+        const updatedSession = await sessionManager.updateSession(params.sessionId, updates);
+        return createApiResponse(updatedSession);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to update session: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // DELETE handler for removing a session
+    /**
+     * DELETE - Remove a session
+     */
     async DELETE(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id?: string, sessionId: string } }
     ) {
       try {
-        let workspaceId: string | undefined;
         let sessionManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManagerForRequest(workspaceId, process.env.MANDRAKE_ROOT || '');
-          sessionManager = workspaceManager.sessions;
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          sessionManager = workspace.sessions;
         } else {
-          workspaceId = undefined;
-          // Use the MandrakeManager's session manager for system-level operations
-          const mandrakeManager = await getMandrakeManagerForRequest();
+          const mandrakeManager = getMandrakeManager();
           sessionManager = mandrakeManager.sessions;
         }
         
-        const handler = new SessionsHandler(workspaceId, sessionManager);
-        
-        // Delete a session
-        if (params?.sessionId) {
-          const { id } = validateParams(
-            { id: params.sessionId }, 
-            sessionIdSchema
+        // Check if session exists
+        const session = await sessionManager.getSession(params.sessionId);
+        if (!session) {
+          throw new ApiError(
+            `Session not found: ${params.sessionId}`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404
           );
-          
-          await handler.deleteSession(id);
-          return createNoContentResponse();
         }
         
-        return handleApiError(new Error('Missing sessionId parameter'));
+        // Delete session
+        await sessionManager.deleteSession(params.sessionId);
+        
+        return createNoContentResponse();
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to delete session: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
+      }
+    }
+  };
+}
+
+/**
+ * Creates handlers for session messages routes
+ * @param workspaceScoped Whether these routes are scoped to a workspace
+ */
+export function createSessionMessagesRoutes(workspaceScoped = false) {
+  return {
+    /**
+     * GET - Get messages for a session
+     */
+    async GET(
+      req: NextRequest,
+      { params }: { params: { id?: string, sessionId: string } }
+    ) {
+      try {
+        let sessionManager;
+        
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          sessionManager = workspace.sessions;
+        } else {
+          const mandrakeManager = getMandrakeManager();
+          sessionManager = mandrakeManager.sessions;
+        }
+        
+        // Check if session exists
+        const session = await sessionManager.getSession(params.sessionId);
+        if (!session) {
+          throw new ApiError(
+            `Session not found: ${params.sessionId}`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404
+          );
+        }
+        
+        // Get messages
+        const messages = await sessionManager.renderSessionHistory(params.sessionId);
+        return createApiResponse(messages);
+      } catch (error) {
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to get session messages: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
+      }
+    },
+    
+    /**
+     * POST - Send a message to the session
+     */
+    async POST(
+      req: NextRequest,
+      { params }: { params: { id?: string, sessionId: string } }
+    ) {
+      try {
+        let sessionManager, coordinator;
+        
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          sessionManager = workspace.sessions;
+          coordinator = createWorkspaceSessionCoordinator(workspace);
+        } else {
+          const mandrakeManager = getMandrakeManager();
+          sessionManager = mandrakeManager.sessions;
+          coordinator = createSystemSessionCoordinator();
+        }
+        
+        const body = await validateBody(req, messageSchema);
+        
+        // Check if session exists
+        const session = await sessionManager.getSession(params.sessionId);
+        if (!session) {
+          throw new ApiError(
+            `Session not found: ${params.sessionId}`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404
+          );
+        }
+        
+        // Process message
+        await coordinator.handleRequest(params.sessionId, body.content);
+        
+        // Get updated messages
+        const messages = await sessionManager.renderSessionHistory(params.sessionId);
+        return createApiResponse(messages);
+      } catch (error) {
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to send message: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
+      }
+    }
+  };
+}
+
+/**
+ * Creates handlers for session streaming routes
+ * @param workspaceScoped Whether these routes are scoped to a workspace
+ */
+export function createSessionStreamRoutes(workspaceScoped = false) {
+  return {
+    /**
+     * POST - Send a message and stream the response
+     */
+    async POST(
+      req: NextRequest,
+      { params }: { params: { id?: string, sessionId: string } }
+    ) {
+      try {
+        let coordinator;
+        
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          coordinator = createWorkspaceSessionCoordinator(workspace);
+        } else {
+          coordinator = createSystemSessionCoordinator();
+        }
+        
+        const body = await validateBody(req, messageSchema);
+        
+        // Create a streaming response
+        const stream = new ReadableStream({
+          async start(controller) {
+            try {
+              // Create a function to handle stream events
+              const handleStreamEvent = (event: any) => {
+                // Format the event data as SSE
+                const data = JSON.stringify(event);
+                controller.enqueue(new TextEncoder().encode(`data: ${data}\n\n`));
+                
+                // Close the stream when complete
+                if (event.type === 'done') {
+                  controller.close();
+                }
+              };
+              
+              // Start processing the request with streaming
+              await coordinator.handleRequest(params.sessionId, body.content);
+              
+              // Send completion event
+              handleStreamEvent({ type: 'done' });
+            } catch (error) {
+              // Handle errors in the stream
+              controller.enqueue(
+                new TextEncoder().encode(
+                  `data: ${JSON.stringify({
+                    type: 'error',
+                    error: error instanceof Error ? error.message : String(error)
+                  })}\n\n`
+                )
+              );
+              controller.close();
+            }
+          }
+        });
+        
+        return createApiStreamResponse(stream);
+      } catch (error) {
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to send message: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     }
   };

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { expect, test, describe, beforeEach } from "bun:test";
 import { 
   createApiResponse, 
   createApiErrorResponse, 
@@ -10,7 +10,7 @@ import { NextResponse } from 'next/server';
 
 describe('API Response Utilities', () => {
   describe('createApiResponse', () => {
-    it('should create a successful API response with default status code', async () => {
+    test('should create a successful API response with default status code', async () => {
       const data = { id: '123', name: 'Test' };
       const response = createApiResponse(data);
       
@@ -24,7 +24,7 @@ describe('API Response Utilities', () => {
       });
     });
 
-    it('should create a successful API response with custom status code', async () => {
+    test('should create a successful API response with custom status code', async () => {
       const data = { id: '123' };
       const response = createApiResponse(data, 201);
       
@@ -39,7 +39,7 @@ describe('API Response Utilities', () => {
   });
 
   describe('createApiErrorResponse', () => {
-    it('should create an error response with string error', async () => {
+    test('should create an error response with string error', async () => {
       const response = createApiErrorResponse('Test error');
       
       expect(response).toBeInstanceOf(NextResponse);
@@ -55,7 +55,7 @@ describe('API Response Utilities', () => {
       });
     });
 
-    it('should create an error response with error object', async () => {
+    test('should create an error response with error object', async () => {
       const error = {
         code: 'NOT_FOUND',
         message: 'Resource not found'
@@ -73,7 +73,7 @@ describe('API Response Utilities', () => {
   });
 
   describe('createNoContentResponse', () => {
-    it('should create a 204 No Content response', () => {
+    test('should create a 204 No Content response', () => {
       const response = createNoContentResponse();
       
       expect(response).toBeInstanceOf(NextResponse);
@@ -83,19 +83,24 @@ describe('API Response Utilities', () => {
   });
 
   describe('createRedirectResponse', () => {
+    let originalRedirect: any;
+    
     beforeEach(() => {
+      // Store original implementation
+      originalRedirect = NextResponse.redirect;
+      
       // Mock NextResponse.redirect to avoid the trailing slash issue
-      vi.spyOn(NextResponse, 'redirect').mockImplementation((url, status) => {
+      NextResponse.redirect = (url, status) => {
         return new Response(null, {
           status: typeof status === 'number' ? status : 307,
           headers: {
             'Location': url.toString()
           }
-        }) as unknown as NextResponse;
-      });
+        }) as NextResponse;
+      };
     });
-
-    it('should create a temporary redirect response by default', () => {
+    
+    test('should create a temporary redirect response by default', () => {
       const url = 'https://example.com';
       const response = createRedirectResponse(url);
       
@@ -103,7 +108,7 @@ describe('API Response Utilities', () => {
       expect(response.headers.get('Location')).toBe(url);
     });
 
-    it('should create a permanent redirect response when specified', () => {
+    test('should create a permanent redirect response when specified', () => {
       const url = 'https://example.com';
       const response = createRedirectResponse(url, true);
       
@@ -111,7 +116,7 @@ describe('API Response Utilities', () => {
       expect(response.headers.get('Location')).toBe(url);
     });
 
-    it('should handle URLs with trailing slashes', () => {
+    test('should handle URLs with trailing slashes', () => {
       const url = 'https://example.com/';
       const response = createRedirectResponse(url);
       
@@ -120,7 +125,7 @@ describe('API Response Utilities', () => {
   });
 
   describe('createApiStreamResponse', () => {
-    it('should create a streaming response with correct headers', () => {
+    test('should create a streaming response with correct headers', () => {
       // Create a mock readable stream
       const stream = new ReadableStream({
         start(controller) {

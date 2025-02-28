@@ -5,7 +5,7 @@
 // Import actual types from respective packages
 import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
-import { SessionCoordinator } from '@mandrake/session';
+import { SessionCoordinator, type SessionMetadata } from '@mandrake/session';
 
 /**
  * Service registry interface
@@ -20,6 +20,15 @@ export interface IServiceRegistry {
   releaseWorkspaceResources(workspace: string): Promise<void>;
   releaseMandrakeManager(): Promise<void>;
   performCleanup(): Promise<void>;
+}
+
+/**
+ * Extended session metadata interface to include workspace information
+ */
+export interface ExtendedSessionMetadata extends SessionMetadata {
+  workspaceId: string;
+  name: string;
+  path: string;
 }
 
 /**

@@ -1,291 +1,615 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { createToolsRoutes } from '@/lib/api/factories/createToolsRoutes';
-import { NextRequest } from 'next/server';
-import { WorkspaceManager } from '@mandrake/workspace';
-import { createTestDirectory } from '@mandrake/workspace/tests/utils/utils';
-import * as workspaceUtils from '@/lib/api/utils/workspace';
+import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from 'vitest';
+import { 
+  createTestRequest, 
+  createTestMandrakeManager,
+  createTestEnvironment,
+  createParams,
+  validateResponse,
+  getResponseData,
+  createTestWorkspace
+} from './test-utils';
+import { 
+  createToolsRoutes, 
+  createActiveToolsRoutes,
+  createServerStatusRoutes,
+  createServerMethodsRoutes,
+  createMethodExecutionRoutes
+} from '@/lib/api/factories/createToolsRoutes';
+import { getMandrakeManager, getWorkspaceManagerById, getMCPManager } from '@/lib/api/utils/workspace';
 
-// Helper function to create mock requests
-function createMockRequest(method: string, body?: any, url: string = 'http://localhost/api/test'): NextRequest {
-  const request = {
-    method,
-    headers: new Headers({
-      'Content-Type': 'application/json'
-    }),
-    json: body ? () => Promise.resolve(body) : undefined,
-    url,
-  } as unknown as NextRequest;
-  
-  return request;
-}
+// Mock the workspace utilities
+vi.mock('@/lib/api/utils/workspace', async () => {
+  return {
+    getMandrakeManager: vi.fn(),
+    getWorkspaceManagerById: vi.fn(),
+    getMCPManager: vi.fn()
+  };
+});
 
-describe('createToolsRoutes', () => {
-  let testDir: any;
-  let workspaceManager: WorkspaceManager;
-  let workspaceId = 'test-workspace';
+describe('Tools Routes Factory', () => {
+  let testEnv: any;
   
-  // Spy on the workspace utils to inject our test workspace
-  let getWorkspaceManagerSpy;
-  
-  beforeEach(async () => {
-    // Create a temporary workspace for testing
-    testDir = await createTestDirectory();
-    workspaceManager = new WorkspaceManager(testDir.path, workspaceId);
-    await workspaceManager.init('Test workspace for API testing');
+  beforeAll(async () => {
+    // Create a test environment
+    testEnv = await createTestEnvironment();
     
-    // Setup the workspace util spy to return our test workspace
-    getWorkspaceManagerSpy = vi.spyOn(workspaceUtils, 'getWorkspaceManager')
-      .mockImplementation(async (id) => {
-        if (id === workspaceId) {
-          return workspaceManager;
-        }
-        throw new Error(`Workspace not found: ${id}`);
-      });
-    
-    // Set system workspace manager
-    vi.spyOn(workspaceUtils, 'getSystemWorkspaceManager')
-      .mockImplementation(() => workspaceManager);
+    // Mock the utility functions
+    (getMandrakeManager as any).mockReturnValue(testEnv.mandrakeManager);
+    (getWorkspaceManagerById as any).mockImplementation((id) => {
+      if (id === testEnv.workspace.id) {
+        return Promise.resolve(testEnv.workspace);
+      }
+      return Promise.reject(new Error(`Workspace not found: ${id}`));
+    });
+    (getMCPManager as any).mockReturnValue(testEnv.mcpManager);
   });
   
-  afterEach(async () => {
-    // Clean up
-    if (testDir) {
-      await testDir.cleanup();
-    }
-    
-    // Restore all spies
-    vi.restoreAllMocks();
+  afterAll(async () => {
+    // Clean up test environment
+    await testEnv.cleanup();
   });
-
-  describe('System-level routes', () => {
-    it('GET should return 501 Not Implemented', async () => {
-      const routes = createToolsRoutes();
-      const req = createMockRequest('GET');
+  
+  describe('createToolsRoutes (System Level)', () => {
+    // Setup initial tool configs
+    beforeEach(async () => {
+      // Add a test tool set
+      await testEnv.mandrakeManager.tools.addConfigSet('test-set', {});
       
-      const response = await routes.GET(req);
-      const body = await response.json();
-      
-      expect(response.status).toBe(501); // Not implemented yet
-      expect(body.success).toBe(false);
-    });
-  });
-
-  describe('Workspace-level routes', () => {
-    it('GET should list config sets', async () => {
-      const routes = createToolsRoutes(true);
-      const req = createMockRequest('GET');
-      
-      const response = await routes.GET(req, { 
-        params: { id: workspaceId } 
+      // Add a server to the test set
+      await testEnv.mandrakeManager.tools.addServerConfig('test-set', 'test-server', {
+        command: 'node',
+        args: ['-e', 'console.log("Test server")'],
+        disabled: true
       });
-      
-      expect(response.status).toBe(200);
-      
-      const body = await response.json();
-      expect(body.success).toBe(true);
-      expect(Array.isArray(body.data)).toBe(true);
-      expect(body.data).toContain('default');
     });
     
-    it('GET should return active config set', async () => {
-      const routes = createToolsRoutes(true);
-      const req = createMockRequest('GET', undefined, 'http://localhost/api/workspaces/test-workspace/tools?active=true');
-      
-      const response = await routes.GET(req, { 
-        params: { id: workspaceId } 
+    describe('GET', () => {
+      it('should list all tool sets', async () => {
+        // Create the route handler
+        const { GET } = createToolsRoutes();
+        
+        // Create a test request
+        const req = createTestRequest('GET', 'http://localhost/api/tools');
+        
+        // Execute the handler
+        const response = await GET(req);
+        
+        // Validate the response
+        validateResponse(response);
+        const data = await getResponseData(response);
+        
+        // Check the response data
+        expect(data.success).toBe(true);
+        expect(data.data.sets).toContain('test-set');
+        expect(data.data.active).toBeDefined();
       });
       
-      expect(response.status).toBe(200);
+      it('should get a specific tool set', async () => {
+        // Create the route handler
+        const { GET } = createToolsRoutes();
+        
+        // Create a test request
+        const req = createTestRequest('GET', 'http://localhost/api/tools/test-set');
+        
+        // Execute the handler with params
+        const response = await GET(req, createParams({ setId: 'test-set' }));
+        
+        // Validate the response
+        validateResponse(response);
+        const data = await getResponseData(response);
+        
+        // Check the response data
+        expect(data.success).toBe(true);
+        expect(data.data.id).toBe('test-set');
+        expect(data.data.servers).toBeInstanceOf(Array);
+        expect(data.data.servers.length).toBeGreaterThan(0);
+        expect(data.data.servers[0].id).toBe('test-server');
+      });
       
-      const body = await response.json();
-      expect(body.success).toBe(true);
-      expect(body.data.active).toBe('default');
+      it('should get a specific server in a set', async () => {
+        // Create the route handler
+        const { GET } = createToolsRoutes();
+        
+        // Create a test request
+        const req = createTestRequest('GET', 'http://localhost/api/tools/test-set/test-server');
+        
+        // Execute the handler with params
+        const response = await GET(req, createParams({ 
+          setId: 'test-set', 
+          serverId: 'test-server' 
+        }));
+        
+        // Validate the response
+        validateResponse(response);
+        const data = await getResponseData(response);
+        
+        // Check the response data
+        expect(data.success).toBe(true);
+        expect(data.data.id).toBe('test-server');
+        expect(data.data.config).toBeDefined();
+        expect(data.data.config.command).toBe('node');
+      });
+      
+      it('should return 404 for non-existent set', async () => {
+        // Create the route handler
+        const { GET } = createToolsRoutes();
+        
+        // Create a test request
+        const req = createTestRequest('GET', 'http://localhost/api/tools/nonexistent');
+        
+        // Execute the handler with params
+        const response = await GET(req, createParams({ setId: 'nonexistent' }));
+        
+        // Validate the response
+        validateResponse(response, 404);
+        const data = await getResponseData(response);
+        
+        // Check the error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('RESOURCE_NOT_FOUND');
+      });
     });
     
-    it('GET should return config set details', async () => {
-      const routes = createToolsRoutes(true);
-      const req = createMockRequest('GET');
-      
-      const response = await routes.GET(req, { 
-        params: { 
-          id: workspaceId,
-          setId: 'default'
-        } 
+    describe('POST', () => {
+      it('should create a new tool set', async () => {
+        // Create the route handler
+        const { POST } = createToolsRoutes();
+        
+        // Create a test request with set data
+        const setData = { name: 'new-test-set' };
+        const req = createTestRequest('POST', 'http://localhost/api/tools', setData);
+        
+        // Execute the handler
+        const response = await POST(req);
+        
+        // Validate the response
+        validateResponse(response, 201);
+        const data = await getResponseData(response);
+        
+        // Check the response data
+        expect(data.success).toBe(true);
+        expect(data.data.id).toBe('new-test-set');
+        
+        // Verify set exists in the manager
+        const sets = await testEnv.mandrakeManager.tools.listConfigSets();
+        expect(sets).toContain('new-test-set');
       });
       
-      expect(response.status).toBe(200);
+      it('should add a server to an existing set', async () => {
+        // Create the route handler
+        const { POST } = createToolsRoutes();
+        
+        // Create a test request with server data
+        const serverData = {
+          serverId: 'new-test-server',
+          config: {
+            command: 'echo',
+            args: ['Hello, World!'],
+            disabled: true
+          }
+        };
+        const req = createTestRequest('POST', 'http://localhost/api/tools/test-set', serverData);
+        
+        // Execute the handler with params
+        const response = await POST(req, createParams({ setId: 'test-set' }));
+        
+        // Validate the response
+        validateResponse(response, 201);
+        const data = await getResponseData(response);
+        
+        // Check the response data
+        expect(data.success).toBe(true);
+        expect(data.data.id).toBe('new-test-server');
+        expect(data.data.setId).toBe('test-set');
+        expect(data.data.config).toEqual(serverData.config);
+        
+        // Verify server exists in the set
+        const set = await testEnv.mandrakeManager.tools.getConfigSet('test-set');
+        expect(set).toHaveProperty('new-test-server');
+      });
       
-      const body = await response.json();
-      expect(body.success).toBe(true);
-      expect(body.data).toBeDefined();
-      expect(body.data.ripper).toBeDefined();
-      expect(body.data.ripper.command).toBe('bun');
+      it('should return 409 for duplicate tool set', async () => {
+        // Create the route handler
+        const { POST } = createToolsRoutes();
+        
+        // Create a test request with existing set name
+        const setData = { name: 'test-set' };
+        const req = createTestRequest('POST', 'http://localhost/api/tools', setData);
+        
+        // Execute the handler
+        const response = await POST(req);
+        
+        // Validate the response
+        validateResponse(response, 409);
+        const data = await getResponseData(response);
+        
+        // Check the error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('CONFLICT');
+      });
     });
     
-    it('GET should return server config', async () => {
-      const routes = createToolsRoutes(true);
-      const req = createMockRequest('GET');
-      
-      const response = await routes.GET(req, { 
-        params: { 
-          id: workspaceId,
-          setId: 'default',
-          serverId: 'ripper'
-        } 
-      });
-      
-      expect(response.status).toBe(200);
-      
-      const body = await response.json();
-      expect(body.success).toBe(true);
-      expect(body.data).toBeDefined();
-      expect(body.data.command).toBe('bun');
-    });
-
-    it('POST should add a config set', async () => {
-      const routes = createToolsRoutes(true);
-      const configData = {
-        test: {
+    describe('PUT', () => {
+      it('should update a server config', async () => {
+        // Create the route handler
+        const { PUT } = createToolsRoutes();
+        
+        // Create a test request with updated config
+        const configUpdate = {
           command: 'echo',
-          args: ['test']
-        }
-      };
-      
-      const req = createMockRequest('POST', configData);
-      
-      const response = await routes.POST(req, { 
-        params: { 
-          id: workspaceId,
-          setId: 'test-set'
-        } 
+          args: ['Updated config'],
+          disabled: false
+        };
+        const req = createTestRequest('PUT', 'http://localhost/api/tools/test-set/test-server', configUpdate);
+        
+        // Execute the handler with params
+        const response = await PUT(req, createParams({ 
+          setId: 'test-set', 
+          serverId: 'test-server' 
+        }));
+        
+        // Validate the response
+        validateResponse(response);
+        const data = await getResponseData(response);
+        
+        // Check the response data
+        expect(data.success).toBe(true);
+        expect(data.data.id).toBe('test-server');
+        expect(data.data.setId).toBe('test-set');
+        expect(data.data.config.command).toBe('echo');
+        expect(data.data.config.args).toEqual(['Updated config']);
+        
+        // Verify config was updated
+        const config = await testEnv.mandrakeManager.tools.getServerConfig('test-set', 'test-server');
+        expect(config.command).toBe('echo');
+        expect(config.args).toEqual(['Updated config']);
       });
       
-      expect(response.status).toBe(201);
+      it('should set a tool set as active', async () => {
+        // Create the route handler
+        const { PUT } = createToolsRoutes();
+        
+        // Create a test request
+        const req = createTestRequest('PUT', 'http://localhost/api/tools/test-set', {});
+        
+        // Execute the handler with params
+        const response = await PUT(req, createParams({ setId: 'test-set' }));
+        
+        // Validate the response
+        validateResponse(response);
+        const data = await getResponseData(response);
+        
+        // Check the response data
+        expect(data.success).toBe(true);
+        expect(data.data.active).toBe('test-set');
+        
+        // Verify active set was updated
+        const activeSet = await testEnv.mandrakeManager.tools.getActive();
+        expect(activeSet).toBe('test-set');
+      });
       
-      const body = await response.json();
-      expect(body.success).toBe(true);
-      expect(body.data).toBeDefined();
-      expect(body.data.test).toBeDefined();
-      expect(body.data.test.command).toBe('echo');
-      
-      // Verify it was added
-      const configSets = await workspaceManager.tools.listConfigSets();
-      expect(configSets).toContain('test-set');
+      it('should return 404 for non-existent set or server', async () => {
+        // Create the route handler
+        const { PUT } = createToolsRoutes();
+        
+        // Create a test request
+        const req = createTestRequest('PUT', 'http://localhost/api/tools/nonexistent/server', {
+          command: 'echo'
+        });
+        
+        // Execute the handler with params
+        const response = await PUT(req, createParams({ 
+          setId: 'nonexistent', 
+          serverId: 'server' 
+        }));
+        
+        // Validate the response
+        validateResponse(response, 404);
+        const data = await getResponseData(response);
+        
+        // Check the error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('RESOURCE_NOT_FOUND');
+      });
     });
     
-    it('POST should add a server config', async () => {
-      const routes = createToolsRoutes(true);
-      const serverData = {
-        command: 'echo',
-        args: ['test']
-      };
-      
-      const req = createMockRequest('POST', serverData);
-      
-      const response = await routes.POST(req, { 
-        params: { 
-          id: workspaceId,
-          setId: 'default',
-          serverId: 'test-server'
-        } 
+    describe('DELETE', () => {
+      it('should remove a server from a set', async () => {
+        // Create the route handler
+        const { DELETE } = createToolsRoutes();
+        
+        // Create a test request
+        const req = createTestRequest('DELETE', 'http://localhost/api/tools/test-set/test-server');
+        
+        // Execute the handler with params
+        const response = await DELETE(req, createParams({ 
+          setId: 'test-set', 
+          serverId: 'test-server' 
+        }));
+        
+        // Validate the response
+        validateResponse(response, 204);
+        
+        // Verify server was removed
+        const set = await testEnv.mandrakeManager.tools.getConfigSet('test-set');
+        expect(set).not.toHaveProperty('test-server');
       });
       
-      expect(response.status).toBe(201);
-      
-      const body = await response.json();
-      expect(body.success).toBe(true);
-      expect(body.data).toBeDefined();
-      expect(body.data.command).toBe('echo');
-      
-      // Verify it was added
-      const configSet = await workspaceManager.tools.getConfigSet('default');
-      expect(configSet['test-server']).toBeDefined();
-    });
-    
-    it('PUT should update a config set', async () => {
-      // First add a new config set
-      await workspaceManager.tools.addConfigSet('test-set', {
-        test: {
-          command: 'echo',
-          args: ['test']
-        }
+      it('should remove an entire tool set', async () => {
+        // Create the route handler
+        const { DELETE } = createToolsRoutes();
+        
+        // Create a test set specifically for deletion
+        await testEnv.mandrakeManager.tools.addConfigSet('delete-set', {});
+        
+        // Create a test request
+        const req = createTestRequest('DELETE', 'http://localhost/api/tools/delete-set');
+        
+        // Execute the handler with params
+        const response = await DELETE(req, createParams({ setId: 'delete-set' }));
+        
+        // Validate the response
+        validateResponse(response, 204);
+        
+        // Verify set was removed
+        const sets = await testEnv.mandrakeManager.tools.listConfigSets();
+        expect(sets).not.toContain('delete-set');
       });
       
-      const routes = createToolsRoutes(true);
-      const updateData = {
-        test: {
-          disabled: true
-        }
-      };
-      
-      const req = createMockRequest('PUT', updateData);
-      
-      const response = await routes.PUT(req, { 
-        params: { 
-          id: workspaceId,
-          setId: 'test-set'
-        } 
+      it('should return 404 for non-existent set or server', async () => {
+        // Create the route handler
+        const { DELETE } = createToolsRoutes();
+        
+        // Create a test request
+        const req = createTestRequest('DELETE', 'http://localhost/api/tools/nonexistent/server');
+        
+        // Execute the handler with params
+        const response = await DELETE(req, createParams({ 
+          setId: 'nonexistent', 
+          serverId: 'server' 
+        }));
+        
+        // Validate the response
+        validateResponse(response, 404);
+        const data = await getResponseData(response);
+        
+        // Check the error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('RESOURCE_NOT_FOUND');
       });
-      
-      expect(response.status).toBe(200);
-      
-      const body = await response.json();
-      expect(body.success).toBe(true);
-      expect(body.data).toBeDefined();
-      expect(body.data.test.disabled).toBe(true);
-      expect(body.data.test.command).toBe('echo'); // Original value preserved
-    });
-    
-    it('DELETE should remove a config set', async () => {
-      // First add a new config set
-      await workspaceManager.tools.addConfigSet('test-set', {
-        test: {
-          command: 'echo',
-          args: ['test']
-        }
-      });
-      
-      const routes = createToolsRoutes(true);
-      const req = createMockRequest('DELETE');
-      
-      const response = await routes.DELETE(req, { 
-        params: { 
-          id: workspaceId,
-          setId: 'test-set'
-        } 
-      });
-      
-      expect(response.status).toBe(204);
-      
-      // Verify it was removed
-      const configSets = await workspaceManager.tools.listConfigSets();
-      expect(configSets).not.toContain('test-set');
-    });
-    
-    it('GET should return 404 for nonexistent resources', async () => {
-      const routes = createToolsRoutes(true);
-      const req = createMockRequest('GET');
-      
-      // Test nonexistent config set
-      const response1 = await routes.GET(req, { 
-        params: { 
-          id: workspaceId,
-          setId: 'nonexistent'
-        } 
-      });
-      
-      expect(response1.status).toBe(404);
-      
-      // Test nonexistent server
-      const response2 = await routes.GET(req, { 
-        params: { 
-          id: workspaceId,
-          setId: 'default',
-          serverId: 'nonexistent'
-        } 
-      });
-      
-      expect(response2.status).toBe(404);
     });
   });
+  
+  describe('createToolsRoutes (Workspace Level)', () => {
+    // Setup initial tool configs
+    beforeEach(async () => {
+      // Add a test tool set to the workspace
+      await testEnv.workspace.tools.addConfigSet('ws-test-set', {});
+      
+      // Add a server to the test set
+      await testEnv.workspace.tools.addServerConfig('ws-test-set', 'ws-test-server', {
+        command: 'node',
+        args: ['-e', 'console.log("Test server")'],
+        disabled: true
+      });
+    });
+    
+    describe('GET', () => {
+      it('should list all workspace tool sets', async () => {
+        // Create the route handler
+        const { GET } = createToolsRoutes(true);
+        
+        // Create a test request
+        const req = createTestRequest('GET', `http://localhost/api/workspaces/${testEnv.workspace.id}/tools`);
+        
+        // Execute the handler with workspace ID
+        const response = await GET(req, createParams({ id: testEnv.workspace.id }));
+        
+        // Validate the response
+        validateResponse(response);
+        const data = await getResponseData(response);
+        
+        // Check the response data
+        expect(data.success).toBe(true);
+        expect(data.data.sets).toContain('ws-test-set');
+        expect(data.data.active).toBeDefined();
+      });
+      
+      it('should require a workspace ID', async () => {
+        // Create the route handler
+        const { GET } = createToolsRoutes(true);
+        
+        // Create a test request without workspace ID
+        const req = createTestRequest('GET', 'http://localhost/api/workspaces/tools');
+        
+        // Execute the handler without params
+        const response = await GET(req);
+        
+        // Validate the response
+        validateResponse(response, 400);
+        const data = await getResponseData(response);
+        
+        // Check the error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('BAD_REQUEST');
+      });
+    });
+  });
+  
+  describe('createActiveToolsRoutes', () => {
+    beforeEach(async () => {
+      // Setup a test active tool set
+      await testEnv.mandrakeManager.tools.addConfigSet('active-set', {
+        'active-server': {
+          command: 'echo',
+          args: ['Active server'],
+          disabled: false
+        }
+      });
+      
+      // Set it as active
+      await testEnv.mandrakeManager.tools.setActive('active-set');
+    });
+    
+    it('should get the active tool set', async () => {
+      // Create the route handler
+      const { GET } = createActiveToolsRoutes();
+      
+      // Create a test request
+      const req = createTestRequest('GET', 'http://localhost/api/tools/active');
+      
+      // Execute the handler
+      const response = await GET(req);
+      
+      // Validate the response
+      validateResponse(response);
+      const data = await getResponseData(response);
+      
+      // Check the response data
+      expect(data.success).toBe(true);
+      expect(data.data.id).toBe('active-set');
+      expect(data.data.servers).toBeInstanceOf(Array);
+      expect(data.data.servers.length).toBe(1);
+      expect(data.data.servers[0].id).toBe('active-server');
+      expect(data.data.servers[0].status).toBe('inactive');
+    });
+  });
+  
+  describe('createServerStatusRoutes', () => {
+    // Mock MCP server behavior
+    beforeEach(() => {
+      // Mock MCP getServer to return a mock for 'running-server'
+      (testEnv.mcpManager.getServer as any) = vi.fn((name) => {
+        if (name === 'running-server') {
+          return {
+            getState: () => ({
+              logs: ['Server started', 'Running fine'],
+              error: undefined
+            }),
+            getConfig: () => ({
+              command: 'echo',
+              args: ['Running server']
+            })
+          };
+        }
+        return null;
+      });
+    });
+    
+    it('should get status for a running server', async () => {
+      // Create the route handler
+      const { GET } = createServerStatusRoutes();
+      
+      // Create a test request
+      const req = createTestRequest('GET', 'http://localhost/api/tools/running-server/status');
+      
+      // Execute the handler with params
+      const response = await GET(req, createParams({ serverName: 'running-server' }));
+      
+      // Validate the response
+      validateResponse(response);
+      const data = await getResponseData(response);
+      
+      // Check the response data
+      expect(data.success).toBe(true);
+      expect(data.data.id).toBe('running-server');
+      expect(data.data.status).toBe('active');
+      expect(data.data.logs).toEqual(['Server started', 'Running fine']);
+    });
+    
+    it('should return inactive status for non-running server', async () => {
+      // Create the route handler
+      const { GET } = createServerStatusRoutes();
+      
+      // Create a test request
+      const req = createTestRequest('GET', 'http://localhost/api/tools/inactive-server/status');
+      
+      // Execute the handler with params
+      const response = await GET(req, createParams({ serverName: 'inactive-server' }));
+      
+      // Validate the response
+      validateResponse(response);
+      const data = await getResponseData(response);
+      
+      // Check the response data
+      expect(data.success).toBe(true);
+      expect(data.data.id).toBe('inactive-server');
+      expect(data.data.status).toBe('inactive');
+    });
+  });
+  
+  describe('createServerMethodsRoutes', () => {
+    // Mock MCP server behavior for methods listing
+    beforeEach(() => {
+      (testEnv.mcpManager.getServer as any) = vi.fn((name) => {
+        if (name === 'running-server') {
+          return {
+            listTools: () => Promise.resolve([
+              {
+                name: 'test-method',
+                description: 'A test method',
+                schema: { type: 'object', properties: {} }
+              },
+              {
+                name: 'another-method',
+                description: 'Another test method',
+                schema: { type: 'object', properties: {} }
+              }
+            ])
+          };
+        }
+        return null;
+      });
+    });
+    
+    it('should list methods for a running server', async () => {
+      // Create the route handler
+      const { GET } = createServerMethodsRoutes();
+      
+      // Create a test request
+      const req = createTestRequest('GET', 'http://localhost/api/tools/running-server/methods');
+      
+      // Execute the handler with params
+      const response = await GET(req, createParams({ serverName: 'running-server' }));
+      
+      // Validate the response
+      validateResponse(response);
+      const data = await getResponseData(response);
+      
+      // Check the response data
+      expect(data.success).toBe(true);
+      expect(data.data.server).toBe('running-server');
+      expect(data.data.methods).toBeInstanceOf(Array);
+      expect(data.data.methods.length).toBe(2);
+      expect(data.data.methods[0].name).toBe('test-method');
+      expect(data.data.methods[1].name).toBe('another-method');
+    });
+    
+    it('should return 503 for non-running server', async () => {
+      // Create the route handler
+      const { GET } = createServerMethodsRoutes();
+      
+      // Create a test request
+      const req = createTestRequest('GET', 'http://localhost/api/tools/nonexistent/methods');
+      
+      // Execute the handler with params
+      const response = await GET(req, createParams({ serverName: 'nonexistent' }));
+      
+      // Validate the response
+      validateResponse(response, 503);
+      const data = await getResponseData(response);
+      
+      // Check the error data
+      expect(data.success).toBe(false);
+      expect(data.error).toBeDefined();
+      expect(data.error.code).toBe('SERVICE_UNAVAILABLE');
+    });
+  });
+  
+  // Additional tests for method execution routes would be similar
 });

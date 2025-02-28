@@ -1,73 +1,117 @@
 import { NextRequest } from 'next/server';
-import { PromptHandler } from '../handlers/PromptHandler';
-import { handleApiError } from '../middleware/errorHandling';
+import { z } from 'zod';
+import { ApiError, ErrorCode } from '../middleware/errorHandling';
+import { validateBody } from '../middleware/validation';
 import { createApiResponse } from '../utils/response';
-import { getWorkspaceManager } from '../utils/workspace';
-import { getMandrakeManagerForRequest } from '../../services/helpers';
+import { getMandrakeManager, getWorkspaceManagerById } from '../utils/workspace';
+
+// Validation schema
+const promptConfigSchema = z.object({
+  instructions: z.string().optional(),
+  includeWorkspaceMetadata: z.boolean().optional(),
+  includeSystemInfo: z.boolean().optional(),
+  includeDateTime: z.boolean().optional(),
+  includeTools: z.boolean().optional(),
+  includeFiles: z.boolean().optional(),
+  includeDynamicContext: z.boolean().optional()
+});
 
 /**
- * Creates route handlers for prompt endpoints
- * @param isWorkspaceScope Whether these routes are for workspace-specific prompts
- * @returns Route handler methods
+ * Creates handlers for prompt routes (both system and workspace-level)
+ * @param workspaceScoped Whether these routes are scoped to a workspace
  */
-export function createPromptRoutes(isWorkspaceScope: boolean = false) {
+export function createPromptRoutes(workspaceScoped = false) {
   return {
-    // GET handler for retrieving prompt config
+    /**
+     * GET - Get prompt configuration
+     */
     async GET(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params?: { id?: string } } = {}
     ) {
       try {
-        let workspaceId: string | undefined;
-        let handler: PromptHandler;
+        let promptManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new PromptHandler(workspaceId, workspaceManager.prompt);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          promptManager = workspace.prompt;
         } else {
-          // Use MandrakeManager for system-level
-          const mandrakeManager = await getMandrakeManagerForRequest();
-          handler = new PromptHandler(undefined, mandrakeManager.prompt);
+          const mandrakeManager = getMandrakeManager();
+          promptManager = mandrakeManager.prompt;
         }
         
-        // Get prompt config
-        const config = await handler.getConfig();
+        const config = await promptManager.getConfig();
         return createApiResponse(config);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to get prompt config: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // PUT handler for updating prompt config
+    /**
+     * PUT - Update prompt configuration
+     */
     async PUT(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params?: { id?: string } } = {}
     ) {
       try {
-        let workspaceId: string | undefined;
-        let handler: PromptHandler;
+        let promptManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new PromptHandler(workspaceId, workspaceManager.prompt);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          promptManager = workspace.prompt;
         } else {
-          // Use MandrakeManager for system-level
-          const mandrakeManager = await getMandrakeManagerForRequest();
-          handler = new PromptHandler(undefined, mandrakeManager.prompt);
+          const mandrakeManager = getMandrakeManager();
+          promptManager = mandrakeManager.prompt;
         }
         
-        // Update prompt config
-        await handler.updateConfig(req);
+        const body = await validateBody(req, promptConfigSchema);
         
-        // Return updated config
-        const config = await handler.getConfig();
-        return createApiResponse(config);
+        // Get current config to merge with updates
+        const currentConfig = await promptManager.getConfig();
+        const updatedConfig = {
+          ...currentConfig,
+          ...body
+        };
+        
+        // Update config
+        await promptManager.updateConfig(updatedConfig);
+        
+        // Get latest config
+        const latestConfig = await promptManager.getConfig();
+        return createApiResponse(latestConfig);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to update prompt config: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     }
   };

@@ -37,7 +37,7 @@ describe('Session Integration', () => {
     beforeEach(async () => {
         testDir = await createTestDirectory();
 
-        workspace = new WorkspaceManager(testDir.path, WORKSPACE_NAME);
+        workspace = new WorkspaceManager(testDir.path, WORKSPACE_NAME, crypto.randomUUID());
         await workspace.init('Test Workspace');
 
         await workspace.models.updateProvider('anthropic', {

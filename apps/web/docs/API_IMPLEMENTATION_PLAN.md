@@ -1,8 +1,8 @@
-# API Implementation Plan for Mandrake
+# API Implementation Plan for Mandrake (Revised)
 
 ## Overview
 
-This document outlines the implementation plan for the Mandrake API. It provides a detailed structure of all routes, their HTTP methods, and a strategy for sharing code between similar endpoints at system and workspace levels.
+This document outlines the implementation plan for the Mandrake API with a simplified approach that directly uses managers in route factories without an intermediate handler layer.
 
 ## API Routes Structure
 
@@ -39,10 +39,17 @@ This document outlines the implementation plan for the Mandrake API. It provides
   GET  - List system tools
   POST - Add new tool
 
-/api/tools/[serverName]
+/api/tools/[setId]
+  GET  - List tools in set
+  POST - Add tool to set
+
+/api/tools/[setId]/[serverId]
   GET    - Get tool details
   PUT    - Update tool config
   DELETE - Remove tool
+
+/api/tools/active
+  GET - Get active tool set
 
 /api/tools/[serverName]/status
   GET - Get tool server status
@@ -112,10 +119,17 @@ This document outlines the implementation plan for the Mandrake API. It provides
   GET  - List workspace tools
   POST - Add tool to workspace
 
-/api/workspaces/[id]/tools/[serverName]
+/api/workspaces/[id]/tools/[setId]
+  GET  - List tools in set
+  POST - Add tool to set
+
+/api/workspaces/[id]/tools/[setId]/[serverId]
   GET    - Get tool details in workspace
   PUT    - Update tool config in workspace
   DELETE - Remove tool from workspace
+
+/api/workspaces/[id]/tools/active
+  GET - Get active tool set
 
 /api/workspaces/[id]/tools/[serverName]/status
   GET - Get tool server status in workspace
@@ -152,9 +166,7 @@ This document outlines the implementation plan for the Mandrake API. It provides
   POST - Send message and stream response
 ```
 
-## Shared API Logic Implementation
-
-To avoid code duplication between system-level and workspace-level resources, we'll implement a shared handler approach:
+## Simplified Implementation Approach
 
 ### File Structure
 
@@ -162,105 +174,58 @@ To avoid code duplication between system-level and workspace-level resources, we
 apps/web/src/
   └── lib/
       └── api/
-          ├── handlers/
-          │   ├── ConfigHandler.ts
-          │   ├── DynamicContextHandler.ts
-          │   ├── FilesHandler.ts
-          │   ├── ModelsHandler.ts
-          │   ├── PromptHandler.ts
-          │   ├── SessionsHandler.ts
-          │   ├── ToolsHandler.ts
-          │   └── WorkspacesHandler.ts
           ├── factories/
-          │   ├── createConfigRoutes.ts
           │   ├── createDynamicContextRoutes.ts
           │   ├── createFilesRoutes.ts
+          │   ├── createMandrakeConfigRoutes.ts
           │   ├── createModelRoutes.ts
           │   ├── createPromptRoutes.ts
           │   ├── createSessionRoutes.ts
-          │   ├── createToolRoutes.ts
-          │   └── createWorkspaceRoutes.ts
+          │   ├── createToolsRoutes.ts
+          │   └── createWorkspacesRoutes.ts
           ├── middleware/
           │   ├── errorHandling.ts
           │   └── validation.ts
           └── utils/
               ├── response.ts
-              └── types.ts
+              ├── types.ts
+              └── workspace.ts
 ```
 
-### Resource Handler Implementation
-
-Each resource handler will follow this pattern:
-
-```typescript
-// Example: DynamicContextHandler.ts
-export class DynamicContextHandler {
-  constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
-  ) {}
-
-  // Methods that work at both levels
-  async listContexts(req: NextRequest) {
-    if (this.workspaceId) {
-      // Workspace-specific implementation
-      return this.workspaceManager!.getDynamicContextManager().listContexts();
-    } else {
-      // System-level implementation
-      return getSystemDynamicContextManager().listContexts();
-    }
-  }
-  
-  async addContext(req: NextRequest) {
-    const body = await req.json();
-    
-    if (this.workspaceId) {
-      // Workspace-specific implementation
-      return this.workspaceManager!.getDynamicContextManager().addContext(body);
-    } else {
-      // System-level implementation
-      return getSystemDynamicContextManager().addContext(body);
-    }
-  }
-  
-  // Similar methods for other operations
-}
-```
-
-### Route Factory Implementation
-
-Each route factory will create route handlers using the appropriate resource handler:
+### Direct Manager Usage in Route Factories
 
 ```typescript
 // Example: createDynamicContextRoutes.ts
-export function createDynamicContextRoutes(isWorkspaceScope: boolean = false) {
+export function createDynamicContextRoutes(workspaceScoped = false) {
   return {
     async GET(
       req: NextRequest,
       { params }: { params?: { id?: string, contextId?: string } } = {}
     ) {
       try {
-        const workspaceId = isWorkspaceScope ? params?.id : undefined;
-        const contextId = params?.contextId;
+        let manager;
         
-        let handler: DynamicContextHandler;
-        
-        if (workspaceId) {
-          const workspaceManager = await getWorkspaceManagerForRequest(workspaceId);
-          handler = new DynamicContextHandler(workspaceId, workspaceManager);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            return createApiErrorResponse('Workspace ID is required', 400);
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          manager = workspace.dynamic;
         } else {
-          handler = new DynamicContextHandler();
+          const mandrakeManager = getMandrakeManager();
+          manager = mandrakeManager.dynamic;
         }
         
-        if (contextId) {
-          // Handle specific context requests
-          return NextResponse.json(await handler.getContextDetails(contextId));
+        if (params?.contextId) {
+          // Get specific context
+          const context = await manager.get(params.contextId);
+          return NextResponse.json(context);
         } else {
-          // Handle context listing
-          return NextResponse.json(await handler.listContexts(req));
+          // List all contexts
+          const contexts = await manager.list();
+          return NextResponse.json(contexts);
         }
       } catch (error) {
-        // Common error handling
         return handleApiError(error);
       }
     },
@@ -270,25 +235,158 @@ export function createDynamicContextRoutes(isWorkspaceScope: boolean = false) {
       { params }: { params?: { id?: string } } = {}
     ) {
       try {
-        const workspaceId = isWorkspaceScope ? params?.id : undefined;
+        let manager;
         
-        let handler: DynamicContextHandler;
-        
-        if (workspaceId) {
-          const workspaceManager = await getWorkspaceManagerForRequest(workspaceId);
-          handler = new DynamicContextHandler(workspaceId, workspaceManager);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            return createApiErrorResponse('Workspace ID is required', 400);
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          manager = workspace.dynamic;
         } else {
-          handler = new DynamicContextHandler();
+          const mandrakeManager = getMandrakeManager();
+          manager = mandrakeManager.dynamic;
         }
         
-        const result = await handler.addContext(req);
+        const body = await req.json();
+        const validatedBody = validateDynamicContextSchema(body);
+        
+        const result = await manager.create(validatedBody);
         return NextResponse.json(result, { status: 201 });
       } catch (error) {
         return handleApiError(error);
       }
     },
     
-    // PUT and DELETE implementations follow the same pattern
+    // PUT and DELETE follow the same pattern
+  };
+}
+```
+
+### For System-Only Routes (MandrakeManager)
+
+```typescript
+// Example: createWorkspacesRoutes.ts
+export function createWorkspacesRoutes() {
+  return {
+    async GET(req: NextRequest) {
+      try {
+        const mandrakeManager = getMandrakeManager();
+        const workspaces = await mandrakeManager.listWorkspaces();
+        return NextResponse.json(workspaces);
+      } catch (error) {
+        return handleApiError(error);
+      }
+    },
+    
+    async POST(req: NextRequest) {
+      try {
+        const mandrakeManager = getMandrakeManager();
+        const body = await req.json();
+        
+        const { name, description, path } = validateWorkspaceCreateSchema(body);
+        
+        const workspace = await mandrakeManager.createWorkspace(name, description, path);
+        return NextResponse.json({
+          id: workspace.id,
+          name: workspace.name,
+          path: workspace.paths.root
+        }, { status: 201 });
+      } catch (error) {
+        return handleApiError(error);
+      }
+    }
+  };
+}
+
+export function createWorkspaceRoutes() {
+  return {
+    async GET(req: NextRequest, { params }: { params: { id: string } }) {
+      try {
+        const { id } = params;
+        const mandrakeManager = getMandrakeManager();
+        const workspace = await mandrakeManager.getWorkspace(id);
+        
+        const config = await workspace.config.getConfig();
+        return NextResponse.json(config);
+      } catch (error) {
+        return handleApiError(error);
+      }
+    },
+    
+    async DELETE(req: NextRequest, { params }: { params: { id: string } }) {
+      try {
+        const { id } = params;
+        const mandrakeManager = getMandrakeManager();
+        await mandrakeManager.deleteWorkspace(id);
+        return NextResponse.json({ success: true });
+      } catch (error) {
+        return handleApiError(error);
+      }
+    }
+  };
+}
+```
+
+### Session and Streaming Routes
+
+```typescript
+// Example: createSessionRoutes.ts
+export function createSessionRoutes(workspaceScoped = false) {
+  return {
+    async POST(
+      req: NextRequest,
+      { params }: { params?: { id?: string, sessionId?: string } } = {}
+    ) {
+      try {
+        // Get session manager and coordinator
+        let sessionManager, coordinator;
+        
+        if (workspaceScoped) {
+          if (!params?.id) {
+            return createApiErrorResponse('Workspace ID is required', 400);
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          sessionManager = workspace.sessions;
+          
+          // Create session coordinator for this workspace
+          coordinator = createSessionCoordinator(workspace);
+        } else {
+          const mandrakeManager = getMandrakeManager();
+          sessionManager = mandrakeManager.sessions;
+          
+          // Create session coordinator for system level
+          coordinator = createSystemSessionCoordinator();
+        }
+        
+        if (params?.sessionId) {
+          // Handle new message in existing session
+          const { content } = await req.json();
+          
+          if (req.headers.get('accept') === 'text/event-stream') {
+            // Streaming response
+            const stream = new ReadableStream({
+              start(controller) {
+                coordinator.handleStreamingRequest(params.sessionId!, content, controller);
+              }
+            });
+            
+            return createApiStreamResponse(stream);
+          } else {
+            // Normal request/response
+            const result = await coordinator.handleRequest(params.sessionId!, content);
+            return NextResponse.json(result);
+          }
+        } else {
+          // Create new session
+          const body = await req.json();
+          const session = await sessionManager.createSession(body);
+          return NextResponse.json(session, { status: 201 });
+        }
+      } catch (error) {
+        return handleApiError(error);
+      }
+    }
   };
 }
 ```
@@ -311,9 +409,81 @@ import { createDynamicContextRoutes } from '@/lib/api/factories/createDynamicCon
 export const { GET, POST } = createDynamicContextRoutes(true);
 ```
 
-### Common API Utilities
+## Utility Functions
 
-#### Response Formatting
+### Workspace Manager Utilities
+
+```typescript
+// lib/api/utils/workspace.ts
+import { MandrakeManager, WorkspaceManager } from '@mandrake/workspace';
+
+// Singleton instance
+let mandrakeManager: MandrakeManager;
+
+export function getMandrakeManager(): MandrakeManager {
+  if (!mandrakeManager) {
+    mandrakeManager = new MandrakeManager(process.env.MANDRAKE_ROOT || '~/.mandrake');
+    
+    // Initialize if not already initialized
+    if (!mandrakeManager.initialized) {
+      mandrakeManager.init();
+    }
+  }
+  return mandrakeManager;
+}
+
+export async function getWorkspaceManagerById(id: string): Promise<WorkspaceManager> {
+  const manager = getMandrakeManager();
+  return manager.getWorkspace(id);
+}
+
+export function createSessionCoordinator(workspace: WorkspaceManager): SessionCoordinator {
+  // Construct a session coordinator for the workspace
+  return new SessionCoordinator({
+    metadata: {
+      name: workspace.name,
+      id: workspace.id,
+      path: workspace.paths.root
+    },
+    promptManager: workspace.prompt,
+    sessionManager: workspace.sessions,
+    mcpManager: getMCPManager(),
+    modelsManager: workspace.models,
+    filesManager: workspace.files,
+    dynamicContextManager: workspace.dynamic
+  });
+}
+
+export function createSystemSessionCoordinator(): SessionCoordinator {
+  const mandrake = getMandrakeManager();
+  // Construct a session coordinator with system managers
+  return new SessionCoordinator({
+    metadata: {
+      name: 'system',
+      path: mandrake.paths.root
+    },
+    promptManager: mandrake.prompt,
+    sessionManager: mandrake.sessions,
+    mcpManager: getMCPManager(),
+    modelsManager: mandrake.models,
+    filesManager: null, // System doesn't have files manager
+    dynamicContextManager: null // System doesn't have dynamic context manager
+  });
+}
+
+// Singleton MCP Manager
+let mcpManager: MCPManager;
+
+export function getMCPManager(): MCPManager {
+  if (!mcpManager) {
+    mcpManager = new MCPManager();
+    // Initialize MCP servers if needed
+  }
+  return mcpManager;
+}
+```
+
+### Response Utilities
 
 ```typescript
 // lib/api/utils/response.ts
@@ -337,190 +507,67 @@ export function createApiStreamResponse(stream: ReadableStream) {
 }
 ```
 
-#### Error Handling
+### Validation Middleware
 
 ```typescript
-// lib/api/middleware/errorHandling.ts
-export function handleApiError(error: any) {
-  console.error('API Error:', error);
-  
-  // Handle specific error types
-  if (error.code === 'RESOURCE_NOT_FOUND') {
-    return createApiErrorResponse(error, 404);
-  }
-  
-  if (error.code === 'VALIDATION_ERROR') {
-    return createApiErrorResponse(error, 400);
-  }
-  
-  // Default error handling
-  return createApiErrorResponse(
-    error instanceof Error ? error.message : 'Unknown error',
-    500
-  );
+// lib/api/middleware/validation.ts
+import { z } from 'zod';
+
+export function validateSchema<T>(schema: z.ZodType<T>, data: unknown): T {
+  return schema.parse(data);
 }
+
+export const dynamicContextSchema = z.object({
+  serverId: z.string(),
+  methodName: z.string(),
+  params: z.record(z.any()).optional(),
+  refresh: z.object({
+    enabled: z.boolean()
+  }).optional()
+});
+
+export function validateDynamicContextSchema(data: unknown) {
+  return validateSchema(dynamicContextSchema, data);
+}
+
+export const workspaceCreateSchema = z.object({
+  name: z.string().min(1).regex(/^[a-zA-Z0-9-_]+$/),
+  description: z.string().optional(),
+  path: z.string().optional()
+});
+
+export function validateWorkspaceCreateSchema(data: unknown) {
+  return validateSchema(workspaceCreateSchema, data);
+}
+
+// Add other validation schemas as needed
 ```
 
-## Detailed Implementation for Each Resource Handler
+## Benefits of This Approach
 
-### 1. ToolsHandler
-
-```typescript
-export class ToolsHandler {
-  constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
-  ) {}
-
-  async listTools() {...}
-  async addTool(req: NextRequest) {...}
-  async getToolDetails(serverName: string) {...}
-  async updateTool(serverName: string, req: NextRequest) {...}
-  async removeTool(serverName: string) {...}
-  async getToolStatus(serverName: string) {...}
-  async listMethods(serverName: string) {...}
-  async executeMethod(serverName: string, methodName: string, req: NextRequest) {...}
-}
-```
-
-### 2. ModelsHandler
-
-```typescript
-export class ModelsHandler {
-  constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
-  ) {}
-
-  async listModels() {...}
-  async addModel(req: NextRequest) {...}
-  async getModelDetails(modelId: string) {...}
-  async updateModel(modelId: string, req: NextRequest) {...}
-  async removeModel(modelId: string) {...}
-}
-```
-
-### 3. PromptHandler
-
-```typescript
-export class PromptHandler {
-  constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
-  ) {}
-
-  async getPrompt() {...}
-  async updatePrompt(req: NextRequest) {...}
-}
-```
-
-### 4. DynamicContextHandler
-
-```typescript
-export class DynamicContextHandler {
-  constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
-  ) {}
-
-  async listContexts() {...}
-  async addContext(req: NextRequest) {...}
-  async getContextDetails(contextId: string) {...}
-  async updateContext(contextId: string, req: NextRequest) {...}
-  async removeContext(contextId: string) {...}
-  async executeContext(contextId: string) {...}
-}
-```
-
-### 5. SessionsHandler
-
-```typescript
-export class SessionsHandler {
-  constructor(
-    private workspaceId?: string, 
-    private workspaceManager?: WorkspaceManager
-  ) {}
-
-  async listSessions() {...}
-  async createSession(req: NextRequest) {...}
-  async getSessionDetails(sessionId: string) {...}
-  async updateSession(sessionId: string, req: NextRequest) {...}
-  async deleteSession(sessionId: string) {...}
-  async getMessages(sessionId: string) {...}
-  async sendMessage(sessionId: string, req: NextRequest) {...}
-  async streamMessage(sessionId: string, req: NextRequest, controller: ReadableStreamDefaultController) {...}
-}
-```
-
-### 6. FilesHandler (Workspace-specific only)
-
-```typescript
-export class FilesHandler {
-  constructor(
-    private workspaceId: string, 
-    private workspaceManager: WorkspaceManager
-  ) {}
-
-  async listFiles() {...}
-  async addFile(req: NextRequest) {...}
-  async getFileContent(fileName: string) {...}
-  async updateFile(fileName: string, req: NextRequest) {...}
-  async deleteFile(fileName: string) {...}
-}
-```
-
-### 7. ConfigHandler (System-specific only)
-
-```typescript
-export class ConfigHandler {
-  async getConfig() {...}
-  async updateConfig(req: NextRequest) {...}
-}
-```
-
-### 8. WorkspacesHandler (System-specific only)
-
-```typescript
-export class WorkspacesHandler {
-  async listWorkspaces() {...}
-  async createWorkspace(req: NextRequest) {...}
-  async getWorkspaceDetails(workspaceId: string) {...}
-  async updateWorkspace(workspaceId: string, req: NextRequest) {...}
-  async deleteWorkspace(workspaceId: string) {...}
-}
-```
+1. **Simplicity**: Removes an unnecessary abstraction layer by using managers directly
+2. **Consistency**: All route factories follow the same pattern with manager access
+3. **Type Safety**: Direct manager access preserves TypeScript types
+4. **Testability**: Easier to mock managers in tests for route factories
+5. **Performance**: One less function call in the execution chain
 
 ## Implementation Phases
 
 1. **Phase 1: Core Infrastructure**
-   - Set up shared handler architecture
-   - Implement error handling and response utilities
-   - Create basic workspace routes
+   - Set up utility functions for accessing managers
+   - Implement validation middleware with Zod schemas
+   - Create basic route factories
 
-2. **Phase 2: Session Management**
-   - Implement session handlers
-   - Add streaming support
-   - Create message handling
+2. **Phase 2: Workspace Management**
+   - Implement workspace routes (list, create, get, delete)
+   - Add configuration management endpoints
 
 3. **Phase 3: Resource Management**
-   - Implement tools, models, and prompt handlers
-   - Add dynamic context support
-   - Create file management endpoints
+   - Implement tools, models, and dynamic context routes
+   - Add file management endpoints for workspaces
 
-4. **Phase 4: Advanced Features**
-   - Add configuration management
-   - Implement tool method execution
-   - Add support for workspace backups
+4. **Phase 4: Session Management**
+   - Implement session creation and management
+   - Add message handling with streaming support
 
-## Testing Strategy
-
-1. **Unit Tests**: Test individual handler methods
-2. **Integration Tests**: Test API endpoints with service mocks
-3. **End-to-End Tests**: Test complete API flows with real services
-
-## Security Considerations
-
-1. **Input Validation**: Validate all request inputs
-2. **Resource Authorization**: Check access permissions for workspaces
-3. **Rate Limiting**: Add rate limiting for API endpoints
-4. **Error Information**: Ensure errors don't leak sensitive information
+This revised approach is much cleaner and more direct, leveraging the managers' functionality directly without unnecessary abstraction.

@@ -1,156 +1,199 @@
 import { NextRequest } from 'next/server';
-import { FilesHandler } from '../handlers/FilesHandler';
-import { handleApiError } from '../middleware/errorHandling';
-import { createApiResponse, createNoContentResponse } from '../utils/response';
-import { getWorkspaceManager } from '../utils/workspace';
-import { validateParams, validateQuery } from '../middleware/validation';
 import { z } from 'zod';
+import { ApiError, ErrorCode } from '../middleware/errorHandling';
+import { validateBody } from '../middleware/validation';
+import { createApiResponse, createNoContentResponse } from '../utils/response';
+import { getWorkspaceManagerById } from '../utils/workspace';
 
-// Parameter schemas
-const fileNameSchema = z.object({
-  fileName: z.string().min(1, "File name is required")
+// Validation schema
+const fileContentSchema = z.object({
+  content: z.string(),
+  encoding: z.enum(['utf8', 'base64']).optional()
 });
 
-// Fixed schema to properly handle string to boolean conversion
-const activeQuerySchema = z.object({
-  active: z.enum(['true', 'false']).optional()
-}).transform(data => ({
-  active: data.active === 'true' ? true : data.active === 'false' ? false : undefined
-}));
-
 /**
- * Creates route handlers for files endpoints in workspace context
- * @returns Route handler methods
+ * Creates handlers for workspace file routes
  */
 export function createFilesRoutes() {
   return {
-    // GET handler for listing files or getting a specific file
+    /**
+     * GET - List files or get file content
+     */
     async GET(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id: string, fileName?: string } }
     ) {
       try {
-        if (!params?.id) {
-          return handleApiError(new Error("Workspace ID is required"));
+        const { id, fileName } = params;
+        const workspace = await getWorkspaceManagerById(id);
+        
+        if (fileName) {
+          // Get specific file
+          const fileContent = await workspace.files.read(fileName);
+          return createApiResponse({
+            name: fileName,
+            content: fileContent
+          });
+        } else {
+          // List all files
+          const files = await workspace.files.list();
+          return createApiResponse(files);
         }
-        
-        const workspaceId = params.id as string;
-        const workspaceManager = await getWorkspaceManager(workspaceId);
-        const handler = new FilesHandler(workspaceId, workspaceManager);
-        
-        // Handle specific file request
-        if (params?.fileName) {
-          const { fileName } = validateParams(params, fileNameSchema);
-          const file = await handler.getFile(fileName);
-          return createApiResponse(file);
-        }
-        
-        // Get active status from query or default to true
-        let active = true;
-        try {
-          const url = new URL(req.url);
-          const activeParam = url.searchParams.get('active');
-          if (activeParam === 'false') {
-            active = false;
-          }
-        } catch (e) {
-          // Default to true if URL parsing fails
-        }
-        
-        // List all files
-        const files = await handler.listFiles(active);
-        return createApiResponse(files);
       } catch (error) {
-        return handleApiError(error);
+        if (error instanceof Error && error.message.includes('not found')) {
+          throw new ApiError(
+            `File not found: ${params.fileName}`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404,
+            error
+          );
+        }
+        
+        throw new ApiError(
+          `Failed to access files: ${error instanceof Error ? error.message : String(error)}`,
+          ErrorCode.INTERNAL_ERROR,
+          500,
+          error instanceof Error ? error : undefined
+        );
       }
     },
     
-    // POST handler for creating a new file
+    /**
+     * POST - Create a new file
+     */
     async POST(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id: string } }
     ) {
       try {
-        if (!params?.id) {
-          return handleApiError(new Error("Workspace ID is required"));
+        const { id } = params;
+        const workspace = await getWorkspaceManagerById(id);
+        const body = await validateBody(req, fileContentSchema);
+        
+        // For form uploads, need to extract file name from the form data
+        // This is a simple implementation that expects the file content in JSON
+        // For multipart form data, you would need to handle differently
+        const fileName = req.headers.get('x-file-name');
+        
+        if (!fileName) {
+          throw new ApiError(
+            'File name is required',
+            ErrorCode.BAD_REQUEST,
+            400
+          );
         }
         
-        const workspaceId = params.id as string;
-        const workspaceManager = await getWorkspaceManager(workspaceId);
-        const handler = new FilesHandler(workspaceId, workspaceManager);
-        
-        // Create a new file
-        if (params?.fileName) {
-          const { fileName } = validateParams(params, fileNameSchema);
-          const file = await handler.createFile(fileName, req);
-          return createApiResponse(file, 201);
+        // Check if file already exists
+        const files = await workspace.files.list();
+        if (files.some(file => file.name === fileName)) {
+          throw new ApiError(
+            `File ${fileName} already exists`,
+            ErrorCode.CONFLICT,
+            409
+          );
         }
         
-        return handleApiError(new Error('Missing fileName parameter'));
+        // Create file
+        await workspace.files.write(fileName, body.content, body.encoding);
+        
+        return createApiResponse({
+          name: fileName,
+          created: true
+        }, 201);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to create file: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // PUT handler for updating a file
+    /**
+     * PUT - Update file content
+     */
     async PUT(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id: string, fileName: string } }
     ) {
       try {
-        if (!params?.id) {
-          return handleApiError(new Error("Workspace ID is required"));
+        const { id, fileName } = params;
+        const workspace = await getWorkspaceManagerById(id);
+        const body = await validateBody(req, fileContentSchema);
+        
+        // Check if file exists
+        try {
+          await workspace.files.read(fileName);
+        } catch (error) {
+          throw new ApiError(
+            `File ${fileName} not found`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404,
+            error instanceof Error ? error : undefined
+          );
         }
         
-        const workspaceId = params.id as string;
-        const workspaceManager = await getWorkspaceManager(workspaceId);
-        const handler = new FilesHandler(workspaceId, workspaceManager);
+        // Update file
+        await workspace.files.write(fileName, body.content, body.encoding);
         
-        // Update a file
-        if (params?.fileName) {
-          const { fileName } = validateParams(params, fileNameSchema);
-          
-          // Handle active status update 
-          if (req.url.includes('/active')) {
-            const file = await handler.setFileActive(fileName, req);
-            return createApiResponse(file);
-          }
-          
-          // Handle content update
-          const file = await handler.updateFile(fileName, req);
-          return createApiResponse(file);
-        }
-        
-        return handleApiError(new Error('Missing fileName parameter'));
+        return createApiResponse({
+          name: fileName,
+          updated: true
+        });
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to update file: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // DELETE handler for removing a file
+    /**
+     * DELETE - Remove a file
+     */
     async DELETE(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id: string, fileName: string } }
     ) {
       try {
-        if (!params?.id) {
-          return handleApiError(new Error("Workspace ID is required"));
+        const { id, fileName } = params;
+        const workspace = await getWorkspaceManagerById(id);
+        
+        // Check if file exists
+        try {
+          await workspace.files.read(fileName);
+        } catch (error) {
+          throw new ApiError(
+            `File ${fileName} not found`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404,
+            error instanceof Error ? error : undefined
+          );
         }
         
-        const workspaceId = params.id as string;
-        const workspaceManager = await getWorkspaceManager(workspaceId);
-        const handler = new FilesHandler(workspaceId, workspaceManager);
+        // Delete file
+        await workspace.files.delete(fileName);
         
-        // Delete a file
-        if (params?.fileName) {
-          const { fileName } = validateParams(params, fileNameSchema);
-          await handler.deleteFile(fileName);
-          return createNoContentResponse();
-        }
-        
-        return handleApiError(new Error('Missing fileName parameter'));
+        return createNoContentResponse();
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to delete file: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     }
   };

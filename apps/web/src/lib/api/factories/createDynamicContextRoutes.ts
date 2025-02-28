@@ -1,152 +1,243 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { DynamicContextHandler } from '../handlers/DynamicContextHandler';
-import { handleApiError } from '../middleware/errorHandling';
-import { createApiResponse, createNoContentResponse } from '../utils/response';
-import { getWorkspaceManager } from '../utils/workspace';
-import { validateParams } from '../middleware/validation';
 import { z } from 'zod';
+import { ApiError, ErrorCode } from '../middleware/errorHandling';
+import { validateBody } from '../middleware/validation';
+import { createApiResponse, createNoContentResponse } from '../utils/response';
+import { getMandrakeManager, getWorkspaceManagerById } from '../utils/workspace';
 
-const dynamicContextIdSchema = z.object({
-  contextId: z.string().min(1, "Context ID is required")
+// Validation schemas
+const dynamicContextSchema = z.object({
+  serverId: z.string(),
+  methodName: z.string(),
+  params: z.record(z.any()).optional(),
+  refresh: z.object({
+    enabled: z.boolean()
+  }).optional()
+});
+
+const dynamicContextUpdateSchema = z.object({
+  serverId: z.string().optional(),
+  methodName: z.string().optional(),
+  params: z.record(z.any()).optional(),
+  refresh: z.object({
+    enabled: z.boolean()
+  }).optional()
 });
 
 /**
- * Creates route handlers for dynamic context endpoints
- * @param isWorkspaceScope Whether these routes are for workspace-specific contexts
- * @returns Route handler methods
+ * Creates handlers for dynamic context routes (both system and workspace-level)
+ * @param workspaceScoped Whether these routes are scoped to a workspace
  */
-export function createDynamicContextRoutes(isWorkspaceScope: boolean = false) {
+export function createDynamicContextRoutes(workspaceScoped = false) {
   return {
-    // GET handler for listing contexts or getting a specific context
+    /**
+     * GET - List dynamic contexts or get a specific context
+     */
     async GET(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params?: { id?: string, contextId?: string } } = {}
     ) {
       try {
-        let workspaceId: string | undefined;
-        let handler: DynamicContextHandler;
+        let dynamicManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new DynamicContextHandler(workspaceId, workspaceManager);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          dynamicManager = workspace.dynamic;
         } else {
-          handler = new DynamicContextHandler();
+          // System doesn't have dynamic contexts, but we could adapt to use
+          // a manager here if we had one in the future
+          throw new ApiError(
+            'System-level dynamic contexts are not yet supported',
+            ErrorCode.NOT_IMPLEMENTED,
+            501
+          );
         }
         
-        // Handle specific context request if contextId is provided
         if (params?.contextId) {
-          const { contextId } = validateParams(params, dynamicContextIdSchema);
-          return createApiResponse(await handler.getContextDetails(contextId));
-        } 
-        
-        // Otherwise list all contexts
-        return createApiResponse(await handler.listContexts());
+          // Get specific context
+          const context = await dynamicManager.get(params.contextId);
+          if (!context) {
+            throw new ApiError(
+              `Dynamic context not found: ${params.contextId}`,
+              ErrorCode.RESOURCE_NOT_FOUND,
+              404
+            );
+          }
+          return createApiResponse(context);
+        } else {
+          // List all contexts
+          const contexts = await dynamicManager.list();
+          return createApiResponse(contexts);
+        }
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to get dynamic contexts: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // POST handler for creating a new context
+    /**
+     * POST - Create a new dynamic context
+     */
     async POST(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params?: { id?: string } } = {}
     ) {
       try {
-        let workspaceId: string | undefined;
-        let handler: DynamicContextHandler;
+        let dynamicManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new DynamicContextHandler(workspaceId, workspaceManager);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          dynamicManager = workspace.dynamic;
         } else {
-          handler = new DynamicContextHandler();
+          // System doesn't have dynamic contexts
+          throw new ApiError(
+            'System-level dynamic contexts are not yet supported',
+            ErrorCode.NOT_IMPLEMENTED,
+            501
+          );
         }
         
-        // Create the new context and get its ID
-        const contextId = await handler.addContext(req);
+        const body = await validateBody(req, dynamicContextSchema);
         
-        // If we have the ID, we need to get the full context details to return
-        if (workspaceId) {
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          const details = await workspaceManager.dynamic.get(contextId);
-          return createApiResponse(details, 201);
-        }
-        
-        // Fallback to just returning the ID if we can't get full details
-        return createApiResponse({ id: contextId }, 201);
+        const result = await dynamicManager.create(body as any);
+        return createApiResponse(result, 201);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to create dynamic context: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // PUT handler for updating a context
+    /**
+     * PUT - Update a dynamic context
+     */
     async PUT(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id?: string, contextId: string } }
     ) {
       try {
-        // Validate that we have a context ID
-        const { contextId } = validateParams(params || {}, dynamicContextIdSchema);
+        let dynamicManager;
         
-        let workspaceId: string | undefined;
-        let handler: DynamicContextHandler;
-        
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new DynamicContextHandler(workspaceId, workspaceManager);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          dynamicManager = workspace.dynamic;
         } else {
-          handler = new DynamicContextHandler();
+          // System doesn't have dynamic contexts
+          throw new ApiError(
+            'System-level dynamic contexts are not yet supported',
+            ErrorCode.NOT_IMPLEMENTED,
+            501
+          );
         }
         
-        // Update the context (returns void)
-        await handler.updateContext(contextId, req);
+        const body = await validateBody(req, dynamicContextUpdateSchema);
         
-        // Fetch and return the updated context
-        if (workspaceId) {
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          const updated = await workspaceManager.dynamic.get(contextId);
-          return createApiResponse(updated);
+        // Get existing context
+        const existing = await dynamicManager.get(params.contextId);
+        if (!existing) {
+          throw new ApiError(
+            `Dynamic context not found: ${params.contextId}`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404
+          );
         }
         
-        // Fallback to empty success response
-        return createApiResponse({ success: true });
+        // Update context
+        const updated = {
+          ...existing,
+          ...body
+        };
+        
+        const result = await dynamicManager.update(params.contextId, updated);
+        return createApiResponse(result);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to update dynamic context: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // DELETE handler for removing a context
+    /**
+     * DELETE - Remove a dynamic context
+     */
     async DELETE(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id?: string, contextId: string } }
     ) {
       try {
-        // Validate that we have a context ID
-        const { contextId } = validateParams(params || {}, dynamicContextIdSchema);
+        let dynamicManager;
         
-        let workspaceId: string | undefined;
-        let handler: DynamicContextHandler;
-        
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new DynamicContextHandler(workspaceId, workspaceManager);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          dynamicManager = workspace.dynamic;
         } else {
-          handler = new DynamicContextHandler();
+          // System doesn't have dynamic contexts
+          throw new ApiError(
+            'System-level dynamic contexts are not yet supported',
+            ErrorCode.NOT_IMPLEMENTED,
+            501
+          );
         }
         
-        // Remove the context
-        await handler.removeContext(contextId);
+        await dynamicManager.delete(params.contextId);
         return createNoContentResponse();
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to delete dynamic context: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     }
   };

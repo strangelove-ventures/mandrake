@@ -1,128 +1,196 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { 
-  setSystemWorkspaceManager, 
-  getSystemWorkspaceManager,
-  cacheWorkspaceManager,
-  getWorkspaceManager
-} from '@/lib/api/utils/workspace';
+import { expect, test, describe, beforeEach, afterEach } from "bun:test";
+import { MandrakeManager, WorkspaceManager } from '@mandrake/workspace';
+import { createTestDirectory, TestDirectory } from '../../utils/test-dir';
 import { ApiError, ErrorCode } from '@/lib/api/middleware/errorHandling';
 
-// Create a mock WorkspaceManager directly
-class MockWorkspaceManager {
-  name: string;
-  dir: string;
-  paths: { root: string };
-  dynamic: {
-    list: () => Promise<any[]>;
-    get: () => Promise<any>;
-    create: () => Promise<string>;
-    update: () => Promise<void>;
-    delete: () => Promise<void>;
-  };
+// Import the functions to test
+import { 
+  getMandrakeManager,
+  getWorkspaceManagerById,
+  createSystemSessionCoordinator,
+  createWorkspaceSessionCoordinator,
+  getMCPManager,
+  resetManagersForTesting
+} from '@/lib/api/utils/workspace';
 
-  constructor(dir: string, name: string) {
-    this.name = name;
-    this.dir = dir;
-    this.paths = {
-      root: `/workspaces/${name}`
-    };
-    this.dynamic = {
-      list: vi.fn().mockResolvedValue([]),
-      get: vi.fn().mockResolvedValue(null),
-      create: vi.fn().mockResolvedValue('new-id'),
-      update: vi.fn().mockResolvedValue(undefined),
-      delete: vi.fn().mockResolvedValue(undefined)
-    };
-  }
-}
-
+// Test suite for workspace utility functions
 describe('Workspace Utility', () => {
-  // Mock workspace manager
-  let mockSystemManager: any;
-  let mockWorkspaceManager1: any;
-  let mockWorkspaceManager2: any;
-  
-  beforeEach(() => {
-    // Reset the workspace cache between tests by re-creating the mock objects
-    mockSystemManager = new MockWorkspaceManager('/system', 'system');
-    mockSystemManager.listWorkspaces = vi.fn().mockResolvedValue([
-      { id: 'ws1', name: 'workspace1', path: '/workspaces/workspace1' },
-      { id: 'ws2', name: 'workspace2', path: '/workspaces/workspace2' }
-    ]);
-    
-    mockWorkspaceManager1 = new MockWorkspaceManager('/workspaces/workspace1', 'workspace1');
-    mockWorkspaceManager2 = new MockWorkspaceManager('/workspaces/workspace2', 'workspace2');
-    
-    // Reset mocks
-    vi.clearAllMocks();
-  });
-  
-  afterEach(() => {
-    // Reset the system manager after each test
-    setSystemWorkspaceManager(null as any);
-  });
+  // Define test variables at a higher scope
+  let testDir: TestDirectory;
+  let originalEnv: string | undefined;
 
-  describe('setSystemWorkspaceManager', () => {
-    it('should set the system workspace manager', () => {
-      setSystemWorkspaceManager(mockSystemManager);
+  // Set up test environment before each test
+  beforeEach(async () => {
+    // Store original environment variable
+    originalEnv = process.env.MANDRAKE_ROOT;
+    
+    // Each test gets a fresh test directory
+    testDir = await createTestDirectory('api-test-');
+    
+    // Reset singleton instances
+    resetManagersForTesting();
+  });
+  
+  // Clean up after each test
+  afterEach(async () => {
+    // Clean up test directory
+    await testDir.cleanup();
+    
+    // Restore original environment variable
+    if (originalEnv) {
+      process.env.MANDRAKE_ROOT = originalEnv;
+    } else {
+      delete process.env.MANDRAKE_ROOT;
+    }
+    
+    // Reset singleton instances
+    resetManagersForTesting();
+  });
+  
+  // Tests for getMandrakeManager
+  describe('getMandrakeManager', () => {
+    test('should return a MandrakeManager instance', () => {
+      // Set the environment variable for this test
+      process.env.MANDRAKE_ROOT = testDir.path;
       
-      const manager = getSystemWorkspaceManager();
-      expect(manager).toBe(mockSystemManager);
+      const manager = getMandrakeManager();
+      expect(manager).toBeInstanceOf(MandrakeManager);
+      expect(manager.paths.root).toBe(testDir.path);
+    });
+    
+    test('should return the same instance on repeated calls', () => {
+      // Set the environment variable for this test
+      process.env.MANDRAKE_ROOT = testDir.path;
+      
+      const manager1 = getMandrakeManager();
+      const manager2 = getMandrakeManager();
+      expect(manager1).toBe(manager2);
     });
   });
-
-  describe('getSystemWorkspaceManager', () => {
-    it('should throw an error if system manager is not initialized', () => {
-      expect(() => getSystemWorkspaceManager()).toThrow(ApiError);
+  
+  // Tests for getMCPManager
+  describe('getMCPManager', () => {
+    test('should return an MCPManager instance', () => {
+      const manager = getMCPManager();
+      expect(manager).toBeDefined();
+      expect(typeof manager.startServer).toBe('function');
+      expect(typeof manager.stopServer).toBe('function');
+    });
+    
+    test('should return the same instance on repeated calls', () => {
+      const manager1 = getMCPManager();
+      const manager2 = getMCPManager();
+      expect(manager1).toBe(manager2);
+    });
+  });
+  
+  // Tests for getWorkspaceManagerById
+  describe('getWorkspaceManagerById', () => {
+    test('should return a workspace manager by ID', async () => {
+      // Create a fresh test directory
+      process.env.MANDRAKE_ROOT = testDir.path;
       
+      // Reset managers to ensure we get a fresh instance
+      resetManagersForTesting();
+      
+      // Get mandrake manager and initialize it
+      const mandrakeManager = getMandrakeManager();
+      await mandrakeManager.init();
+      
+      // Create a test workspace with unique name
+      const workspaceName = `test-workspace-${Date.now()}`;
+      const workspaceManager = await mandrakeManager.createWorkspace(workspaceName);
+      
+      // Test the function
+      const retrievedWorkspace = await getWorkspaceManagerById(workspaceManager.id);
+      expect(retrievedWorkspace).toBeInstanceOf(WorkspaceManager);
+      expect(retrievedWorkspace.id).toBe(workspaceManager.id);
+      expect(retrievedWorkspace.name).toBe(workspaceName);
+    });
+    
+    test('should throw ApiError if workspace not found', async () => {
+      // Create a fresh test directory
+      process.env.MANDRAKE_ROOT = testDir.path;
+      
+      // Reset managers to ensure we get a fresh instance
+      resetManagersForTesting();
+      
+      // Get mandrake manager and initialize it
+      const mandrakeManager = getMandrakeManager();
+      await mandrakeManager.init();
+      
+      // Test with non-existent ID
       try {
-        getSystemWorkspaceManager();
+        await getWorkspaceManagerById('nonexistent-id');
+        expect.fail('Should have thrown an error');
       } catch (error) {
         expect(error).toBeInstanceOf(ApiError);
-        expect((error as ApiError).code).toBe(ErrorCode.SERVICE_UNAVAILABLE);
-        expect((error as ApiError).status).toBe(503);
+        expect((error as ApiError).code).toBe(ErrorCode.RESOURCE_NOT_FOUND);
+        expect((error as ApiError).status).toBe(404);
       }
-    });
-
-    it('should return the system manager when initialized', () => {
-      setSystemWorkspaceManager(mockSystemManager);
-      
-      const manager = getSystemWorkspaceManager();
-      expect(manager).toBe(mockSystemManager);
     });
   });
-
-  describe('cacheWorkspaceManager', () => {
-    it('should cache a workspace manager', async () => {
-      // Instead of mocking the module, override specific functions
-      const originalGetWorkspaceManager = getWorkspaceManager;
+  
+  // Tests for createSystemSessionCoordinator
+  describe('createSystemSessionCoordinator', () => {
+    test('should create a system session coordinator', async () => {
+      // Create a fresh test directory
+      process.env.MANDRAKE_ROOT = testDir.path;
       
-      // Override with a spy that verifies cache usage
-      const getWorkspaceManagerSpy = vi.fn().mockImplementation((id) => {
-        if (id === 'ws1') {
-          return Promise.resolve(mockWorkspaceManager1);
-        }
-        return Promise.reject(new Error(`Workspace not found: ${id}`));
-      });
+      // Reset managers to ensure we get a fresh instance
+      resetManagersForTesting();
       
-      // Replace the actual function
-      (global as any).getWorkspaceManager = getWorkspaceManagerSpy;
+      // Initialize mandrake manager
+      const mandrakeManager = getMandrakeManager();
+      await mandrakeManager.init();
       
-      try {
-        // Add to cache
-        cacheWorkspaceManager('ws1', mockWorkspaceManager1);
-        setSystemWorkspaceManager(mockSystemManager);
-        
-        // Test the cached object is returned
-        const manager = await getWorkspaceManagerSpy('ws1');
-        expect(manager).toBe(mockWorkspaceManager1);
-        
-        // Since we're using cache, the original implementation should never be called
-        expect(getWorkspaceManagerSpy).toHaveBeenCalledWith('ws1');
-      } finally {
-        // Restore the original function
-        (global as any).getWorkspaceManager = originalGetWorkspaceManager;
-      }
+      // Test the function
+      const coordinator = createSystemSessionCoordinator();
+      
+      // Verify the coordinator was created correctly
+      expect(coordinator).toBeDefined();
+      expect(coordinator.opts).toBeDefined();
+      expect(coordinator.opts.metadata.name).toBe('system');
+      expect(coordinator.opts.metadata.path).toBe(testDir.path);
+      expect(coordinator.opts.promptManager).toBe(mandrakeManager.prompt);
+      expect(coordinator.opts.sessionManager).toBe(mandrakeManager.sessions);
+      expect(coordinator.opts.modelsManager).toBe(mandrakeManager.models);
+      
+      // System level doesn't have files or dynamic contexts
+      expect(coordinator.opts.filesManager).toBeUndefined();
+      expect(coordinator.opts.dynamicContextManager).toBeUndefined();
+    });
+  });
+  
+  // Tests for createWorkspaceSessionCoordinator
+  describe('createWorkspaceSessionCoordinator', () => {
+    test('should create a workspace session coordinator', async () => {
+      // Create a fresh test directory
+      process.env.MANDRAKE_ROOT = testDir.path;
+      
+      // Reset managers to ensure we get a fresh instance
+      resetManagersForTesting();
+      
+      // Initialize mandrake manager
+      const mandrakeManager = getMandrakeManager();
+      await mandrakeManager.init();
+      
+      // Create a test workspace with unique name
+      const workspaceName = `test-workspace-${Date.now()}`;
+      const workspaceManager = await mandrakeManager.createWorkspace(workspaceName);
+      
+      // Test the function
+      const coordinator = createWorkspaceSessionCoordinator(workspaceManager);
+      
+      // Verify the coordinator was created correctly
+      expect(coordinator).toBeDefined();
+      expect(coordinator.opts).toBeDefined();
+      expect(coordinator.opts.metadata.name).toBe(workspaceName);
+      expect(coordinator.opts.metadata.path).toBe(workspaceManager.paths.root);
+      expect(coordinator.opts.promptManager).toBe(workspaceManager.prompt);
+      expect(coordinator.opts.sessionManager).toBe(workspaceManager.sessions);
+      expect(coordinator.opts.filesManager).toBe(workspaceManager.files);
+      expect(coordinator.opts.dynamicContextManager).toBe(workspaceManager.dynamic);
     });
   });
 });

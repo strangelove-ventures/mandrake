@@ -1,151 +1,341 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createDynamicContextRoutes } from '@/lib/api/factories/createDynamicContextRoutes';
+import { getMandrakeManager, getWorkspaceManagerById } from '@/lib/api/utils/workspace';
+import { ApiError } from '@/lib/api/middleware/errorHandling';
 import { NextRequest } from 'next/server';
-import { WorkspaceManager } from '@mandrake/workspace';
-import { createTestDirectory } from '@mandrake/workspace/tests/utils/utils';
-import * as workspaceUtils from '@/lib/api/utils/workspace';
-import { DynamicContextMethodConfig } from '@mandrake/workspace';
 
-// Helper function to create mock requests
-function createMockRequest(method: string, body?: any): NextRequest {
-  const request = {
-    method,
-    headers: new Headers({
-      'Content-Type': 'application/json'
-    }),
-    json: body ? () => Promise.resolve(body) : undefined,
-    url: 'http://localhost/api/test',
-  } as unknown as NextRequest;
+// Create mock objects
+const mockWorkspace = {
+  id: 'ws1',
+  name: 'workspace1',
+  dynamic: {
+    list: vi.fn(),
+    get: vi.fn(),
+    create: vi.fn(),
+    update: vi.fn(),
+    delete: vi.fn()
+  }
+};
+
+// Mock the workspace utilities
+vi.mock('@/lib/api/utils/workspace', () => ({
+  getMandrakeManager: vi.fn(),
+  getWorkspaceManagerById: vi.fn()
+}));
+
+// Helper to create test requests
+function createTestRequest(method: string, url: string, body?: any): NextRequest {
+  const headers = new Headers();
+  headers.set('content-type', 'application/json');
   
-  return request;
+  const init: RequestInit = {
+    method,
+    headers,
+    body: body ? JSON.stringify(body) : undefined
+  };
+  
+  return new NextRequest(new URL(url, 'http://localhost'), init);
 }
 
-describe('createDynamicContextRoutes', () => {
-  let testDir: any;
-  let workspaceManager: WorkspaceManager;
-  let workspaceId = 'test-workspace';
-  
-  // Spy on the workspace utils to inject our test workspace
-  let getWorkspaceManagerSpy;
-  
-  beforeEach(async () => {
-    // Create a temporary workspace for testing
-    testDir = await createTestDirectory();
-    workspaceManager = new WorkspaceManager(testDir.path, workspaceId);
-    await workspaceManager.init('Test workspace for API testing');
+describe('Dynamic Context Routes Factory', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
     
-    // Setup the workspace util spy to return our test workspace
-    getWorkspaceManagerSpy = vi.spyOn(workspaceUtils, 'getWorkspaceManager')
-      .mockImplementation(async (id) => {
-        if (id === workspaceId) {
-          return workspaceManager;
-        }
-        throw new Error(`Workspace not found: ${id}`);
-      });
+    // Configure mocks
+    (getWorkspaceManagerById as any).mockResolvedValue(mockWorkspace);
     
-    // Set system workspace manager
-    vi.spyOn(workspaceUtils, 'getSystemWorkspaceManager')
-      .mockImplementation(() => workspaceManager);
-  });
-  
-  afterEach(async () => {
-    // Clean up
-    if (testDir) {
-      await testDir.cleanup();
-    }
+    // Setup default return values
+    mockWorkspace.dynamic.list.mockResolvedValue([
+      { id: 'ctx1', serverId: 'ripper', methodName: 'listDirectory', params: { path: '/test' } },
+      { id: 'ctx2', serverId: 'fetch', methodName: 'fetch', params: { url: 'https://example.com' } }
+    ]);
     
-    // Restore all spies
-    vi.restoreAllMocks();
-  });
-
-  describe('System-level routes', () => {
-    it('GET should return 501 Not Implemented', async () => {
-      const routes = createDynamicContextRoutes();
-      const req = createMockRequest('GET');
-      
-      const response = await routes.GET(req);
-      const body = await response.json();
-      
-      expect(response.status).toBe(501); // Not implemented yet
-      expect(body.success).toBe(false);
-    });
-
-    it('POST should return 501 Not Implemented', async () => {
-      // Create a spy on the handler to mock the response
-      const addContextSpy = vi.spyOn(workspaceUtils, 'getSystemWorkspaceManager')
-        .mockImplementation(() => {
-          throw new Error('System-level dynamic contexts not implemented yet');
+    mockWorkspace.dynamic.get.mockImplementation((id) => {
+      if (id === 'ctx1') {
+        return Promise.resolve({
+          id: 'ctx1',
+          serverId: 'ripper',
+          methodName: 'listDirectory',
+          params: { path: '/test' }
         });
-      
-      const routes = createDynamicContextRoutes();
-      const contextData = {
-        id: '123e4567-e89b-12d3-a456-426614174000', // Valid UUID format
-        name: 'Test Context',
-        serverId: 'server1',
-        methodName: 'method1',
-        params: {},
-        refresh: { enabled: true } // Required field
-      };
-      
-      const req = createMockRequest('POST', contextData);
-      
-      try {
-        const response = await routes.POST(req);
-        const body = await response.json();
-        
-        expect(response.status).toBe(501);
-        expect(body.success).toBe(false);
-      } catch (error) {
-        // If the test reaches here, it's a failure of the test setup
-        expect(error).toBeUndefined();
       }
+      if (id === 'ctx2') {
+        return Promise.resolve({
+          id: 'ctx2',
+          serverId: 'fetch',
+          methodName: 'fetch',
+          params: { url: 'https://example.com' }
+        });
+      }
+      return Promise.resolve(null);
+    });
+    
+    mockWorkspace.dynamic.create.mockImplementation((data) => {
+      return Promise.resolve({
+        id: 'new-ctx',
+        ...data
+      });
+    });
+    
+    mockWorkspace.dynamic.update.mockImplementation((id, data) => {
+      return Promise.resolve({
+        id,
+        ...data
+      });
+    });
+    
+    mockWorkspace.dynamic.delete.mockResolvedValue(undefined);
+  });
+  
+  describe('Workspace-scoped dynamic contexts', () => {
+    describe('GET', () => {
+      it('should list all dynamic contexts', async () => {
+        // Create the route handler
+        const { GET } = createDynamicContextRoutes(true);
+        
+        // Create test request
+        const req = createTestRequest('GET', 'http://localhost/api/workspaces/ws1/dynamic');
+        
+        // Execute handler with workspace ID
+        const response = await GET(req, { params: { id: 'ws1' } });
+        
+        // Validate response
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        
+        // Check response data
+        expect(data.success).toBe(true);
+        expect(Array.isArray(data.data)).toBe(true);
+        expect(data.data.length).toBe(2);
+        expect(data.data[0].id).toBe('ctx1');
+        expect(data.data[1].id).toBe('ctx2');
+        
+        // Verify correct function was called
+        expect(mockWorkspace.dynamic.list).toHaveBeenCalled();
+        expect(getWorkspaceManagerById).toHaveBeenCalledWith('ws1');
+      });
+      
+      it('should get a specific dynamic context', async () => {
+        // Create the route handler
+        const { GET } = createDynamicContextRoutes(true);
+        
+        // Create test request
+        const req = createTestRequest('GET', 'http://localhost/api/workspaces/ws1/dynamic/ctx1');
+        
+        // Execute handler with workspace ID and context ID
+        const response = await GET(req, { params: { id: 'ws1', contextId: 'ctx1' } });
+        
+        // Validate response
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        
+        // Check response data
+        expect(data.success).toBe(true);
+        expect(data.data.id).toBe('ctx1');
+        expect(data.data.serverId).toBe('ripper');
+        
+        // Verify correct function was called
+        expect(mockWorkspace.dynamic.get).toHaveBeenCalledWith('ctx1');
+        expect(getWorkspaceManagerById).toHaveBeenCalledWith('ws1');
+      });
+      
+      it('should return 404 for non-existent context', async () => {
+        // Mock get to return null for non-existent context
+        mockWorkspace.dynamic.get.mockResolvedValue(null);
+        
+        // Create the route handler
+        const { GET } = createDynamicContextRoutes(true);
+        
+        // Create test request
+        const req = createTestRequest('GET', 'http://localhost/api/workspaces/ws1/dynamic/nonexistent');
+        
+        // Execute handler with workspace ID and context ID
+        const response = await GET(req, { params: { id: 'ws1', contextId: 'nonexistent' } });
+        
+        // Validate response
+        expect(response.status).toBe(404);
+        const data = await response.json();
+        
+        // Check error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('RESOURCE_NOT_FOUND');
+      });
+      
+      it('should require a workspace ID', async () => {
+        // Create the route handler
+        const { GET } = createDynamicContextRoutes(true);
+        
+        // Create test request
+        const req = createTestRequest('GET', 'http://localhost/api/workspaces/dynamic');
+        
+        // Execute handler without workspace ID
+        const response = await GET(req, { params: {} });
+        
+        // Validate response
+        expect(response.status).toBe(400);
+        const data = await response.json();
+        
+        // Check error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('BAD_REQUEST');
+      });
+    });
+    
+    describe('POST', () => {
+      it('should create a new dynamic context', async () => {
+        // Create the route handler
+        const { POST } = createDynamicContextRoutes(true);
+        
+        // Create test request with context data
+        const contextData = {
+          serverId: 'ripper',
+          methodName: 'listDirectory',
+          params: { path: '/new-test' }
+        };
+        const req = createTestRequest('POST', 'http://localhost/api/workspaces/ws1/dynamic', contextData);
+        
+        // Execute handler with workspace ID
+        const response = await POST(req, { params: { id: 'ws1' } });
+        
+        // Validate response
+        expect(response.status).toBe(201);
+        const data = await response.json();
+        
+        // Check response data
+        expect(data.success).toBe(true);
+        expect(data.data.id).toBe('new-ctx');
+        expect(data.data.serverId).toBe('ripper');
+        expect(data.data.methodName).toBe('listDirectory');
+        expect(data.data.params.path).toBe('/new-test');
+        
+        // Verify correct function was called
+        expect(mockWorkspace.dynamic.create).toHaveBeenCalledWith(contextData);
+        expect(getWorkspaceManagerById).toHaveBeenCalledWith('ws1');
+      });
+      
+      it('should validate request body', async () => {
+        // Create the route handler
+        const { POST } = createDynamicContextRoutes(true);
+        
+        // Create test request with invalid data (missing required fields)
+        const invalidData = {
+          // Missing serverId and methodName
+          params: { path: '/test' }
+        };
+        const req = createTestRequest('POST', 'http://localhost/api/workspaces/ws1/dynamic', invalidData);
+        
+        // Execute handler with workspace ID
+        const response = await POST(req, { params: { id: 'ws1' } });
+        
+        // Validate response
+        expect(response.status).toBe(400);
+        const data = await response.json();
+        
+        // Check error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('VALIDATION_ERROR');
+      });
+    });
+    
+    describe('PUT', () => {
+      it('should update a dynamic context', async () => {
+        // Create the route handler
+        const { PUT } = createDynamicContextRoutes(true);
+        
+        // Create test request with update data
+        const updateData = {
+          params: { path: '/updated-path' }
+        };
+        const req = createTestRequest('PUT', 'http://localhost/api/workspaces/ws1/dynamic/ctx1', updateData);
+        
+        // Execute handler with workspace ID and context ID
+        const response = await PUT(req, { params: { id: 'ws1', contextId: 'ctx1' } });
+        
+        // Validate response
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        
+        // Check response data
+        expect(data.success).toBe(true);
+        expect(data.data.id).toBe('ctx1');
+        expect(data.data.params.path).toBe('/updated-path');
+        
+        // Verify correct function was called
+        expect(mockWorkspace.dynamic.update).toHaveBeenCalledWith('ctx1', expect.objectContaining(updateData));
+        expect(getWorkspaceManagerById).toHaveBeenCalledWith('ws1');
+      });
+      
+      it('should return 404 for non-existent context', async () => {
+        // Mock get to return null for non-existent context
+        mockWorkspace.dynamic.get.mockResolvedValue(null);
+        
+        // Create the route handler
+        const { PUT } = createDynamicContextRoutes(true);
+        
+        // Create test request with update data
+        const updateData = {
+          params: { path: '/updated-path' }
+        };
+        const req = createTestRequest('PUT', 'http://localhost/api/workspaces/ws1/dynamic/nonexistent', updateData);
+        
+        // Execute handler with workspace ID and context ID
+        const response = await PUT(req, { params: { id: 'ws1', contextId: 'nonexistent' } });
+        
+        // Validate response
+        expect(response.status).toBe(404);
+        const data = await response.json();
+        
+        // Check error data
+        expect(data.success).toBe(false);
+        expect(data.error).toBeDefined();
+        expect(data.error.code).toBe('RESOURCE_NOT_FOUND');
+      });
+    });
+    
+    describe('DELETE', () => {
+      it('should delete a dynamic context', async () => {
+        // Create the route handler
+        const { DELETE } = createDynamicContextRoutes(true);
+        
+        // Create test request
+        const req = createTestRequest('DELETE', 'http://localhost/api/workspaces/ws1/dynamic/ctx1');
+        
+        // Execute handler with workspace ID and context ID
+        const response = await DELETE(req, { params: { id: 'ws1', contextId: 'ctx1' } });
+        
+        // Validate response
+        expect(response.status).toBe(204);
+        
+        // Verify correct function was called
+        expect(mockWorkspace.dynamic.delete).toHaveBeenCalledWith('ctx1');
+        expect(getWorkspaceManagerById).toHaveBeenCalledWith('ws1');
+      });
     });
   });
-
-  describe('Workspace-level routes', () => {
-    it('PUT should return 404 for non-existent context', async () => {
-      // Mock a specific implementation for this test
-      vi.spyOn(workspaceManager.dynamic, 'get')
-        .mockResolvedValue(undefined);
+  
+  describe('System-level dynamic contexts', () => {
+    it('should return 501 Not Implemented for system-level contexts', async () => {
+      // Create the route handler
+      const { GET } = createDynamicContextRoutes(false);
       
-      const routes = createDynamicContextRoutes(true);
-      const updateData = {
-        name: 'Updated Name',
-        refresh: { enabled: true }
-      };
+      // Create test request
+      const req = createTestRequest('GET', 'http://localhost/api/dynamic');
       
-      const req = createMockRequest('PUT', updateData);
+      // Execute handler
+      const response = await GET(req);
       
-      const response = await routes.PUT(req, { 
-        params: { 
-          id: workspaceId,
-          contextId: 'non-existent-id' 
-        } 
-      });
+      // Validate response
+      expect(response.status).toBe(501);
+      const data = await response.json();
       
-      expect(response.status).toBe(404);
-      
-      const body = await response.json();
-      expect(body.success).toBe(false);
-      expect(body.error.code).toBe('RESOURCE_NOT_FOUND');
-    });
-
-    it('DELETE should return 404 for non-existent context', async () => {
-      const routes = createDynamicContextRoutes(true);
-      const req = createMockRequest('DELETE');
-      
-      const response = await routes.DELETE(req, { 
-        params: { 
-          id: workspaceId,
-          contextId: 'non-existent-id' 
-        } 
-      });
-      
-      expect(response.status).toBe(404);
-      
-      const body = await response.json();
-      expect(body.success).toBe(false);
-      expect(body.error.code).toBe('RESOURCE_NOT_FOUND');
+      // Check error data
+      expect(data.success).toBe(false);
+      expect(data.error).toBeDefined();
+      expect(data.error.code).toBe('NOT_IMPLEMENTED');
+      expect(data.error.message).toContain('not yet supported');
     });
   });
 });

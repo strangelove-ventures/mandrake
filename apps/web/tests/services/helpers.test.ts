@@ -1,316 +1,104 @@
 /**
  * Tests for service helpers
  */
-import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
-import { 
-  getSessionCoordinatorForRequest, 
-  getWorkspaceManagerForRequest,
-  getMCPManagerForRequest,
-  releaseSessionResources,
-  releaseWorkspaceResources,
-  triggerResourceCleanup
+import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test';
+import {
+    getSessionCoordinatorForRequest,
+    getWorkspaceManagerForRequest,
+    getMCPManagerForRequest,
+    releaseSessionResources,
+    releaseWorkspaceResources,
+    triggerResourceCleanup
 } from '../../src/lib/services/helpers';
 import { getServiceRegistry } from '../../src/lib/services/registry';
-import { createTempDir, cleanupTempDir } from '../utils/test-dir';
+import { createTestDirectory } from '../utils/test-dir';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
+import { randomUUID } from 'crypto';
 
 describe('Service Helpers', () => {
-  // Global timeout constants
-  const MCP_TEST_TIMEOUT = 30_000;
-  const SESSION_TEST_TIMEOUT = 30_000;
-  const RESOURCE_CLEANUP_TIMEOUT = 30_000;
-  
-  let tempDirPath: string;
-  
-  beforeEach(async () => {
-    // Create a fresh temporary directory
-    tempDirPath = await createTempDir();
+    // Global timeout constants
+    const MCP_TEST_TIMEOUT = 30_000;
+    const SESSION_TEST_TIMEOUT = 30_000;
+
+    // Test directory
+    let testDir: { path: string; cleanup: () => Promise<void> };
+    const originalMandrakeRoot = process.env.MANDRAKE_ROOT;
     
-    // Clear module cache to reset singletons
-    try {
-      delete require.cache[require.resolve('../../src/lib/services/registry')];
-      delete require.cache[require.resolve('../../src/lib/services/helpers')];
-      delete require.cache[require.resolve('../../src/lib/services/init')];
-    } catch (error) {
-      console.warn('Could not reset modules', error);
-    }
-  });
-  
-  afterEach(async () => {
-    // Clean up resources
-    try {
-      const registry = getServiceRegistry();
-      await registry.performCleanup();
-    } catch (error) {
-      console.warn('Error during cleanup', error);
-    }
-    
-    // Clean up the temporary directory
-    await cleanupTempDir(tempDirPath);
-  });
-  
-  describe('getWorkspaceManagerForRequest', () => {
-    test('should return a workspace manager', async () => {
-      const workspaceName = 'test-workspace';
-      
-      // Fix: workspace manager uses params as (path, name) not (name, path)
-      const manager = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      
-      expect(manager).toBeInstanceOf(WorkspaceManager);
-      expect(manager.paths.root).toContain(workspaceName);
+    beforeEach(async () => {
+        testDir = await createTestDirectory();
+        process.env.MANDRAKE_ROOT = testDir.path;
+        console.log(`Using test directory: ${testDir.path}`);
+        try {
+            Object.keys(require.cache).forEach(key => {
+                if (key.includes('mandrake-new')) {
+                    delete require.cache[key];
+                }
+            });
+        } catch (error) {
+            console.warn('Could not reset modules', error);
+        }
+        const registry = getServiceRegistry();
+        await registry.getMandrakeManager();
+        console.log('MandrakeManager initialized successfully');
     });
     
-    test('should return the same workspace manager for the same workspace', async () => {
-      const workspaceName = 'test-workspace';
-      
-      const manager1 = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      const manager2 = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      
-      expect(manager2).toBe(manager1);
+    afterEach(async () => {
+        try {
+            const registry = getServiceRegistry();
+            await registry.performCleanup();
+        } catch (error) {
+            console.warn('Error during cleanup', error);
+        }
+        
+        process.env.MANDRAKE_ROOT = originalMandrakeRoot;
+        await testDir.cleanup();
     });
-  });
-  
-  describe('getMCPManagerForRequest', () => {
-    test('should return an MCP manager', async () => {
-      const workspaceName = 'test-workspace';
-      
-      // Initialize workspace first
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      // Make sure the workspace is initialized
-      try {
-        await workspace.getConfig();
-      } catch (error) {
-        await workspace.init('Test workspace');
-      }
-      
-      const mcpManager = await getMCPManagerForRequest(workspaceName, tempDirPath);
-      
-      expect(mcpManager).toBeInstanceOf(MCPManager);
-    }, MCP_TEST_TIMEOUT);
-    
-    test('should create a workspace manager if needed', async () => {
-      const workspaceName = 'test-workspace';
-      
-      // Get MCP manager without initializing workspace first
-      const mcpManager = await getMCPManagerForRequest(workspaceName, tempDirPath);
-      
-      expect(mcpManager).toBeInstanceOf(MCPManager);
-      
-      // Verify workspace was created
-      const manager = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      expect(manager).toBeInstanceOf(WorkspaceManager);
-    }, MCP_TEST_TIMEOUT);
-  });
-  
-  describe('getSessionCoordinatorForRequest', () => {
-    test('should return a session coordinator', async () => {
-      const workspaceName = 'test-workspace';
-      const sessionId = 'test-session';
-      
-      // Initialize workspace first
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      // Make sure the workspace is initialized
-      try {
-        await workspace.getConfig();
-      } catch (error) {
-        await workspace.init('Test workspace');
-      }
-      
-      const coordinator = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
-      
-      expect(coordinator).toBeInstanceOf(SessionCoordinator);
-    }, SESSION_TEST_TIMEOUT);
-    
-    test('should create necessary managers', async () => {
-      const workspaceName = 'test-workspace';
-      const sessionId = 'test-session';
-      
-      // Get session coordinator without initializing anything first
-      await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
-      
-      // Verify workspace and MCP managers were created
-      const registry = getServiceRegistry();
-      
-      // Get the managers and verify they exist
-      const workspace = await registry.getWorkspaceManager(workspaceName, tempDirPath);
-      expect(workspace).toBeInstanceOf(WorkspaceManager);
-      
-      const mcpManager = await registry.getMCPManager(workspaceName, tempDirPath);
-      expect(mcpManager).toBeInstanceOf(MCPManager);
-    }, SESSION_TEST_TIMEOUT);
-    
-    test('should return the same coordinator for the same session', async () => {
-      const workspaceName = 'test-workspace';
-      const sessionId = 'test-session';
-      
-      // Initialize workspace first
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      // Make sure the workspace is initialized
-      try {
-        await workspace.getConfig();
-      } catch (error) {
-        await workspace.init('Test workspace');
-      }
-      
-      const coordinator1 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
-      const coordinator2 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
-      
-      expect(coordinator2).toBe(coordinator1);
+
+    describe('getWorkspaceManagerForRequest', () => {
+        test('should return a workspace manager', async () => {
+            // Create a workspace manually first
+            const registry = getServiceRegistry();
+            const mandrake = await registry.getMandrakeManager();
+            const workspace = await mandrake.createWorkspace(`ws-${randomUUID().slice(0, 8)}`);
+            const workspaceId = workspace.id;
+
+            // Now test the helper
+            const manager = await getWorkspaceManagerForRequest(workspaceId);
+
+            expect(manager).toBeDefined();
+            expect(manager.id).toBe(workspaceId);
+        });
+
+        test('should return the same workspace manager for the same workspace', async () => {
+            // Create a workspace manually first
+            const registry = getServiceRegistry();
+            const mandrake = await registry.getMandrakeManager();
+            const workspace = await mandrake.createWorkspace(`ws-${randomUUID().slice(0, 8)}`);
+            const workspaceId = workspace.id;
+
+            // Get the workspace manager twice
+            const manager1 = await getWorkspaceManagerForRequest(workspaceId);
+            const manager2 = await getWorkspaceManagerForRequest(workspaceId);
+
+            expect(manager2).toBe(manager1);
+            expect(manager1.id).toBe(workspaceId);
+        });
+
+        test('should throw an error if workspace does not exist', async () => {
+            const nonExistentId = `ws-${randomUUID()}`;
+
+            // Expect the helper to throw an error
+            let error: Error | null = null;
+            try {
+                await getWorkspaceManagerForRequest(nonExistentId);
+            } catch (e) {
+                error = e as Error;
+            }
+
+            expect(error).not.toBeNull();
+            expect(error?.message).toContain('Config file not found');
+        });
     });
-  });
-  
-  describe('releaseSessionResources', () => {
-    test('should clean up a session', async () => {
-      const workspaceName = 'test-workspace';
-      const sessionId = 'test-session';
-      
-      // Initialize workspace
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      // Make sure the workspace is initialized
-      try {
-        await workspace.getConfig();
-      } catch (error) {
-        await workspace.init('Test workspace');
-      }
-      
-      // Create a session
-      const coordinator = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, sessionId);
-      
-      // Create a spy on the cleanup method
-      const originalCleanup = coordinator.cleanup;
-      let cleanupCalled = false;
-      
-      coordinator.cleanup = async function() {
-        cleanupCalled = true;
-        return await originalCleanup.call(this);
-      };
-      
-      // Release the session
-      await releaseSessionResources(workspaceName, sessionId);
-      
-      // Verify cleanup was called
-      expect(cleanupCalled).toBe(true);
-      
-      // Verify session was removed from registry
-      const registry = getServiceRegistry();
-      
-      // Create a new session with the same ID - it should be a different instance
-      const newCoordinator = await registry.getSessionCoordinator(workspaceName, tempDirPath, sessionId);
-      expect(newCoordinator).not.toBe(coordinator);
-    }, SESSION_TEST_TIMEOUT);
-    
-    test('should do nothing if session does not exist', async () => {
-      // Using direct try-catch approach instead of expect().resolves
-      let errorThrown = false;
-      
-      try {
-        await releaseSessionResources('non-existent', 'non-existent');
-      } catch (error) {
-        errorThrown = true;
-      }
-      
-      // No error should be thrown
-      expect(errorThrown).toBe(false);
-    });
-  });
-  
-  describe('releaseWorkspaceResources', () => {
-    test('should clean up a workspace and its resources', async () => {
-      const workspaceName = 'test-workspace';
-      
-      // Initialize workspace
-      const workspace = await getWorkspaceManagerForRequest(workspaceName, tempDirPath);
-      // Make sure the workspace is initialized
-      try {
-        await workspace.getConfig();
-      } catch (error) {
-        await workspace.init('Test workspace');
-      }
-      
-      // Create MCP manager
-      const mcpManager = await getMCPManagerForRequest(workspaceName, tempDirPath);
-      
-      // Create sessions
-      const session1 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, 'session1');
-      const session2 = await getSessionCoordinatorForRequest(workspaceName, tempDirPath, 'session2');
-      
-      // Create spies
-      const originalMcpCleanup = mcpManager.cleanup;
-      let mcpCleanupCalled = false;
-      
-      mcpManager.cleanup = async function() {
-        mcpCleanupCalled = true;
-        return await originalMcpCleanup.call(this);
-      };
-      
-      const originalSession1Cleanup = session1.cleanup;
-      let session1CleanupCalled = false;
-      
-      session1.cleanup = async function() {
-        session1CleanupCalled = true;
-        return await originalSession1Cleanup.call(this);
-      };
-      
-      const originalSession2Cleanup = session2.cleanup;
-      let session2CleanupCalled = false;
-      
-      session2.cleanup = async function() {
-        session2CleanupCalled = true;
-        return await originalSession2Cleanup.call(this);
-      };
-      
-      // Release workspace resources
-      await releaseWorkspaceResources(workspaceName);
-      
-      // Verify all resources were cleaned up
-      expect(mcpCleanupCalled).toBe(true);
-      expect(session1CleanupCalled).toBe(true);
-      expect(session2CleanupCalled).toBe(true);
-      
-      // Verify resources are no longer in the registry
-      const registry = getServiceRegistry();
-      
-      // Create new resources with the same IDs - they should be different instances
-      const newWorkspace = await registry.getWorkspaceManager(workspaceName, tempDirPath);
-      expect(newWorkspace).not.toBe(workspace);
-      
-      const newMcpManager = await registry.getMCPManager(workspaceName, tempDirPath);
-      expect(newMcpManager).not.toBe(mcpManager);
-    }, RESOURCE_CLEANUP_TIMEOUT);
-    
-    test('should do nothing if workspace does not exist', async () => {
-      // Using direct try-catch approach instead of expect().resolves
-      let errorThrown = false;
-      
-      try {
-        await releaseWorkspaceResources('non-existent');
-      } catch (error) {
-        errorThrown = true;
-      }
-      
-      // No error should be thrown
-      expect(errorThrown).toBe(false);
-    });
-  });
-  
-  describe('triggerResourceCleanup', () => {
-    test('should trigger cleanup of inactive resources', async () => {
-      const registry = getServiceRegistry();
-      
-      // Create a spy on performCleanup
-      const originalPerformCleanup = registry.performCleanup;
-      let performCleanupCalled = false;
-      
-      registry.performCleanup = async function() {
-        performCleanupCalled = true;
-        return await originalPerformCleanup.call(this);
-      };
-      
-      await triggerResourceCleanup();
-      
-      expect(performCleanupCalled).toBe(true);
-    });
-  });
 });

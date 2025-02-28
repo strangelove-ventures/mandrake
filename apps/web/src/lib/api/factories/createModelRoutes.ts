@@ -1,249 +1,246 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { ModelsHandler } from '../handlers/ModelsHandler';
-import { handleApiError } from '../middleware/errorHandling';
-import { createApiResponse, createNoContentResponse } from '../utils/response';
-import { getWorkspaceManager } from '../utils/workspace';
-import { validateParams, validateQuery } from '../middleware/validation';
+import { NextRequest } from 'next/server';
 import { z } from 'zod';
-import { getMandrakeManagerForRequest } from '../../services/helpers';
+import { ApiError, ErrorCode } from '../middleware/errorHandling';
+import { validateBody } from '../middleware/validation';
+import { createApiResponse, createNoContentResponse } from '../utils/response';
+import { getMandrakeManager, getWorkspaceManagerById } from '../utils/workspace';
 
-// Parameter schemas
-const modelIdSchema = z.object({
-  modelId: z.string().min(1, "Model ID is required")
+// Validation schemas
+const modelSchema = z.object({
+  provider: z.string(),
+  model: z.string(),
+  apiKey: z.string().optional(),
+  baseUrl: z.string().optional(),
+  name: z.string().optional(),
+  active: z.boolean().optional()
 });
 
-const providerIdSchema = z.object({
-  providerId: z.string().min(1, "Provider ID is required")
-});
-
-const activeModelSchema = z.object({
-  active: z.enum(['true', 'false']).optional()
+const modelUpdateSchema = z.object({
+  provider: z.string().optional(),
+  model: z.string().optional(),
+  apiKey: z.string().optional(),
+  baseUrl: z.string().optional(),
+  name: z.string().optional(),
+  active: z.boolean().optional()
 });
 
 /**
- * Creates route handlers for models endpoints
- * @param isWorkspaceScope Whether these routes are for workspace-specific models
- * @returns Route handler methods
+ * Creates handlers for model routes (both system and workspace-level)
+ * @param workspaceScoped Whether these routes are scoped to a workspace
  */
-export function createModelRoutes(isWorkspaceScope: boolean = false) {
+export function createModelRoutes(workspaceScoped = false) {
   return {
-    // GET handler for listing models, providers, or getting a specific model/provider
+    /**
+     * GET - List models or get a specific model
+     */
     async GET(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params?: { id?: string, modelId?: string } } = {}
     ) {
       try {
-        let workspaceId: string | undefined;
-        let handler: ModelsHandler;
+        let modelsManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new ModelsHandler(workspaceId, workspaceManager.models);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          modelsManager = workspace.models;
         } else {
-          // Use the MandrakeManager for system-level
-          const mandrakeManager = await getMandrakeManagerForRequest();
-          handler = new ModelsHandler(undefined, mandrakeManager.models);
+          const mandrakeManager = getMandrakeManager();
+          modelsManager = mandrakeManager.models;
         }
         
-        // Check if we're requesting active model
-        const activeQuery = validateQuery(req, activeModelSchema);
-        if (activeQuery.active === 'true') {
-          const activeModelId = await handler.getActiveModel();
-          return createApiResponse({ activeModelId });
-        }
-        
-        // Handle specific model request if modelId is provided
         if (params?.modelId) {
-          const { modelId } = validateParams(params, modelIdSchema);
-          return createApiResponse(await handler.getModelDetails(modelId));
+          // Get specific model
+          const model = await modelsManager.get(params.modelId);
+          if (!model) {
+            throw new ApiError(
+              `Model not found: ${params.modelId}`,
+              ErrorCode.RESOURCE_NOT_FOUND,
+              404
+            );
+          }
+          return createApiResponse(model);
+        } else {
+          // List all models
+          const models = await modelsManager.list();
+          return createApiResponse(models);
         }
-        
-        // Handle specific provider request if providerId is provided  
-        if (params?.providerId) {
-          const { providerId } = validateParams(params, providerIdSchema);
-          return createApiResponse(await handler.getProviderDetails(providerId));
-        }
-        
-        // Otherwise list all models or providers based on path
-        const url = new URL(req.url);
-        if (url.pathname.includes('/providers')) {
-          return createApiResponse(await handler.listProviders());
-        }
-        
-        // Default to listing all models
-        return createApiResponse(await handler.listModels());
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to get models: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // POST handler for creating a new model/provider or setting active model
+    /**
+     * POST - Create a new model
+     */
     async POST(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params?: { id?: string } } = {}
     ) {
       try {
-        let workspaceId: string | undefined;
-        let handler: ModelsHandler;
+        let modelsManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new ModelsHandler(workspaceId, workspaceManager.models);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          modelsManager = workspace.models;
         } else {
-          // Use the MandrakeManager for system-level
-          const mandrakeManager = await getMandrakeManagerForRequest();
-          handler = new ModelsHandler(undefined, mandrakeManager.models);
+          const mandrakeManager = getMandrakeManager();
+          modelsManager = mandrakeManager.models;
         }
         
-        // Handle setting active model
-        const url = new URL(req.url);
-        if (url.pathname.includes('/active')) {
-          const data = await req.json();
-          await handler.setActiveModel(data.modelId);
-          return createApiResponse({ success: true });
-        }
+        const body = await validateBody(req, modelSchema);
         
-        // Handle provider creation
-        if (url.pathname.includes('/providers')) {
-          const providerId = params?.providerId as string;
-          if (!providerId) {
-            throw new Error('Provider ID is required');
+        // If model is set as active, make other models inactive
+        if (body.active) {
+          const existingModels = await modelsManager.list();
+          for (const existing of existingModels) {
+            if (existing.active) {
+              await modelsManager.update(existing.id, { ...existing, active: false });
+            }
           }
-          
-          await handler.addProvider(providerId, req);
-          
-          if (workspaceId) {
-            const workspaceManager = await getWorkspaceManager(workspaceId);
-            const provider = await workspaceManager.models.getProvider(providerId);
-            return createApiResponse(provider, 201);
-          }
-          
-          return createApiResponse({ id: providerId }, 201);
         }
         
-        // Handle model creation (default)
-        const modelId = params?.modelId as string;
-        if (!modelId) {
-          throw new Error('Model ID is required');
-        }
-        
-        await handler.addModel(modelId, req);
-        
-        if (workspaceId) {
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          const model = await workspaceManager.models.getModel(modelId);
-          return createApiResponse(model, 201);
-        }
-        
-        return createApiResponse({ id: modelId }, 201);
+        const result = await modelsManager.create(body);
+        return createApiResponse(result, 201);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to create model: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // PUT handler for updating a model/provider
+    /**
+     * PUT - Update a model
+     */
     async PUT(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id?: string, modelId: string } }
     ) {
       try {
-        let workspaceId: string | undefined;
-        let handler: ModelsHandler;
+        let modelsManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new ModelsHandler(workspaceId, workspaceManager.models);
-        } else {
-          // Use the MandrakeManager for system-level
-          const mandrakeManager = await getMandrakeManagerForRequest();
-          handler = new ModelsHandler(undefined, mandrakeManager.models);
-        }
-        
-        // Handle provider update
-        const url = new URL(req.url);
-        if (url.pathname.includes('/providers')) {
-          // Validate that we have a provider ID
-          const { providerId } = validateParams(params || {}, providerIdSchema);
-          
-          // Update the provider
-          await handler.updateProvider(providerId, req);
-          
-          // Fetch and return the updated provider
-          if (workspaceId) {
-            const workspaceManager = await getWorkspaceManager(workspaceId);
-            const provider = await workspaceManager.models.getProvider(providerId);
-            return createApiResponse(provider);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
           }
-          
-          return createApiResponse({ success: true });
+          const workspace = await getWorkspaceManagerById(params.id);
+          modelsManager = workspace.models;
+        } else {
+          const mandrakeManager = getMandrakeManager();
+          modelsManager = mandrakeManager.models;
         }
         
-        // Handle model update (default)
-        // Validate that we have a model ID
-        const { modelId } = validateParams(params || {}, modelIdSchema);
+        const body = await validateBody(req, modelUpdateSchema);
         
-        // Update the model
-        await handler.updateModel(modelId, req);
-        
-        // Fetch and return the updated model
-        if (workspaceId) {
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          const model = await workspaceManager.models.getModel(modelId);
-          return createApiResponse(model);
+        // Get existing model
+        const existing = await modelsManager.get(params.modelId);
+        if (!existing) {
+          throw new ApiError(
+            `Model not found: ${params.modelId}`,
+            ErrorCode.RESOURCE_NOT_FOUND,
+            404
+          );
         }
         
-        return createApiResponse({ success: true });
+        // If setting this model as active, make other models inactive
+        if (body.active && !existing.active) {
+          const existingModels = await modelsManager.list();
+          for (const model of existingModels) {
+            if (model.id !== params.modelId && model.active) {
+              await modelsManager.update(model.id, { ...model, active: false });
+            }
+          }
+        }
+        
+        // Update model
+        const updated = {
+          ...existing,
+          ...body
+        };
+        
+        const result = await modelsManager.update(params.modelId, updated);
+        return createApiResponse(result);
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to update model: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     },
     
-    // DELETE handler for removing a model/provider
+    /**
+     * DELETE - Remove a model
+     */
     async DELETE(
       req: NextRequest,
-      { params }: { params?: Record<string, string | string[]> } = {}
+      { params }: { params: { id?: string, modelId: string } }
     ) {
       try {
-        let workspaceId: string | undefined;
-        let handler: ModelsHandler;
+        let modelsManager;
         
-        // Setup handler based on scope
-        if (isWorkspaceScope && params?.id) {
-          workspaceId = params.id as string;
-          const workspaceManager = await getWorkspaceManager(workspaceId);
-          handler = new ModelsHandler(workspaceId, workspaceManager.models);
+        if (workspaceScoped) {
+          if (!params?.id) {
+            throw new ApiError(
+              'Workspace ID is required',
+              ErrorCode.BAD_REQUEST,
+              400
+            );
+          }
+          const workspace = await getWorkspaceManagerById(params.id);
+          modelsManager = workspace.models;
         } else {
-          // Use the MandrakeManager for system-level
-          const mandrakeManager = await getMandrakeManagerForRequest();
-          handler = new ModelsHandler(undefined, mandrakeManager.models);
+          const mandrakeManager = getMandrakeManager();
+          modelsManager = mandrakeManager.models;
         }
         
-        // Handle provider deletion
-        const url = new URL(req.url);
-        if (url.pathname.includes('/providers')) {
-          // Validate that we have a provider ID
-          const { providerId } = validateParams(params || {}, providerIdSchema);
-          
-          // Remove the provider
-          await handler.removeProvider(providerId);
-          return createNoContentResponse();
-        }
-        
-        // Handle model deletion (default)
-        // Validate that we have a model ID
-        const { modelId } = validateParams(params || {}, modelIdSchema);
-        
-        // Remove the model
-        await handler.removeModel(modelId);
+        await modelsManager.delete(params.modelId);
         return createNoContentResponse();
       } catch (error) {
-        return handleApiError(error);
+        if (!(error instanceof ApiError)) {
+          throw new ApiError(
+            `Failed to delete model: ${error instanceof Error ? error.message : String(error)}`,
+            ErrorCode.INTERNAL_ERROR,
+            500,
+            error instanceof Error ? error : undefined
+          );
+        }
+        throw error;
       }
     }
   };
