@@ -34,7 +34,6 @@ describe('Service Helpers', () => {
 
         const registry = getServiceRegistry();
         await registry.getMandrakeManager();
-        console.log('MandrakeManager initialized successfully');
     });
     
     afterEach(async () => {

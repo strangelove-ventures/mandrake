@@ -53,7 +53,9 @@ export async function getWorkspaceManagerForRequest(
   
   // Get the workspace through the MandrakeManager
   const mandrakeManager = await registry.getMandrakeManager();
-  return mandrakeManager.getWorkspace(workspaceId);
+  const mgr = await mandrakeManager.getWorkspace(workspaceId);
+  await mgr.init()
+  return mgr
 }
 
 /**
