@@ -1,20 +1,7 @@
-import { createWorkspacesRoutes } from '@/lib/api/factories/createWorkspacesRoutes';
+import { createWorkspacesRoutes } from '@/lib/api/factories/workspaces';
+import { handleApiError } from '@/lib/api/middleware/errorHandling';
 
-/**
- * @api {get} /api/workspaces Get all workspaces
- * @apiName GetWorkspaces
- * @apiGroup Workspaces
- * @apiSuccess {Object[]} workspaces List of workspaces
- */
+const handlers = createWorkspacesRoutes();
 
-/**
- * @api {post} /api/workspaces Create a new workspace
- * @apiName CreateWorkspace
- * @apiGroup Workspaces
- * @apiParam {String} name Workspace name
- * @apiParam {String} [description] Workspace description
- * @apiParam {String} [path] Custom path for workspace
- * @apiSuccess {Object} workspace Created workspace details
- */
-
-export
+export const GET = handleApiError(handlers.GET);
+export const POST = handleApiError(handlers.POST);
