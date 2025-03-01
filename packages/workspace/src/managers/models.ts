@@ -169,6 +169,9 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
         'anthropic': {
           type: anthropic,
           apiKey: "your-api-key-here",
+        },
+        'ollama': {
+          type: ollama
         }
       },
       models: {
@@ -181,13 +184,13 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
             maxTokens: 8400,
           }
         },
-        "llama3.2:3b": {
+        "llama3.3:70b": {
           enabled: true,
           providerId: ollama,
           modelId: ollamaModel,
           config: {
             temperature: 0.7,
-            maxTokens: 1024,
+            maxTokens: 2048,
           }
         }
       }

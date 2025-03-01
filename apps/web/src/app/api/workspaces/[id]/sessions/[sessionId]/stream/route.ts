@@ -1,3 +1,3 @@
-import { createSessionRoutes } from '@/lib/api/factories/createSessionRoutes';
+import { createSessionRoutes } from '@/lib/api/factories/sessions';
 
-export const { POST } = createSessionRoutes(true);
+export const { POST } = createSessionRoutes({ workspace: 'id' });

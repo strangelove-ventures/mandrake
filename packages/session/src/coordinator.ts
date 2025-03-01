@@ -34,7 +34,17 @@ export class SessionCoordinator {
         content: requestContent
       });
 
-      let conversationHistory = [...context.history, { role: 'user', content: requestContent }];
+      // Get the initial context including the system prompt and history
+      // We'll use this as a starting point
+      const conversationHistory = [...context.history];
+      
+      // We need to ensure the user's request is the last message in the history
+      // If the last message is already from the user, we'll keep it
+      // Otherwise we need to add the current user message
+      if (conversationHistory.length === 0 || 
+          conversationHistory[conversationHistory.length - 1].role !== 'user') {
+        conversationHistory.push({ role: 'user', content: requestContent });
+      }
 
       let currentTurn = await this.opts.sessionManager.createTurn({
         responseId: response.id,
@@ -48,7 +58,6 @@ export class SessionCoordinator {
 
       let isComplete = false;
       while (!isComplete) {
-
         this.logger.info('Sending message to provider', {
           historyLength: conversationHistory.length,
           lastRole: conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1].role : 'none'
@@ -99,7 +108,6 @@ export class SessionCoordinator {
               tool.arguments
             );
 
-
             await this.opts.sessionManager.updateTurn(currentTurn.id, {
               toolCalls: {
                 call: {
@@ -110,11 +118,15 @@ export class SessionCoordinator {
                 response: result
               }
             });
-
-            conversationHistory.push({
-              role: 'assistant',
-              content: text + toolResponseFormat(result)
-            });
+            
+            // After completing a tool call, get the updated conversation history
+            // that includes the tool call and response
+            const updatedHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
+            const updatedConversation = convertSessionToMessages(updatedHistory);
+            
+            // Replace our in-memory conversation with the updated version
+            conversationHistory.length = 0;
+            updatedConversation.forEach(msg => conversationHistory.push(msg));
 
           } catch (error) {
             this.logger.error('TOOL_EXECUTION_ERROR', {
@@ -135,12 +147,15 @@ export class SessionCoordinator {
                 }
               }
             });
-
-            // Add assistant's message with the tool call and error to conversation history
-            conversationHistory.push({
-              role: 'assistant',
-              content: text + toolErrorFormat(error)
-            });
+            
+            // After completing a tool call (even with error), get the updated conversation history
+            // that includes the tool call and error
+            const updatedHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
+            const updatedConversation = convertSessionToMessages(updatedHistory);
+            
+            // Replace our in-memory conversation with the updated version
+            conversationHistory.length = 0;
+            updatedConversation.forEach(msg => conversationHistory.push(msg));
           }
 
           // Create a new turn for the next part of the conversation
@@ -161,11 +176,13 @@ export class SessionCoordinator {
             status: 'completed',
             streamEndTime: Math.floor(Date.now() / 1000)
           });
-
-          conversationHistory.push({
-            role: 'assistant',
-            content: text
-          });
+          
+          // For the final turn, update our history from the database
+          const updatedHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
+          const updatedConversation = convertSessionToMessages(updatedHistory);
+          
+          // Since this is the last turn, we don't need to update our conversation history
+          // as we're about to exit the loop
 
           isComplete = true;
         }
@@ -202,7 +219,7 @@ export class SessionCoordinator {
 
           await this.opts.sessionManager.updateTurn(currentTurn.id, {
             rawResponse: textBuffer,
-            content: textBuffer
+            content: JSON.stringify([textBuffer])
           });
 
           if (xmlBuffer.includes('<tool_call>') && xmlBuffer.includes('</tool_call>')) {
@@ -329,7 +346,6 @@ export class SessionCoordinator {
       return null;
     }
   }
-
 
   private async executeToolCall(
     sessionId: string,
@@ -467,20 +483,4 @@ export class SessionCoordinator {
 
     return results;
   }
-
-}
-export function toolResponseFormat(result: any): string {
-  return `<tool_result>
-<result>
-${JSON.stringify(result, null, 2)}
-</result>
-</tool_result>`;
-}
-
-export function toolErrorFormat(error: any): string {
-  return `<tool_result>
-<error>
-${JSON.stringify(error, null, 2)}
-</error>
-</tool_result>`;
 }

@@ -22,11 +22,11 @@ export const createSessionRoutes: RouteFactory = (opts = {}) => {
          */
         GET: async (
             req: NextRequest,
-            { params }: { params?: { id?: string } } = {}
+            { params }: { params?: { id?: string, sessionId?: string } } = {}
         ) => {
-            // If ID is provided, get a specific session
-            if (params?.id) {
-                return getSession(req, params.id, { workspace });
+            // If sessionId is provided, get a specific session
+            if (params?.sessionId) {
+                return getSession(req, params.sessionId, { workspace });
             }
             // Otherwise, list all sessions
             return listSessions(req, { workspace });
@@ -37,18 +37,18 @@ export const createSessionRoutes: RouteFactory = (opts = {}) => {
          */
         POST: async (
             req: NextRequest,
-            { params }: { params?: { id?: string, stream?: string, messages?: string } } = {}
+            { params }: { params?: { id?: string, sessionId?: string, stream?: string, messages?: string } } = {}
         ) => {
             // Stream a session if the path includes 'stream'
-            if (params?.id && params?.stream === 'stream') {
-                return streamSession(req, params.id, { workspace });
+            if (params?.sessionId && params?.stream === 'stream') {
+                return streamSession(req, params.sessionId, { workspace });
             }
-
+            
             // Create a message if the path includes 'messages'
-            if (params?.id && params?.messages === 'messages') {
-                return createMessage(req, params.id, { workspace });
+            if (params?.sessionId && params?.messages === 'messages') {
+                return createMessage(req, params.sessionId, { workspace });
             }
-
+            
             // Otherwise create a new session
             return createSession(req, { workspace });
         },
@@ -58,15 +58,15 @@ export const createSessionRoutes: RouteFactory = (opts = {}) => {
          */
         PUT: async (
             req: NextRequest,
-            { params }: { params?: { id?: string } } = {}
+            { params }: { params?: { id?: string, sessionId?: string } } = {}
         ) => {
-            if (!params?.id) {
+            if (!params?.sessionId) {
                 return new Response(JSON.stringify({ error: 'Session ID is required' }), {
                     status: 400,
                     headers: { 'Content-Type': 'application/json' }
                 });
             }
-            return updateSession(req, params.id, { workspace });
+            return updateSession(req, params.sessionId, { workspace });
         },
 
         /**
@@ -74,15 +74,15 @@ export const createSessionRoutes: RouteFactory = (opts = {}) => {
          */
         DELETE: async (
             req: NextRequest,
-            { params }: { params?: { id?: string } } = {}
+            { params }: { params?: { id?: string, sessionId?: string } } = {}
         ) => {
-            if (!params?.id) {
+            if (!params?.sessionId) {
                 return new Response(JSON.stringify({ error: 'Session ID is required' }), {
                     status: 400,
                     headers: { 'Content-Type': 'application/json' }
                 });
             }
-            return deleteSession(req, params.id, { workspace });
+            return deleteSession(req, params.sessionId, { workspace });
         }
     };
 };

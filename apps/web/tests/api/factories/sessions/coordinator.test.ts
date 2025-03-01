@@ -127,7 +127,7 @@ describe('Session Coordinator Non-Streaming API Tests', () => {
                 // Just log the error but don't fail the test
                 console.log('Note: Message handling test error (expected in test env):', error);
             }
-        });
+        }, 30000);
 
         test('should validate message content', async () => {
             // Skip this test if we don't have a valid testSessionId

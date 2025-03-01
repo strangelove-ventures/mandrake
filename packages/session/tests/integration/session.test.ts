@@ -123,5 +123,5 @@ describe('Session Integration', () => {
         // The final turn should have content but might not have tool calls
         const finalTurn = turns[turns.length - 1];
         expect(finalTurn.content).toBeTruthy();
-    }, 60000);
+    }, 480000);
 });

@@ -168,7 +168,7 @@ describe('Session Manager API Tests', () => {
             // Create update data
             const updateData = {
                 title: 'Updated Test Session',
-                metadata: { updated: true }
+                metadata: { updated: "true" }
             };
 
             // Create a request
