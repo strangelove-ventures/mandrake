@@ -13,31 +13,31 @@ export interface ModelInfo {
 
 // Anthropic Models
 export const anthropicModels = {
+  'claude-3-7-sonnet-latest': {
+    maxTokens: 128_000,
+    contextWindow: 128_000,
+    supportsImages: true,
+    supportsComputerUse: true,
+    inputPrice: 15.0,
+    outputPrice: 75.0,
+    description: 'Most capable model, ideal for complex tasks requiring deep analysis'
+  },
   'claude-3-opus-20240229': {
     maxTokens: 4096,
     contextWindow: 200_000,
     supportsImages: true,
     supportsComputerUse: true,
-    inputPrice: 15.0, // $15 per million input tokens
-    outputPrice: 75.0, // $75 per million output tokens
+    inputPrice: 15.0,
+    outputPrice: 75.0,
     description: 'Most capable model, ideal for complex tasks requiring deep analysis'
-  },
-  'claude-3-sonnet-20240229': {
-    maxTokens: 4096,
-    contextWindow: 200_000,
-    supportsImages: true,
-    supportsComputerUse: true,
-    inputPrice: 3.0, // $3 per million input tokens
-    outputPrice: 15.0, // $15 per million output tokens
-    description: 'Balanced performance and cost, suitable for most use cases'
   },
   'claude-3-5-sonnet-20241022': {
     maxTokens: 8192,
     contextWindow: 200_000,
     supportsImages: true,
     supportsComputerUse: true,
-    inputPrice: 3.0, // $3 per million input tokens
-    outputPrice: 15.0, // $15 per million output tokens
+    inputPrice: 3.0,
+    outputPrice: 15.0,
     description: 'Larger model for longer responses and more complex tasks'
   },
   'claude-3-haiku-20240307': {
@@ -45,16 +45,16 @@ export const anthropicModels = {
     contextWindow: 200_000,
     supportsImages: true,
     supportsComputerUse: true,
-    inputPrice: 0.25, // $0.25 per million input tokens
-    outputPrice: 1.25, // $1.25 per million output tokens
+    inputPrice: 0.25,
+    outputPrice: 1.25,
     description: 'Fastest model, ideal for quick responses and simpler tasks'
   }
 } as const satisfies Record<string, ModelInfo>;
 
 export const ollamaModels = {
   "llama3.2:3b": {
-    maxTokens: 4096,
-    contextWindow: 200_000,
+    maxTokens: 8192,
+    contextWindow: 128_000,
     supportsImages: true,
     supportsComputerUse: true,
     inputPrice: 0.25, // $0.25 per million input tokens
@@ -62,7 +62,7 @@ export const ollamaModels = {
   },
   "llama3.3:70b": {
     maxTokens: 4096,
-    contextWindow: 200_000,
+    contextWindow: 130_000,
     supportsImages: true,
     supportsComputerUse: true,
     inputPrice: 0.25, // $0.25 per million input tokens

@@ -1,9 +1,6 @@
-import type { ModelInfo } from '@mandrake/utils';
+import type { ModelInfo, Message } from '@mandrake/utils';
 
-export interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
+export type { Message };
 
 export type MessageStream = AsyncGenerator<MessageStreamChunk>;
 

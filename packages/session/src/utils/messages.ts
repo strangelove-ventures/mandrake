@@ -1,5 +1,7 @@
-import type { Message } from '@mandrake/provider';
+import type { TokenCounter, Message } from '@mandrake/utils';
 import type { Session, Round, Request, Response, Turn } from '@mandrake/workspace';
+import type { TrimStrategy } from './trim';
+import { StandardTrimStrategy } from './trim';
 
 interface SessionHistory {
   session: Session;
@@ -49,8 +51,20 @@ ${JSON.stringify(error, null, 2)}
 
 /**
  * Convert a session history to a list of messages suitable for sending to a provider
+ * @param history Session history from the database
+ * @param options Options for token limiting and trimming
+ * @returns Array of messages for the provider
  */
-export function convertSessionToMessages(history: SessionHistory): Message[] {
+export function convertSessionToMessages(
+  history: SessionHistory,
+  options?: {
+    maxTokens?: number,
+    tokenCounter?: TokenCounter,
+    trimStrategy?: TrimStrategy,
+    systemPrompt?: string, // Add system prompt to consider its tokens
+    safetyBuffer?: number  // Optional buffer for safety
+  }
+): Message[] {
   const messages: Message[] = [];
   
   for (const round of history.rounds) {
@@ -128,5 +142,26 @@ export function convertSessionToMessages(history: SessionHistory): Message[] {
     }
   }
 
+  if (options?.maxTokens && options?.tokenCounter) {
+    let availableTokens = options.maxTokens;
+    
+    // Subtract system prompt tokens if provided
+    if (options.systemPrompt) {
+      const systemTokens = options.tokenCounter.countTokens(options.systemPrompt);
+      availableTokens -= systemTokens;
+    }
+    
+    // Subtract safety buffer if provided
+    if (options.safetyBuffer) {
+      availableTokens -= options.safetyBuffer;
+    }
+    
+    // Ensure we have at least some tokens available
+    availableTokens = Math.max(availableTokens, 0);
+    
+    const strategy = options.trimStrategy || new StandardTrimStrategy();
+    return strategy.trimToFit(messages, availableTokens, options.tokenCounter);
+  }
+  
   return messages;
 }

@@ -90,7 +90,6 @@ describe('Session Integration', () => {
         const response = history.rounds[0].response;
         const turns = response.turns;
 
-        console.log(JSON.stringify(turns, null, 2));
 
         // We should have multiple turns
         expect(turns.length).toBeGreaterThan(1);

@@ -2,6 +2,7 @@ import { createProvider, type BaseProvider } from '@mandrake/provider';
 import type { ModelsManager } from '@mandrake/workspace';
 import type { ProviderType } from '@mandrake/utils';
 import { ProviderError } from '../errors';
+import { getModelInfo } from '@mandrake/utils';
 
 export async function setupProviderFromManager(modelsManager: ModelsManager): Promise<BaseProvider> {
     // Get active model
@@ -18,13 +19,20 @@ export async function setupProviderFromManager(modelsManager: ModelsManager): Pr
 
     // Get provider config
     const providerConfig = await modelsManager.getProvider(modelConfig.providerId);
+    
+    // Get model info from utils for accurate max tokens
+    const modelInfo = getModelInfo(providerConfig.type as ProviderType, modelConfig.modelId);
+    
+    // Use model info max tokens if available, otherwise fall back to config
+    const maxTokens = modelInfo?.maxTokens || modelConfig.config.maxTokens;
 
     return createProvider(
         providerConfig.type as ProviderType,
         {
             apiKey: providerConfig.apiKey,
             baseUrl: providerConfig.baseUrl,
-            modelId: modelConfig.modelId
+            modelId: modelConfig.modelId,
+            maxTokens // Use the max tokens from model info if available
         }
     );
 }

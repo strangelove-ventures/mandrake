@@ -1,11 +1,11 @@
-import { type Logger, createLogger } from '@mandrake/utils';
+import { type Logger, createLogger, getTokenCounter, getModelInfo, type Message } from '@mandrake/utils';
 import type { SessionCoordinatorOptions, Context } from './types';
 import { ContextBuildError, MessageProcessError, ToolCallError } from './errors';
 import { XmlTags } from './prompt/types';
 import { setupProviderFromManager } from './utils/provider';
-import type { Message } from "@mandrake/provider"
 import { convertSessionToMessages } from './utils/messages';
 import { type SystemPromptBuilderConfig, SystemPromptBuilder } from './prompt/builder';
+import { StandardTrimStrategy } from './utils/trim';
 
 export class SessionCoordinator {
   private logger: Logger;
@@ -378,6 +378,55 @@ export class SessionCoordinator {
     }
   }
 
+  async buildContext(sessionId: string): Promise<Context> {
+    // Build system prompt which now includes all our context
+    const systemPrompt = await this.buildSystemPrompt();
+
+    // Get the active model ID
+    const activeModelId = await this.opts.modelsManager.getActive();
+    if (!activeModelId) {
+      throw new Error('No active model configured');
+    }
+    
+    // Get the model configuration
+    const modelConfig = await this.opts.modelsManager.getModel(activeModelId);
+    
+    // Get provider configuration
+    const providerConfig = await this.opts.modelsManager.getProvider(modelConfig.providerId);
+    
+    // Get detailed model info from the utils package
+    const modelInfo = getModelInfo(providerConfig.type, modelConfig.modelId);
+    
+    // Default to a large context window if model info is not available
+    const contextWindow = modelInfo?.contextWindow || 100000;
+    
+    // Get appropriate token counter
+    const tokenCounter = getTokenCounter(providerConfig.type, modelConfig.modelId);
+    
+    // Define safety buffer (tokens we reserve for safety margin)
+    const safetyBuffer = 50;
+    
+    // Create trim strategy
+    const trimStrategy = new StandardTrimStrategy();
+
+    // Get message history for the session with token limiting
+    const sessionHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
+    
+    // Convert and trim history, accounting for system prompt and safety buffer
+    const history = convertSessionToMessages(sessionHistory, {
+      maxTokens: contextWindow,
+      tokenCounter,
+      trimStrategy,
+      systemPrompt,
+      safetyBuffer
+    });
+    
+    return {
+      systemPrompt,
+      history
+    };
+  }
+
   private async buildSystemPrompt(): Promise<string> {
     const promptConfig = await this.opts.promptManager.getConfig();
 
@@ -442,20 +491,6 @@ export class SessionCoordinator {
 
     const builder = new SystemPromptBuilder(builderConfig);
     return builder.buildPrompt();
-  }
-
-  async buildContext(sessionId: string): Promise<Context> {
-    // Build system prompt which now includes all our context
-    const systemPrompt = await this.buildSystemPrompt();
-
-    // Get message history for the session
-    const sessionHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
-
-    const history = convertSessionToMessages(sessionHistory);
-    return {
-      systemPrompt,
-      history
-    };
   }
 
   private async getDynamicContext(): Promise<{ name: string; result: any }[]> {
