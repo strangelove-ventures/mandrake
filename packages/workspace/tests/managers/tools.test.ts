@@ -134,7 +134,7 @@ describe('ToolsManager', () => {
     test('provides default ripper server', async () => {
       const config = await manager.getConfigSet('default');
       expect(config.ripper).toBeDefined();
-      expect(config.ripper.command).toBe('bun');
+      expect(config.ripper.command).toBe('ripper-server');
     });
   });
 });

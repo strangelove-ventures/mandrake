@@ -70,16 +70,76 @@ export const ollamaModels = {
   }
 } as const satisfies Record<string, ModelInfo>;
 
+// XAI Models
+export const xaiModels = {
+  "grok-beta": {
+    maxTokens: 4096, 
+    contextWindow: 128_000,
+    supportsImages: false,
+    supportsComputerUse: true,
+    inputPrice: 2.0,  // $2 per million input tokens
+    outputPrice: 10.0, // $10 per million output tokens
+    description: 'xAI Grok Beta - Experimental language model with advanced reasoning capabilities'
+  },
+  "grok-1": {
+    maxTokens: 4096,
+    contextWindow: 8_000,
+    supportsImages: false,
+    supportsComputerUse: true,
+    inputPrice: 2.0,
+    outputPrice: 10.0,
+    description: 'Original version of Grok - First generation xAI model'
+  },
+  "grok-1.5": {
+    maxTokens: 4096,
+    contextWindow: 128_000,
+    supportsImages: false,
+    supportsComputerUse: true,
+    inputPrice: 2.0,
+    outputPrice: 10.0,
+    description: 'Improved reasoning capabilities with extended context window'
+  },
+  "grok-2": {
+    maxTokens: 4096,
+    contextWindow: 128_000,
+    supportsImages: false,
+    supportsComputerUse: true,
+    inputPrice: 2.0,
+    outputPrice: 10.0,
+    description: 'Second generation xAI model with enhanced performance'
+  },
+  "grok-3": {
+    maxTokens: 8192,
+    contextWindow: 1_000_000,
+    supportsImages: true,
+    supportsComputerUse: true,
+    inputPrice: 2.0,
+    outputPrice: 10.0,
+    description: 'Most capable xAI model with million-token context window'
+  },
+  "grok-3-mini": {
+    maxTokens: 4096,
+    contextWindow: 128_000,
+    supportsImages: true,
+    supportsComputerUse: true,
+    inputPrice: 1.0,
+    outputPrice: 5.0,
+    description: 'Faster and more efficient version of Grok-3'
+  }
+} as const satisfies Record<string, ModelInfo>;
+
 // Provider to Model mapping
 export const PROVIDER_MODELS: Record<ProviderType, Record<string, ModelInfo>> = {
   'anthropic': anthropicModels,
-  'ollama': ollamaModels
+  'ollama': ollamaModels,
+  'xai': xaiModels
 } as const;
 
 // Default models for each provider
 export const DEFAULT_MODELS: Record<ProviderType, string> = {
   'anthropic': 'claude-3-5-sonnet-20241022',
   'ollama': 'llama3.3:70b',
+  'xai': 'grok-beta'
 } as const;
 
 // Helper functions

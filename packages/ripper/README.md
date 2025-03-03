@@ -1,162 +1,95 @@
 # Ripper
 
+Ripper is a filesystem tool server for Mandrake that provides file access capabilities through the Model Context Protocol.
+
 ## Overview
 
-Ripper is Mandrake's core filesystem and command execution tool server. Built on the Model Context Protocol (MCP) framework, it provides a secure, containerized system for AI assistants to interact with local files and execute commands. Named after Brigadier General Jack D. Ripper from Dr. Strangelove, it pairs with Mandrake to provide essential workspace functionality.
+Ripper enables file system operations like reading, writing, and searching files, providing these tools to LLM sessions in Mandrake.
 
-## Core Concepts
+## Building and Installation
 
-### Security Context
+### Development Build
 
-All operations in Ripper are governed by a security context that specifies:
+For development, build the TypeScript source:
 
-- `allowedDirs`: An array of directories that tools are allowed to access
-- `excludePatterns`: Regular expression patterns to exclude specific files/directories
+```bash
+# Install dependencies
+npm install
 
-### Runtime Environment
+# Build TypeScript
+npm run build
+```
 
-Ripper is designed to run as a standalone Node.js process using Bun, with its main process communicating via standard input/output (stdio) or Server-Sent Events (SSE). While Docker containerization is planned for the future, the current implementation uses direct process execution.
+This will generate the JavaScript files in the `dist/` directory.
 
-### MCP Compatibility
+### Standalone Binary
 
-Ripper implements the Model Context Protocol, making it compatible with any LLM agent that follows this protocol. The FastMCP class extends the base MCP server with additional functionality.
+For production use, you can create a standalone executable:
 
-## Architecture
+```bash
+# Create the standalone binary
+npm run package
+```
 
-### Server
-
-The `RipperServer` class serves as the main entry point, initializing the FastMCP server and registering tools. It handles:
-
-- Server configuration and lifecycle
-- Tool registration and management
-- Transport configuration (stdio or SSE)
-
-### Tools
-
-Each tool is modeled as a standalone function that:
-
-1. Accepts a security context during initialization
-2. Returns a Tool object with name, description, parameters schema, and execute function
-3. Operates within the security boundaries of the context
-
-### Utilities
-
-Shared utilities provide core functionality for:
-
-- Path validation and normalization
-- File operations with security checks
-- Command execution with safety features
-- Error handling and reporting
+This creates a self-contained executable at `./bin/ripper-server` that can be run directly without requiring `bun` or Node.js to be installed.
 
 ## Usage
 
-### Running with Bun
+### Using as a Library
 
-The standard way to run Ripper in the Mandrake ecosystem is via Bun:
+```js
+import { RipperTools } from '@mandrake/ripper';
 
-```typescript
-// In your server configuration
-const SERVER_CONFIG: ServerConfig = {
-    command: 'bun',
-    args: [
-        'run',
-        join(process.cwd(), '../ripper/dist/server.js'),
-        '--transport=stdio',
-        `--workspaceDir=${WORKSPACE_DIR}`,
-        '--excludePatterns=\\.ws'
-    ]
-}
+// Get all available tools
+const tools = RipperTools.getTools();
 ```
 
-### Programmatic Usage
+### Running as a Server
 
-```typescript
-import { RipperServer } from '@mandrake/ripper';
+#### Development Mode
 
-const server = new RipperServer({
-  name: 'ripper',
-  version: '1.0.0',
-  transport: { transportType: 'stdio' },
-  workspaceDir: '/path/to/workspace',
-  excludePatterns: ['.git', 'node_modules'],
-  additionalDirs: []
-});
-
-server.start().catch(console.error);
+```bash
+bun run ./dist/server.js --transport=stdio --workspaceDir=/path/to/workspace
 ```
 
-### CLI Options
+#### Production Mode (Standalone Binary)
 
-```sh
---transport=stdio|sse   Transport mode (default: stdio)
---workspaceDir=/path    Path to workspace directory (default: /ws)
---excludePatterns=a,b   Comma-separated exclude patterns (default: .ws)
---port=3000             Port for SSE transport (required for SSE)
---endpoint=/sse         Endpoint for SSE transport (default: /sse)
+```bash
+./bin/ripper-server --transport=stdio --workspaceDir=/path/to/workspace
 ```
 
-## Key Interfaces
+### Command Line Options
 
-### RipperServerConfig
+- `--transport`: Communication transport (stdio or http)
+- `--workspaceDir`: Root directory for file operations
+- `--excludePatterns`: Glob patterns to exclude (comma separated)
+- `--port`: Port for HTTP transport (default: auto)
+- `--host`: Host for HTTP transport (default: localhost)
 
-```typescript
-interface RipperServerConfig {
-  name: string;
-  version: `${number}.${number}.${number}`;
-  transport: { transportType: 'stdio' } | { 
-    transportType: 'sse';
-    sse: {
-      endpoint: `/${string}`;
-      port: number;
-    }
-  };
-  workspaceDir: string;
-  additionalDirs: string[];
-  excludePatterns: string[];
-}
+## Tools Provided
+
+- `list_directory`: List files and directories
+- `read_file`: Read the content of a file
+- `write_file`: Create or update a file
+- `search_files`: Find files matching criteria
+- `edit_file`: Make edits to a file's content
+- `create_directory`: Create a new directory
+- `move_file`: Move or rename a file
+- `directory_tree`: Get nested directory structure
+- `get_file_info`: Get file metadata
+
+## Testing
+
+```bash
+npm test
 ```
 
-### SecurityContext
+## Docker
 
-```typescript
-interface SecurityContext {
-  allowedDirs: string[];
-  excludePatterns: string[];
-}
+The package can also be built as a Docker container:
+
+```bash
+npm run build-image
 ```
 
-### Available Tools
-
-- `read_files`: Read one or more files
-- `write_file`: Create or overwrite files
-- `edit_file`: Make line-based edits to text files
-- `move_file`: Move or rename files and directories
-- `create_directory`: Create directories recursively
-- `list_directory`: List directory contents
-- `tree`: Generate directory tree visualizations
-- `search_files`: Search for files matching patterns
-- `list_allowed_directories`: List permitted directories
-- `command`: Execute shell commands securely
-
-## Integration Points
-
-### MCP Protocol
-
-Any LLM agent that speaks MCP can interact with Ripper using its tool interface.
-
-### Workspace Integration
-
-In the Mandrake architecture, Ripper handles all filesystem operations for:
-
-- Reading/writing workspace files
-- Executing commands within workspaces
-- Managing source code in the `src` directory
-- Running dynamic context providers
-
-### Security Boundaries
-
-Ripper enforces security boundaries defined in the workspace configuration, ensuring:
-
-- Only allowed directories can be accessed
-- Commands are executed safely
-- Excluded patterns are respected
+This creates a Docker image named `mandrake/ripper`.

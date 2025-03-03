@@ -38,71 +38,86 @@ describe('ModelsManager', () => {
 
   describe('provider operations', () => {
     test('adds and gets provider', async () => {
-      await manager.addProvider('ollama', testProvider);
-      const provider = await manager.getProvider('ollama');
+      await manager.addProvider('ollama-custom', testProvider);
+      const provider = await manager.getProvider('ollama-custom');
       expect(provider).toEqual(testProvider);
     });
 
     test('lists providers', async () => {
-      await manager.addProvider('ollama', testProvider);
+      await manager.addProvider('ollama-custom', testProvider);
       const providers = await manager.listProviders();
-      expect(providers).toHaveProperty('anthropic'); // default provider
-      expect(providers).toHaveProperty('ollama', testProvider);
+      
+      // Check default providers
+      expect(providers).toHaveProperty('anthropic');
+      expect(providers).toHaveProperty('ollama');
+      expect(providers).toHaveProperty('xai');
+      
+      // Check added provider
+      expect(providers).toHaveProperty('ollama-custom', testProvider);
     });
 
     test('updates provider', async () => {
-      await manager.addProvider('ollama', testProvider);
-      await manager.updateProvider('ollama', { baseUrl: 'http://localhost:8000' });
-      const provider = await manager.getProvider('ollama');
+      await manager.addProvider('ollama-custom', testProvider);
+      await manager.updateProvider('ollama-custom', { baseUrl: 'http://localhost:8000' });
+      const provider = await manager.getProvider('ollama-custom');
       expect(provider.baseUrl).toBe('http://localhost:8000');
     });
 
     test('removes provider', async () => {
-      await manager.addProvider('ollama', testProvider);
-      await manager.removeProvider('ollama');
+      await manager.addProvider('ollama-custom', testProvider);
+      await manager.removeProvider('ollama-custom');
       const providers = await manager.listProviders();
-      expect(providers).not.toHaveProperty('ollama');
+      expect(providers).not.toHaveProperty('ollama-custom');
     });
 
     test('removes models when provider is removed', async () => {
-      await manager.addProvider('ollama', testProvider);
-      await manager.addModel('llama2', testModel);
+      await manager.addProvider('ollama-custom', testProvider);
+      await manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'});
       await manager.setActive('llama2');
       
-      await manager.removeProvider('ollama');
+      await manager.removeProvider('ollama-custom');
       
       const models = await manager.listModels();
       expect(models).not.toHaveProperty('llama2');
+      
+      // Should reset active to empty if the active model was from the removed provider
       const active = await manager.getActive();
       expect(active).toBe('');
     });
 
     test('throws on duplicate provider', async () => {
-      await manager.addProvider('ollama', testProvider);
-      await expect(manager.addProvider('ollama', testProvider))
-        .rejects.toThrow('Provider ollama already exists');
+      await manager.addProvider('ollama-custom', testProvider);
+      await expect(manager.addProvider('ollama-custom', testProvider))
+        .rejects.toThrow('Provider ollama-custom already exists');
     });
   });
 
   describe('model operations', () => {
     beforeEach(async () => {
-      await manager.addProvider('ollama', testProvider);
+      await manager.addProvider('ollama-custom', testProvider);
     });
 
     test('adds and gets model', async () => {
-      await manager.addModel('llama2', testModel);
+      await manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'});
       const model = await manager.getModel('llama2');
-      expect(model).toEqual(testModel);
+      expect(model).toEqual({...testModel, providerId: 'ollama-custom'});
     });
 
     test('lists models', async () => {
-      await manager.addModel('llama2', testModel);
+      await manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'});
       const models = await manager.listModels();
-      expect(models).toHaveProperty('llama2', testModel);
+      
+      // Default models should exist
+      expect(models).toHaveProperty('anthropicModel');
+      expect(models).toHaveProperty('ollamaModel');
+      expect(models).toHaveProperty('xaiModel');
+      
+      // Our test model should exist
+      expect(models).toHaveProperty('llama2', {...testModel, providerId: 'ollama-custom'});
     });
 
     test('updates model', async () => {
-      await manager.addModel('llama2', testModel);
+      await manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'});
       await manager.updateModel('llama2', { 
         config: { ...testModel.config, temperature: 0.9 } 
       });
@@ -111,7 +126,7 @@ describe('ModelsManager', () => {
     });
 
     test('removes model', async () => {
-      await manager.addModel('llama2', testModel);
+      await manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'});
       await manager.setActive('llama2');
       
       await manager.removeModel('llama2');
@@ -128,16 +143,21 @@ describe('ModelsManager', () => {
     });
 
     test('throws on duplicate model', async () => {
-      await manager.addModel('llama2', testModel);
-      await expect(manager.addModel('llama2', testModel))
+      await manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'});
+      await expect(manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'}))
         .rejects.toThrow('Model llama2 already exists');
     });
   });
 
   describe('active model operations', () => {
     beforeEach(async () => {
-      await manager.addProvider('ollama', testProvider);
-      await manager.addModel('llama2', testModel);
+      await manager.addProvider('ollama-custom', testProvider);
+      await manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'});
+    });
+
+    test('gets default active model', async () => {
+      const active = await manager.getActive();
+      expect(active).toBe('grok-beta');
     });
 
     test('sets and gets active model', async () => {

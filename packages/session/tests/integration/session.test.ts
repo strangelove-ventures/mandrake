@@ -40,10 +40,15 @@ describe('Session Integration', () => {
         workspace = new WorkspaceManager(testDir.path, WORKSPACE_NAME, crypto.randomUUID());
         await workspace.init('Test Workspace');
 
+        // Update the API keys for the providers
         await workspace.models.updateProvider('anthropic', {
             apiKey: process.env.ANTHROPIC_API_KEY
         });
 
+        await workspace.models.updateProvider('xai', {
+            apiKey: process.env.XAI_API_KEY
+        });
+        
         mcpManager = new MCPManager();
         const configs = getServerConfigs(workspace.paths);
         await Promise.all(

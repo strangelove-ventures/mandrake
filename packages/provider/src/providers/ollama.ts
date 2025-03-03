@@ -8,15 +8,22 @@ export class OllamaProvider extends BaseProvider {
 
   constructor(config: ProviderConfig) {
     super(config);
-    this.client = new Ollama({
-      host: config.baseUrl || 'http://localhost:11434'
-    });
+    const host = config.baseUrl || 'http://localhost:11434';
+    this.client = new Ollama({ host });
+    this.logger.debug('Ollama client initialized', { host });
   }
 
   async *createMessage(
     systemPrompt: string,
     messages: Message[]
   ): MessageStream {
+    this.logger.debug('Creating message with Ollama', {
+      modelId: this.config.modelId,
+      maxTokens: this.config.modelInfo.maxTokens,
+      messagesCount: messages.length,
+      systemPromptLength: systemPrompt.length
+    });
+
     try {
       const stream = await this.client.chat({
         model: this.config.modelId,
@@ -30,8 +37,14 @@ export class OllamaProvider extends BaseProvider {
         }
       });
 
+      this.logger.debug('Stream created with Ollama');
+
       for await (const chunk of stream) {
         if (chunk.message?.content) {
+          this.logger.debug('Content chunk received', { 
+            contentLength: chunk.message.content.length 
+          });
+
           yield {
             type: 'text',
             text: chunk.message.content
@@ -40,14 +53,26 @@ export class OllamaProvider extends BaseProvider {
 
         // Add usage info
         if (chunk.eval_count) {
-          yield {
-            type: 'usage',
+          const usage = {
             inputTokens: chunk.prompt_eval_count || 0,
             outputTokens: chunk.eval_count
           };
+
+          this.logger.debug('Usage info', usage);
+
+          yield {
+            type: 'usage',
+            ...usage
+          };
         }
       }
+
+      this.logger.debug('Message creation completed successfully');
     } catch (error) {
+      this.logger.error('Ollama API error', { 
+        error: (error as Error).message,
+        stack: (error as Error).stack
+      });
       throw new NetworkError('Ollama API error', error as Error);
     }
   }

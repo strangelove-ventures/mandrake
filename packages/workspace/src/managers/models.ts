@@ -161,21 +161,27 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
   protected getDefaults(): ModelsConfig {
     const anthropic = 'anthropic';
     const ollama = 'ollama';
+    const xai = 'xai';
     const anthropicModel = getDefaultModel(anthropic);
     const ollamaModel = getDefaultModel(ollama);
+    const xaiModel = getDefaultModel(xai);
     return {
       active: anthropicModel,
       providers: {
-        'anthropic': {
+        anthropic: {
           type: anthropic,
           apiKey: "your-api-key-here",
         },
-        'ollama': {
+        ollama: {
           type: ollama
+        },
+        xai: {
+          type: xai,
+          apiKey: "your-api-key-here",
         }
       },
       models: {
-        "claude-3-5-sonnet-20241022": {
+        [`${anthropicModel}`]: {
           enabled: true,
           providerId: anthropic,
           modelId: anthropicModel,
@@ -184,13 +190,22 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
             maxTokens: 8400,
           }
         },
-        "llama3.3:70b": {
+        [`${ollamaModel}`]: {
           enabled: true,
           providerId: ollama,
           modelId: ollamaModel,
           config: {
             temperature: 0.7,
             maxTokens: 2048,
+          }
+        },
+        [`${xaiModel}`]: {
+          enabled: true,
+          providerId: xai,
+          modelId: xaiModel,
+          config: {
+            temperature: 0.7,
+            maxTokens: 4096,
           }
         }
       }

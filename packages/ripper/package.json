@@ -9,11 +9,17 @@
       "types": "./dist/index.d.ts"
     }
   },
+  "bin": {
+    "ripper-server": "./dist/server.js"
+  },
   "scripts": {
     "build": "tsc",
     "clean": "rm -rf dist",
     "test": "NODE_ENV=test bun test",
-    "build-image": "docker build -t mandrake/ripper -f Dockerfile ."
+    "build-image": "docker build -t mandrake/ripper -f Dockerfile .",
+    "make-executable": "chmod +x ./dist/server.js",
+    "build-exec": "npm run build && npm run make-executable",
+    "postinstall": "npm run make-executable"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.5.0",

@@ -6,13 +6,13 @@ import { getModelInfo } from '@mandrake/utils';
 
 export async function setupProviderFromManager(modelsManager: ModelsManager): Promise<BaseProvider> {
     // Get active model
-    const modelId = await modelsManager.getActive();
-    if (!modelId) {
+    const activeModelId = await modelsManager.getActive();
+    if (!activeModelId) {
         throw new ProviderError('No active model found');
     }
 
     // Get model config  
-    const modelConfig = await modelsManager.getModel(modelId);
+    const modelConfig = await modelsManager.getModel(activeModelId);
     if (!modelConfig.enabled) {
         throw new ProviderError('Active model is disabled');
     }
@@ -31,7 +31,7 @@ export async function setupProviderFromManager(modelsManager: ModelsManager): Pr
         {
             apiKey: providerConfig.apiKey,
             baseUrl: providerConfig.baseUrl,
-            modelId: modelConfig.modelId
+            modelId: modelConfig.modelId // This is the actual model ID to use with the provider
         }
     );
 }

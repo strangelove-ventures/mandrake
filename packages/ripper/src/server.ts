@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { FastMCP } from './fastmcp';
 import type { SecurityContext } from './types';
 import { parseArgs } from 'node:util';

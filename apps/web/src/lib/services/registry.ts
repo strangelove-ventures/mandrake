@@ -159,6 +159,17 @@ class ServiceRegistry implements IServiceRegistry {
       }
 
       const workspaceManager = await this.getWorkspaceManager(workspaceId, path);
+      
+      // Always ensure SessionManager is initialized before using it in the coordinator
+      try {
+        // Try to safely initialize the session manager
+        logger.debug(`Initializing SessionManager for workspace: ${workspaceId}`);
+        await workspaceManager.sessions.init();
+      } catch (error) {
+        // If it's already initialized, that's fine
+        logger.debug(`SessionManager might already be initialized: ${error}`);
+      }
+      
       const mcpManager = await this.getMCPManager(workspaceId, path);
 
       const coordinator = new SessionCoordinator({

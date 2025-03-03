@@ -39,7 +39,7 @@ describe('MandrakeManager', () => {
       expect(toolConfigs).toContain('default');
 
       const modelName = await manager.models.getActive();
-      expect(modelName).toBe('claude-3-5-sonnet-20241022');
+      expect(modelName).toBe('grok-beta');
     });
   });
 
@@ -140,7 +140,7 @@ describe('MandrakeManager', () => {
       expect(tools).toContain('default');
 
       const active = await workspace.models.getActive();
-      expect(active).toBe('claude-3-5-sonnet-20241022');
+      expect(active).toBe('grok-beta');
     });
   });
 });

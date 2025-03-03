@@ -184,10 +184,9 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
         // we should consider adding search and other tools here
         default: {
           ripper: {
-            command: 'bun',
+            // Use the ripper-server executable from PATH
+            command: 'ripper-server',
             args: [
-              'run',
-              '../ripper/dist/server.js',
               '--transport=stdio',
               `--workspaceDir=${workspacePath}`,
               '--excludePatterns=\\.ws'
@@ -211,6 +210,18 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
           }
         }
       },
+    };
+  }
+
+  // Utility method to create a server config with ripper-server from PATH
+  async createRipperServerConfig(workspacePath: string): Promise<ServerConfig> {
+    return {
+      command: 'ripper-server',
+      args: [
+        '--transport=stdio',
+        `--workspaceDir=${workspacePath}`,
+        '--excludePatterns=\\.ws'
+      ]
     };
   }
 }
