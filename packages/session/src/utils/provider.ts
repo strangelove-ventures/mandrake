@@ -31,8 +31,7 @@ export async function setupProviderFromManager(modelsManager: ModelsManager): Pr
         {
             apiKey: providerConfig.apiKey,
             baseUrl: providerConfig.baseUrl,
-            modelId: modelConfig.modelId,
-            maxTokens // Use the max tokens from model info if available
+            modelId: modelConfig.modelId
         }
     );
 }

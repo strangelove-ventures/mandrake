@@ -13,8 +13,8 @@ const logger = createLogger('ServiceRegistry');
 class ServiceRegistry implements IServiceRegistry {
   private mandrakeManager: MandrakeManager | null = null;
   private workspaceManagers: Map<string, WorkspaceManager> = new Map(); // Key is workspace ID
-  private mcpManagers: Map<string, MCPManager> = new Map(); // Key is workspace ID
-  private sessionCoordinators: Map<string, SessionCoordinator> = new Map(); // Key is "workspaceId:sessionId"
+  public sessionCoordinators: Map<string, SessionCoordinator> = new Map(); // Key is "workspaceId:sessionId"
+  public mcpManagers: Map<string, MCPManager> = new Map(); // Key is workspace ID
 
   // Activity tracking
   private mandrakeActivity: ServiceActivity | null = null;
@@ -335,6 +335,22 @@ export function getServiceRegistry(): ServiceRegistry {
   }
   return registryInstance;
 }
-export function resetServiceRegistryForTesting(): void {
+export async function resetServiceRegistryForTesting(): Promise<void> {
+  if (registryInstance) {
+    // Clean up all session coordinators
+    for (const [key, _] of registryInstance.sessionCoordinators.entries()) {
+      const [workspaceId, sessionId] = key.split(':');
+      await registryInstance.releaseSessionCoordinator(workspaceId, sessionId);
+    }
+
+    // Clean up all MCP managers
+    for (const [workspaceId, _] of registryInstance.mcpManagers.entries()) {
+      await registryInstance.releaseWorkspaceResources(workspaceId);
+    }
+
+    // Clean up MandrakeManager
+    await registryInstance.releaseMandrakeManager();
+  }
+
   registryInstance = null;
 }

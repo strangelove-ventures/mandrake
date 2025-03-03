@@ -35,6 +35,7 @@ export class SessionManager {
                 dbPath
             }
         });
+        this.logger.info(`Creating new SessionManager for ${dbPath}`);
     }
 
     public async init(): Promise<void> {
@@ -542,6 +543,7 @@ export class SessionManager {
     // Close database connection
     async close(): Promise<void> {
         if (this.initialized) {
+            this.logger.info(`Closing SessionManager for ${this.dbPath}`);
             this.sqlite.close();
             this.initialized = false;
         }

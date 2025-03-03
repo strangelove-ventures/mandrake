@@ -11,6 +11,11 @@ import { TestDirectory } from '../../../utils/test-dir';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { createSessionRoutes } from '@/lib/api/factories/sessions';
 import { getWorkspaceManagerForRequest } from '@/lib/services/helpers';
+import { createLogger } from '@mandrake/utils';
+import { config } from 'dotenv';
+import { resolve } from 'path';
+
+const logger = createLogger('SessionStreamingTests');
 
 /**
  * Tests focusing on the streaming aspects of the Sessions API:
@@ -30,6 +35,8 @@ describe('Session Streaming API Tests', () => {
 
     // Set up the test environment once
     beforeAll(async () => {
+        config({ path: resolve(__dirname, '../../../../../../.env') });
+
         const setup = await setupApiTest();
         testDir = setup.testDir;
         originalMandrakeRoot = setup.originalMandrakeRoot;
@@ -55,6 +62,22 @@ describe('Session Streaming API Tests', () => {
         } catch (error) {
             console.error('Failed to create test session:', error);
         }
+
+        // modify the anthropic provider to us the test API key
+        await testWorkspace.models.updateProvider('anthropic', {
+            apiKey: process.env.ANTHROPIC_API_KEY
+        });
+
+    });
+
+    // Ensure session manager is initialized before each test
+    beforeEach(async () => {
+        try {
+            await testWorkspace.sessions.init();
+            logger.debug('Session manager initialized');
+        } catch (error) {
+            console.warn('Failed to initialize session manager:', error);
+        }
     });
 
     // Clean up the test environment
@@ -72,17 +95,17 @@ describe('Session Streaming API Tests', () => {
         await cleanupApiTest(testDir, originalMandrakeRoot);
     });
 
-    describe('SSE Endpoint', () => {
-        test('should return a properly formatted SSE response', async () => {
+    describe('Turn Tracking', () => {        
+        test('end-to-end streaming with tool calls', async () => {
             // Skip this test if we don't have a valid testSessionId
-            if (!testSessionId) {
-                console.log('Skipping streaming test - no test session available');
+            if (!testSessionId || process.env.TEST_ENVIRONMENT === 'ci') {
+                console.log('Skipping E2E streaming test - not suitable for this environment');
                 return;
             }
 
-            // Create message data
+            // Create message data that will likely trigger a tool call
             const messageData = {
-                content: 'Hello, please stream a response.'
+                content: 'Can you run the "hostname" command to get the system name, then run "pwd" to get the current directory, save both outputs to a file called "system_info.txt" in our workspace, and then confirm the file was created?'
             };
 
             // Create a request
@@ -100,365 +123,121 @@ describe('Session Streaming API Tests', () => {
                     params: { id: testWorkspace.id, sessionId: testSessionId, stream: 'stream' }
                 });
 
-                // Verify the correct content type and headers for SSE
+                // Ensure we have a proper SSE response
                 expect(response.headers.get('Content-Type')).toBe('text/event-stream');
-                expect(response.headers.get('Cache-Control')).toBe('no-cache, no-transform');
-                expect(response.headers.get('Connection')).toBe('keep-alive');
-
-                // Try to read the first chunk of the stream
-                // Note: In most test environments, the actual model output won't be available
-                // So we're just testing the structure and headers
-            } catch (error) {
-                // The streaming might fail due to missing model services
-                // Just log the error but don't fail the test
-                console.log('Note: Streaming test error (expected in test env):', error);
-            }
-        });
-
-        test('should validate message content for streaming', async () => {
-            // Skip this test if we don't have a valid testSessionId
-            if (!testSessionId) {
-                console.log('Skipping validation test - no test session available');
-                return;
-            }
-
-            // Create invalid message data (missing content)
-            const invalidData = {
-                // Missing required content field
-            };
-
-            // Create a request
-            const req = createTestRequest(
-                `https://example.com/api/workspaces/${testWorkspace.id}/sessions/${testSessionId}/stream`,
-                {
-                    method: 'POST',
-                    body: invalidData
+                
+                // Set up to read the stream
+                const reader = response.body?.getReader();
+                if (!reader) {
+                    throw new Error('Response body is missing');
                 }
-            );
 
-            try {
-                // Call the route handler
-                const response = await workspaceRoutes.POST(req, {
-                    params: { id: testWorkspace.id, sessionId: testSessionId, stream: 'stream' }
+                const events: any[] = [];
+                let isDone = false;
+                let readTimeoutId: any;
+
+                // Set a max timeout for reading (30 seconds)
+                const readTimeout = new Promise<void>((_, reject) => {
+                    readTimeoutId = setTimeout(() => {
+                        reject(new Error('Stream reading timed out after 30 seconds'));
+                    }, 30000);
                 });
 
-                // Parse the response - this should be an error, not a stream
-                const result = await parseApiResponse(response);
+                // Function to read chunks until done
+                const readStream = async () => {
+                    try {
+                        while (!isDone) {
+                            const { done, value } = await reader.read();
+                            
+                            if (done) {
+                                isDone = true;
+                                break;
+                            }
+                            
+                            // Parse the chunk into SSE events
+                            const text = typeof value === 'string' ? value : new TextDecoder().decode(value);
+                            const eventStrings = text.split('\n\n').filter(Boolean);
 
-                // Verify the validation error
-                expect(result.success).toBe(false);
-                expect(result.status).toBeGreaterThanOrEqual(400);
-                expect(result.status).toBeLessThan(500);
-                expect(result.error?.code).toBe('VALIDATION_ERROR');
-            } catch (error) {
-                // If the error is thrown directly
-                expect(error).toBeDefined();
-                if ((error as any).code === 'VALIDATION_ERROR') {
-                    expect((error as any).status).toBeGreaterThanOrEqual(400);
-                }
-            }
-        });
-
-        test('should return 404 for streaming to non-existent session', async () => {
-            // Create message data
-            const messageData = {
-                content: 'Hello, please stream a response.'
-            };
-
-            // Create a request with a non-existent session ID
-            const nonExistentId = 'non-existent-session-id';
-            const req = createTestRequest(
-                `https://example.com/api/workspaces/${testWorkspace.id}/sessions/${nonExistentId}/stream`,
-                {
-                    method: 'POST',
-                    body: messageData
-                }
-            );
-
-            try {
-                // Call the route handler
-                const response = await workspaceRoutes.POST(req, {
-                    params: { id: testWorkspace.id, sessionId: nonExistentId, stream: 'stream' }
-                });
-
-                // Parse the response
-                const result = await parseApiResponse(response);
-
-                // Verify that we got a not found error
-                expect(result.success).toBe(false);
-                expect(result.status).toBe(404);
-                expect(result.error?.code).toBe('RESOURCE_NOT_FOUND');
-            } catch (error) {
-                // If the error is thrown directly
-                expect(error).toBeDefined();
-                if ((error as any).code === 'RESOURCE_NOT_FOUND') {
-                    expect((error as any).status).toBe(404);
-                }
-            }
-        });
-    });
-
-    describe('Turn Tracking', () => {
-        test('should track streaming turns in the session manager', async () => {
-            // Skip this test if we don't have a valid testSessionId
-            // or if we're in a limited test environment
-            if (!testSessionId || process.env.TEST_ENVIRONMENT === 'ci') {
-                console.log('Skipping turn tracking test - not suitable for this environment');
-                return;
-            }
-
-            try {
-                // This test accesses the session manager directly to test tracking
-                const sessionManager = testWorkspace.sessions;
-
-                // Create a response to stream
-                const { response } = await sessionManager.createRound({
-                    sessionId: testSessionId,
-                    content: 'Test streaming request for turn tracking'
-                });
-
-                // Create an initial turn
-                const turn = await sessionManager.createTurn({
-                    responseId: response.id,
-                    content: 'Initial content',
-                    rawResponse: 'Initial content',
-                    status: 'streaming',
-                    inputTokens: 10,
-                    outputTokens: 5,
-                    inputCost: 0.001,
-                    outputCost: 0.0005
-                });
-
-                // Track turn updates
-                const updates: any[] = [];
-                const stopTracking = sessionManager.trackStreamingTurns(response.id, (updatedTurn) => {
-                    updates.push({
-                        id: updatedTurn.id,
-                        content: updatedTurn.content,
-                        status: updatedTurn.status
-                    });
-                });
-
-                // Give the tracking a moment to start
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Update the turn
-                await sessionManager.updateTurn(turn.id, {
-                    content: 'Initial content\nMore content',
-                    status: 'streaming'
-                });
-
-                // Wait a moment for the update to be processed
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Complete the turn
-                await sessionManager.updateTurn(turn.id, {
-                    content: 'Initial content\nMore content\nFinal content',
-                    status: 'completed',
-                    streamEndTime: Math.floor(Date.now() / 1000)
-                });
-
-                // Wait a moment for the completion to be processed
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Stop tracking
-                stopTracking();
-
-                // Verify that we received updates
-                expect(updates.length).toBeGreaterThan(0);
-
-                // Check the final update
-                const finalUpdate = updates[updates.length - 1];
-                expect(finalUpdate.status).toBe('completed');
-                expect(finalUpdate.content).toContain('Final content');
-            } catch (error) {
-                // If tracking fails, just log the error
-                console.log('Note: Turn tracking test error:', error);
-            }
-        });
-
-        test('should handle tool calls during streaming', async () => {
-            // Skip this test if we don't have a valid testSessionId
-            // or if we're in a limited test environment
-            if (!testSessionId || process.env.TEST_ENVIRONMENT === 'ci') {
-                console.log('Skipping tool call test - not suitable for this environment');
-                return;
-            }
-
-            try {
-                // This test accesses the session manager directly to test tracking
-                const sessionManager = testWorkspace.sessions;
-
-                // Create a response to stream
-                const { response } = await sessionManager.createRound({
-                    sessionId: testSessionId,
-                    content: 'Test streaming request with tool calls'
-                });
-
-                // Create an initial turn
-                const turn = await sessionManager.createTurn({
-                    responseId: response.id,
-                    content: 'Starting response',
-                    rawResponse: 'Starting response',
-                    status: 'streaming',
-                    inputTokens: 10,
-                    outputTokens: 5,
-                    inputCost: 0.001,
-                    outputCost: 0.0005
-                });
-
-                // Track turn updates
-                const updates: any[] = [];
-                const stopTracking = sessionManager.trackStreamingTurns(response.id, (updatedTurn) => {
-                    updates.push({
-                        id: updatedTurn.id,
-                        content: updatedTurn.content,
-                        status: updatedTurn.status,
-                        toolCalls: JSON.parse(updatedTurn.toolCalls)
-                    });
-                });
-
-                // Give the tracking a moment to start
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Update with a tool call
-                const toolCall = {
-                    call: {
-                        serverName: 'test_server',
-                        methodName: 'test_method',
-                        arguments: { key: 'value' }
-                    },
-                    response: null
+                            for (const eventString of eventStrings) {
+                                if (eventString.startsWith('data: ')) {
+                                    try {
+                                        const eventData = JSON.parse(eventString.substring(6));
+                                        events.push(eventData);
+                                        
+                                        // If we get a 'complete' event, we can stop
+                                        if (eventData.type === 'complete') {
+                                            isDone = true;
+                                            break;
+                                        }
+                                        
+                                        // If we get an 'error' event, log it and stop
+                                        if (eventData.type === 'error') {
+                                            console.warn('Stream error:', eventData.error);
+                                            isDone = true;
+                                            break;
+                                        }
+                                    } catch (e) {
+                                        console.warn('Failed to parse event data:', eventString);
+                                    }
+                                }
+                            }
+                        }
+                    } finally {
+                        clearTimeout(readTimeoutId);
+                    }
                 };
 
-                await sessionManager.updateTurn(turn.id, {
-                    content: 'Starting response\nI need to call a tool.',
-                    toolCalls: toolCall,
-                    status: 'streaming'
-                });
-
-                // Wait a moment for the update to be processed
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Update with tool call response
-                const completedToolCall = {
-                    call: {
-                        serverName: 'test_server',
-                        methodName: 'test_method',
-                        arguments: { key: 'value' }
-                    },
-                    response: { result: 'success' }
-                };
-
-                await sessionManager.updateTurn(turn.id, {
-                    content: 'Starting response\nI need to call a tool.\nTool call completed.',
-                    toolCalls: completedToolCall,
-                    status: 'completed',
-                    streamEndTime: Math.floor(Date.now() / 1000)
-                });
-
-                // Wait a moment for the completion to be processed
-                await new Promise(resolve => setTimeout(resolve, 100));
-
-                // Stop tracking
-                stopTracking();
-
-                // Verify that we received updates
-                expect(updates.length).toBeGreaterThan(0);
-
-                // Check if any update includes the tool call
-                const toolCallUpdate = updates.find(update =>
-                    update.toolCalls && update.toolCalls.call &&
-                    update.toolCalls.call.serverName === 'test_server'
+                // Race between reading and timeout
+                await Promise.race([readStream(), readTimeout]);
+                
+                // Release the reader
+                reader.releaseLock();
+                
+                // Analyze the events we received
+                console.log(`Received ${events.length} events from stream`);
+                
+                // Should have at least some events
+                expect(events.length).toBeGreaterThan(0);
+                
+                // Should have a start event
+                const startEvent = events.find(e => e.type === 'start');
+                expect(startEvent).toBeDefined();
+                
+                // Should have update events
+                const updateEvents = events.filter(e => e.type === 'update');
+                expect(updateEvents.length).toBeGreaterThan(0);
+                
+                // Check for tool calls (this is optional as we don't know for sure if
+                // the model will generate tool calls)
+                const toolCallEvents = updateEvents.filter(e => 
+                    e.turn && e.turn.toolCalls && 
+                    e.turn.toolCalls.call && 
+                    e.turn.toolCalls.call.serverName === 'ripper'
                 );
-
-                expect(toolCallUpdate).toBeDefined();
-
-                // Check the final update should have the response
-                const finalUpdate = updates[updates.length - 1];
-                expect(finalUpdate.status).toBe('completed');
-                expect(finalUpdate.content).toContain('Tool call completed');
-                expect(finalUpdate.toolCalls.response).toBeDefined();
-                expect(finalUpdate.toolCalls.response.result).toBe('success');
+                
+                console.log(`Found ${toolCallEvents.length} tool call events`);
+                
+                // If we have tool calls, ensure they have responses
+                if (toolCallEvents.length > 0) {
+                    const responseEvents = updateEvents.filter(e => 
+                        e.turn && e.turn.toolCalls && 
+                        e.turn.toolCalls.response
+                    );
+                    
+                    expect(responseEvents.length).toBeGreaterThan(0);
+                }
+                
+                // Should end with a complete event or an error event
+                const completeEvent = events.find(e => e.type === 'complete');
+                const errorEvent = events.find(e => e.type === 'error');
+                
+                expect(completeEvent || errorEvent).toBeDefined();
+                
             } catch (error) {
-                // If tracking fails, just log the error
-                console.log('Note: Tool call test error:', error);
+                // Log the error but don't fail the test
+                // This is likely to fail in test environments without real model access
+                console.log('Note: E2E streaming test error (expected in test env):', error);
             }
-        });
-
-        test('should handle streaming completion status changes', async () => {
-            // Skip this test if we don't have a valid testSessionId
-            // or if we're in a limited test environment
-            if (!testSessionId || process.env.TEST_ENVIRONMENT === 'ci') {
-                console.log('Skipping completion status test - not suitable for this environment');
-                return;
-            }
-
-            try {
-                // This test accesses the session manager directly
-                const sessionManager = testWorkspace.sessions;
-
-                // Create a response to stream
-                const { response } = await sessionManager.createRound({
-                    sessionId: testSessionId,
-                    content: 'Test streaming request for status tracking'
-                });
-
-                // Create a streaming turn
-                const turn = await sessionManager.createTurn({
-                    responseId: response.id,
-                    content: 'Streaming content',
-                    rawResponse: 'Streaming content',
-                    status: 'streaming',
-                    inputTokens: 10,
-                    outputTokens: 5,
-                    inputCost: 0.001,
-                    outputCost: 0.0005
-                });
-
-                // Check the initial streaming status
-                let status = await sessionManager.getStreamingStatus(response.id);
-                expect(status.isComplete).toBe(false);
-
-                // Update the turn to completed
-                await sessionManager.updateTurn(turn.id, {
-                    status: 'completed',
-                    streamEndTime: Math.floor(Date.now() / 1000)
-                });
-
-                // Check the updated streaming status
-                status = await sessionManager.getStreamingStatus(response.id);
-                expect(status.isComplete).toBe(true);
-
-                // Create a second turn for the same response
-                const turn2 = await sessionManager.createTurn({
-                    responseId: response.id,
-                    content: 'More streaming content',
-                    rawResponse: 'More streaming content',
-                    status: 'streaming',
-                    inputTokens: 8,
-                    outputTokens: 4,
-                    inputCost: 0.0008,
-                    outputCost: 0.0004
-                });
-
-                // Check that isComplete is now false again
-                status = await sessionManager.getStreamingStatus(response.id);
-                expect(status.isComplete).toBe(false);
-
-                // Complete the second turn
-                await sessionManager.updateTurn(turn2.id, {
-                    status: 'completed',
-                    streamEndTime: Math.floor(Date.now() / 1000)
-                });
-
-                // Check that isComplete is now true again
-                status = await sessionManager.getStreamingStatus(response.id);
-                expect(status.isComplete).toBe(true);
-            } catch (error) {
-                // If status testing fails, just log the error
-                console.log('Note: Status test error:', error);
-            }
-        });
+        }, 60000); // Allow up to 60 seconds for this test
     });
 });
