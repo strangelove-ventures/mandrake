@@ -17,7 +17,6 @@ import { createTestDirectory } from '../utils/test-dir';
 import { MCPManager } from '@mandrake/mcp';
 import { randomUUID } from 'crypto';
 import { join, resolve } from 'path';
-import { existsSync } from 'fs';
 
 describe('MCP Integration Tests', () => {
     // Test directory
@@ -27,19 +26,10 @@ describe('MCP Integration Tests', () => {
     // Test workspace IDs
     let workspaceId: string;
     
-    // Detect ripper server location
-    const repoRoot = resolve(process.cwd(), '../..');
-    const ripperPath = join(repoRoot, 'packages/ripper/dist/server.js');
-    
     beforeEach(async () => {
         // Create a new test directory
         testDir = await createTestDirectory();
         process.env.MANDRAKE_ROOT = testDir.path;
-        
-        // Check if ripper script exists
-        if (!existsSync(ripperPath)) {
-            throw new Error(`Ripper server not found at ${ripperPath}. Run 'cd ${join(repoRoot, 'packages/ripper')} && npm run build-exec' first.`);
-        }
         
         // Reset service registry
         await resetServiceRegistryForTesting();
@@ -52,6 +42,14 @@ describe('MCP Integration Tests', () => {
         const wsName = `ws-${randomUUID().slice(0, 8)}`;
         const workspace = await mandrakeManager.createWorkspace(wsName);
         workspaceId = workspace.id;
+        
+        // Diagnostic: log environment info
+        console.log('\n--- Test Environment Info ---');
+        console.log('MANDRAKE_ROOT:', process.env.MANDRAKE_ROOT);
+        console.log('Current Directory:', process.cwd());
+        console.log('Node Version:', process.version);
+        console.log('Platform:', process.platform);
+        console.log('----------------------------\n');
     });
     
     afterEach(async () => {
@@ -80,60 +78,49 @@ describe('MCP Integration Tests', () => {
         const activeSet = await workspaceManager.tools.getActive();
         expect(activeSet).toBe(defaultSet);
         
-        // Get config sets before any changes
-        const configSets = await workspaceManager.tools.listConfigSets();
-        
-        // Check that default config includes ripper
-        const activeConfigs = await workspaceManager.tools.getConfigSet(activeSet);
-        expect(Object.keys(activeConfigs)).toContain('ripper');
-        
-        // Update the server config to use our build script directly
-        await workspaceManager.tools.updateServerConfig(defaultSet, 'ripper', {
-            command: 'bun',
-            args: [
-                ripperPath,
-                '--transport=stdio',
-                `--workspaceDir=${workspaceManager.paths.root}`,
-                '--excludePatterns=\\.ws'
-            ]
-        });
-        
-        // Verify the server config was updated
-        const updatedConfig = await workspaceManager.tools.getServerConfig(defaultSet, 'ripper');
+        // Get the current ripper configuration
+        const ripperConfig = await workspaceManager.tools.getServerConfig(defaultSet, 'ripper');
+        console.log('Current ripper config:', ripperConfig);
         
         // Get MCP manager for the workspace
         const mcpManager = await getMCPManagerForRequest(workspaceId);
         expect(mcpManager).toBeInstanceOf(MCPManager);
         
         // Check if servers were started
-        const startedTools = await mcpManager.listAllTools();
-        
-        // Verify that ripper tools are available
-        expect(startedTools.length).toBeGreaterThan(0);
-        expect(startedTools.some(t => t.server === 'ripper')).toBe(true);
-        
-        // Test invoking a simple tool through the MCP manager
         try {
-            const result = await mcpManager.invokeTool('ripper', 'list_allowed_directories', {});
-            expect(result).toBeDefined();
+            const startedTools = await mcpManager.listAllTools();
+            console.log(`Found ${startedTools.length} tools`);
             
-            // Check for content in the expected format from ripper
-            expect(result.content).toBeDefined();
-            expect(Array.isArray(result.content)).toBe(true);
+            // Verify that ripper tools are available
+            expect(startedTools.length).toBeGreaterThan(0);
+            expect(startedTools.some(t => t.server === 'ripper')).toBe(true);
             
-            // Verify directories are listed
-            const textContent = (result as any).content.find((item: { type: string; }) => item.type === 'text');
-            expect(textContent).toBeDefined();
-            
-            // Make sure the output contains the workspace path
-            const jsonContent = JSON.parse(textContent.text);
-            expect(jsonContent.directories).toBeDefined();
-            expect(Array.isArray(jsonContent.directories)).toBe(true);
-            expect(jsonContent.directories.length).toBeGreaterThan(0);
-            expect(jsonContent.directories[0].path).toContain(workspaceManager.paths.root);
+            // Test invoking a simple tool through the MCP manager
+            try {
+                const result = await mcpManager.invokeTool('ripper', 'list_allowed_directories', {});
+                expect(result).toBeDefined();
+                
+                // Check for content in the expected format from ripper
+                expect(result.content).toBeDefined();
+                expect(Array.isArray(result.content)).toBe(true);
+                
+                // Verify directories are listed
+                const textContent = (result as any).content.find((item: { type: string; }) => item.type === 'text');
+                expect(textContent).toBeDefined();
+                
+                // Make sure the output contains the workspace path
+                const jsonContent = JSON.parse(textContent.text);
+                expect(jsonContent.directories).toBeDefined();
+                expect(Array.isArray(jsonContent.directories)).toBe(true);
+                expect(jsonContent.directories.length).toBeGreaterThan(0);
+                expect(jsonContent.directories[0].path).toContain(workspaceManager.paths.root);
+            } catch (error) {
+                console.error('Tool invocation failed:', error);
+                throw error; // Re-throw to fail the test
+            }
         } catch (error) {
-            console.error('Tool invocation failed:', error);
-            throw error; // Re-throw to fail the test
+            console.error('Failed to list tools:', error);
+            throw error;
         }
     }, 30000); // Increase timeout for server startup
 
@@ -141,20 +128,6 @@ describe('MCP Integration Tests', () => {
         // Get the workspace via the registry
         const registry = getServiceRegistry();
         const workspaceManager = await registry.getWorkspaceManager(workspaceId);
-        
-        // Make sure workspace is initialized
-        await workspaceManager.init();
-        
-        // Update the ripper config to use our build script directly
-        await workspaceManager.tools.updateServerConfig('default', 'ripper', {
-            command: 'bun',
-            args: [
-                ripperPath,
-                '--transport=stdio',
-                `--workspaceDir=${workspaceManager.paths.root}`,
-                '--excludePatterns=\\.ws'
-            ]
-        });
         
         // Get MCP manager twice
         const mcpManager1 = await getMCPManagerForRequest(workspaceId);
@@ -172,23 +145,6 @@ describe('MCP Integration Tests', () => {
         // Get the workspace and configure tools
         const registry = getServiceRegistry();
         const workspaceManager = await registry.getWorkspaceManager(workspaceId);
-        
-        // Make sure workspace is initialized
-        await workspaceManager.init();
-        
-        // Update the ripper config to use our build script directly
-        await workspaceManager.tools.updateServerConfig('default', 'ripper', {
-            command: 'bun',
-            args: [
-                ripperPath,
-                '--transport=stdio',
-                `--workspaceDir=${workspaceManager.paths.root}`,
-                '--excludePatterns=\\.ws'
-            ]
-        });
-        
-        // Make sure sessions manager is initialized
-        await workspaceManager.sessions.init();
         
         // Create a test session
         const session = await workspaceManager.sessions.createSession({

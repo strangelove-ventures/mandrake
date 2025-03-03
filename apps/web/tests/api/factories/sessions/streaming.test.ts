@@ -9,7 +9,7 @@ import {
 import { TestDirectory } from '../../../utils/test-dir';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { createSessionRoutes } from '@/lib/api/factories/sessions';
-import { getSessionCoordinatorForRequest } from '@/lib/services/helpers';
+import { getSessionCoordinatorForRequest, getMCPManagerForRequest } from '@/lib/services/helpers';
 import { createLogger } from '@mandrake/utils';
 import { config } from 'dotenv';
 import { resolve } from 'path';
@@ -72,19 +72,35 @@ describe('Session Streaming API Tests', () => {
         // Initialize the workspace fully
         await testWorkspace.init();
 
-        // Update the ripper server config to use the ripper-server from PATH
+        // The ripper server config should now be automatically configured correctly
         try {
-            await testWorkspace.tools.updateServerConfig('default', 'ripper', {
-                command: 'ripper-server',
-                args: [
-                    '--transport=stdio',
-                    `--workspaceDir=${testWorkspace.paths.root}`,
-                    '--excludePatterns=\\.ws'
-                ]
-            });
-            console.log('Updated ripper config to use ripper-server from PATH');
+            // Log the current ripper config for debugging
+            const defaultSet = 'default';
+            const ripperConfig = await testWorkspace.tools.getServerConfig(defaultSet, 'ripper');
+            console.log('Current ripper config:', ripperConfig);
         } catch (error) {
-            console.warn('Failed to update ripper config:', error);
+            console.warn('Failed to get ripper config:', error);
+        }
+
+        // Update the prompt config to ensure tools are included
+        try {
+            await testWorkspace.prompt.updateConfig({
+                instructions: "You are Mandrake, a helpful AI assistant with tools.",
+                includeWorkspaceMetadata: true,
+                includeSystemInfo: true,
+                includeDateTime: true
+            });
+            console.log('Updated prompt config to include tools');
+        } catch (error) {
+            console.warn('Failed to update prompt config:', error);
+        }
+
+        // Verify MCP Manager works and has tools
+        try {
+            const mcpManager = await getMCPManagerForRequest(testWorkspace.id);
+            const tools = await mcpManager.listAllTools();
+        } catch (error) {
+            console.error('Failed to verify MCP Manager:', error);
         }
 
         // Create route handlers
@@ -106,7 +122,30 @@ describe('Session Streaming API Tests', () => {
                 testWorkspace.id, 
                 testSessionId
             );
-            console.log('Successfully created session coordinator');
+
+            // Diagnostic: build and log a sample context to check if tools are included
+            try {
+                const context = await coordinator.buildContext(testSessionId);
+                
+                // Log a small snippet of the system prompt to check for tool sections
+                if (context.systemPrompt.includes('<tools>')) {
+                    const toolsStartIndex = context.systemPrompt.indexOf('<tools>');
+                    const toolsEndIndex = context.systemPrompt.indexOf('</tools>');
+                    if (toolsStartIndex !== -1 && toolsEndIndex !== -1) {
+                        // Show snippet of tools section
+                        const toolsSnippet = context.systemPrompt.substring(
+                            toolsStartIndex, 
+                            Math.min(toolsStartIndex + 200, toolsEndIndex)
+                        );
+                    }
+                } else {
+                    if (coordinator.opts.mcpManager) {
+                        const tools = await coordinator.opts.mcpManager.listAllTools();
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to build and log context:', error);
+            }
             
         } catch (error) {
             console.error('Failed to create test session:', error);
@@ -239,6 +278,10 @@ describe('Session Streaming API Tests', () => {
                 
                 // Analyze the events we received
                 console.log(`Received ${events.length} events from stream`);
+
+                events.forEach((event, index) => {
+                    console.log(`Event ${index}:`, event);
+                });
                 
                 // Should have at least some events
                 expect(events.length).toBeGreaterThan(0);
@@ -288,6 +331,6 @@ describe('Session Streaming API Tests', () => {
                 // This is likely to fail in test environments without real model access
                 console.log('Note: E2E streaming test error (expected in test env):', error);
             }
-        }, 240000); // Allow up to 60 seconds for this test
+        }, 240000); // Allow up to 4 minutes for this test
     });
 });

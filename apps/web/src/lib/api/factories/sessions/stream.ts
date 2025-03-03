@@ -60,23 +60,52 @@ export async function streamSession(
                         // Initialize with starting event
                         sendEvent({ type: 'start', sessionId });
 
+                        // Get the session manager to track streaming turns
+                        const sessionManager = workspaceManager.sessions;
+
+                        // Track state
+                        let processingComplete = false;
+                        let allTurnsComplete = false;
+                        let latestResponseId: string | null = null;
+                        let trackingStarted = false;
+                        let stopTrackingFn: (() => void) | null = null;
+
+                        // Function to check if we should complete the stream
+                        function checkAndCompleteStream() {
+                            if (processingComplete && (allTurnsComplete || !trackingStarted)) {
+                                // Send a completion event
+                                sendEvent({ type: 'complete', sessionId });
+                                
+                                // Close the stream
+                                controller.close();
+                                
+                                // Stop tracking if still active
+                                if (stopTrackingFn) {
+                                    stopTrackingFn();
+                                }
+                                
+                                // Clean up any remaining timers
+                                clearInterval(pollInterval);
+                                if (timeoutId) clearTimeout(timeoutId);
+                                if (completionTimeoutId) clearTimeout(completionTimeoutId);
+                            }
+                        }
+
                         // Get the session coordinator to handle the message
                         const sessionCoordinator = await getSessionCoordinatorForRequest(workspaceId!, sessionId);
 
                         // Create a promise to track when the session coordinator is done processing
-                        let processingComplete = false;
-                        const processingPromise = (async () => {
-                            try {
-                                // Process the message (this will create a new round with request and response)
-                                await sessionCoordinator.handleRequest(sessionId, body.content);
+                        const processingPromise = sessionCoordinator.handleRequest(sessionId, body.content)
+                            .then(() => {
+                                // Mark processing as complete, but don't close the stream yet
+                                // We need to make sure all turns are properly tracked first
+                                console.log('Message processing complete, waiting for turns to complete');
                                 processingComplete = true;
-
-                                // Send a completion event
-                                sendEvent({ type: 'complete', sessionId });
-
-                                // Close the stream
-                                controller.close();
-                            } catch (error) {
+                                
+                                // Check if we should complete the stream
+                                checkAndCompleteStream();
+                            })
+                            .catch((error) => {
                                 // Send an error event
                                 sendEvent({
                                     type: 'error',
@@ -85,71 +114,137 @@ export async function streamSession(
 
                                 // Close the stream
                                 controller.close();
+                            });
+
+                        // Poll for new rounds and set up turn tracking
+                        const pollInterval = setInterval(async () => {
+                            try {
+                                if (trackingStarted) {
+                                    return;
+                                }
+
+                                // Find the latest round to get its response ID
+                                const rounds = await sessionManager.listRounds(sessionId);
+
+                                if (rounds.length > 0) {
+                                    // Get the latest round (highest index)
+                                    const latestRound = rounds.reduce((latest, round) =>
+                                        !latest || round.index > latest.index ? round : latest
+                                    , rounds[0]);
+
+                                    if (latestRound.responseId !== latestResponseId) {
+                                        latestResponseId = latestRound.responseId;
+                                        
+                                        // If we have a previous tracking function, stop it
+                                        if (stopTrackingFn) {
+                                            stopTrackingFn();
+                                        }
+                                        
+                                        // Set up streaming for turns in the latest response
+                                        trackingStarted = true;
+                                        stopTrackingFn = sessionManager.trackStreamingTurns(
+                                            latestRound.responseId,
+                                            (turn) => {
+                                                // Send the turn update to the client
+                                                sendEvent({
+                                                    type: 'update',
+                                                    turn: {
+                                                        id: turn.id,
+                                                        index: turn.index,
+                                                        content: turn.content,
+                                                        status: turn.status,
+                                                        toolCalls: JSON.parse(turn.toolCalls), // Parse the JSON string for the client
+                                                        responseId: turn.responseId
+                                                    }
+                                                });
+
+                                                // If the turn is completed, check if all turns are complete
+                                                if (turn.status === 'completed' || turn.status === 'error') {
+                                                    sessionManager.getStreamingStatus(latestRound.responseId)
+                                                        .then(({ isComplete }) => {
+                                                            // If all turns are complete and processing is done, finish the stream
+                                                            if (isComplete) {
+                                                                console.log('All turns complete, marking for stream end');
+                                                                allTurnsComplete = true;
+                                                                checkAndCompleteStream();
+                                                            } else if (processingComplete) {
+                                                                // If processing is complete but not all turns, check more frequently
+                                                                console.log('Processing complete but turns still streaming, scheduling recheck');
+                                                                setTimeout(() => {
+                                                                    sessionManager.getStreamingStatus(latestRound.responseId)
+                                                                        .then(({ isComplete: recheckedComplete }) => {
+                                                                            if (recheckedComplete) {
+                                                                                console.log('All turns now complete on recheck');
+                                                                                allTurnsComplete = true;
+                                                                                checkAndCompleteStream();
+                                                                            }
+                                                                        })
+                                                                        .catch(error => {
+                                                                            console.error('Error on streaming status recheck:', error);
+                                                                        });
+                                                                }, 1000);
+                                                            }
+                                                        })
+                                                        .catch(error => {
+                                                            console.error('Error checking streaming status:', error);
+                                                        });
+                                                }
+                                            }
+                                        );
+
+                                        // If we've started tracking, we can stop polling
+                                        clearInterval(pollInterval);
+                                    }
+                                }
+                            } catch (error) {
+                                console.error('Error in polling interval:', error);
                             }
-                        })();
+                        }, 500);
 
-                        // Get the session manager to track streaming turns
-                        const sessionManager = workspaceManager.sessions;
-
-                        // Find the latest round to get its response ID
-                        let rounds = await sessionManager.listRounds(sessionId);
-
-                        // If no rounds exist yet, wait a bit and try again
-                        if (rounds.length === 0) {
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                            rounds = await sessionManager.listRounds(sessionId);
-
-                            // If still no rounds, abort
-                            if (rounds.length === 0) {
+                        // Set a timeout to ensure the stream doesn't hang indefinitely
+                        let timeoutId = setTimeout(() => {
+                            if (!processingComplete || !allTurnsComplete) {
+                                // Send a timeout error event
                                 sendEvent({
                                     type: 'error',
-                                    error: 'No conversation rounds found'
+                                    error: 'Stream timed out after 3 minutes'
                                 });
+                                
+                                // Close the stream
                                 controller.close();
-                                return;
-                            }
-                        }
-
-                        // Get the latest round (highest index)
-                        const latestRound = rounds.reduce((latest, round) =>
-                            !latest || round.index > latest.index ? round : latest
-                            , rounds[0]);
-
-                        // Set up streaming for turns in the latest response
-                        const stopTracking = sessionManager.trackStreamingTurns(
-                            latestRound.responseId,
-                            (turn) => {
-                                // Send the turn update to the client
-                                sendEvent({
-                                    type: 'update',
-                                    turn: {
-                                        id: turn.id,
-                                        index: turn.index,
-                                        content: turn.content,
-                                        status: turn.status,
-                                        toolCalls: JSON.parse(turn.toolCalls), // Parse the JSON string for the client
-                                        responseId: turn.responseId
-                                    }
-                                });
-
-                                // If the turn is completed, check if all turns are complete
-                                if (turn.status === 'completed' || turn.status === 'error') {
-                                    sessionManager.getStreamingStatus(latestRound.responseId)
-                                        .then(({ isComplete }) => {
-                                            if (isComplete && processingComplete) {
-                                                // All turns are done and processing is complete, so we can stop tracking
-                                                stopTracking();
-                                            }
-                                        })
-                                        .catch(error => {
-                                            console.error('Error checking streaming status:', error);
-                                        });
+                                
+                                // Clean up
+                                if (stopTrackingFn) {
+                                    stopTrackingFn();
                                 }
+                                clearInterval(pollInterval);
                             }
-                        );
+                        }, 180000); // 3 minute timeout
 
-                        // When the processing promise resolves, the stream will be closed
+                        // Set a timeout for final completion - if processing is complete but turns aren't
+                        // marked complete after 8 seconds, force completion
+                        let completionTimeoutId: ReturnType<typeof setTimeout> | null = null;
+                        
+                        // When the processing promise resolves, we'll check if we should complete the stream
                         await processingPromise;
+                        
+                        // If we get here and tracking never started, complete the stream
+                        if (!trackingStarted) {
+                            console.log('Processing completed but tracking never started, completing stream');
+                            allTurnsComplete = true;
+                            checkAndCompleteStream();
+                        } else if (processingComplete && !allTurnsComplete) {
+                            // If processing is complete but turns aren't marked complete after 8 seconds,
+                            // assume they are complete and end the stream
+                            console.log('Setting final completion timeout');
+                            completionTimeoutId = setTimeout(() => {
+                                if (!allTurnsComplete && processingComplete) {
+                                    console.log('Forcing stream completion after final timeout');
+                                    allTurnsComplete = true;
+                                    checkAndCompleteStream();
+                                }
+                            }, 8000);
+                        }
                     } catch (error) {
                         // Log the error
                         console.error('Error in stream controller:', error);

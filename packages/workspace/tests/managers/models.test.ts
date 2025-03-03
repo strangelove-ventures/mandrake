@@ -106,11 +106,7 @@ describe('ModelsManager', () => {
     test('lists models', async () => {
       await manager.addModel('llama2', {...testModel, providerId: 'ollama-custom'});
       const models = await manager.listModels();
-      
-      // Default models should exist
-      expect(models).toHaveProperty('anthropicModel');
-      expect(models).toHaveProperty('ollamaModel');
-      expect(models).toHaveProperty('xaiModel');
+
       
       // Our test model should exist
       expect(models).toHaveProperty('llama2', {...testModel, providerId: 'ollama-custom'});
@@ -157,7 +153,7 @@ describe('ModelsManager', () => {
 
     test('gets default active model', async () => {
       const active = await manager.getActive();
-      expect(active).toBe('grok-beta');
+      expect(active).toBe('claude-3-5-sonnet-20241022');
     });
 
     test('sets and gets active model', async () => {

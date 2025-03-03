@@ -37,7 +37,23 @@ export async function getSessionCoordinatorForRequest(
   
   // Get the workspace manager to get the correct workspace path
   const workspaceManager = await getWorkspaceManagerForRequest(workspaceId);
-  return registry.getSessionCoordinator(workspaceId, workspaceManager.paths.root, sessionId);
+  const sessionCoordinator = await registry.getSessionCoordinator(workspaceId, workspaceManager.paths.root, sessionId);
+  
+  // Diagnostic check for MCP tools
+  try {
+    if (sessionCoordinator.opts.mcpManager) {
+      const tools = await sessionCoordinator.opts.mcpManager.listAllTools();
+      logger.debug(`SessionCoordinator has MCP manager with ${tools.length} tools`, {
+        tools: tools.map(t => `${t.server}/${t.name}`).join(', ')
+      });
+    } else {
+      logger.error('SessionCoordinator missing MCP manager - tools won\'t be available');
+    }
+  } catch (error) {
+    logger.error('Error listing tools in SessionCoordinator', { error });
+  }
+  
+  return sessionCoordinator;
 }
 
 /**

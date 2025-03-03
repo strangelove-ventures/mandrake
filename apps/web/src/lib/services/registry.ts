@@ -75,6 +75,7 @@ class ServiceRegistry implements IServiceRegistry {
           lastUsed: new Date(),
           isActive: true
         });
+        await manager.init(); // ensure workspace is initialized
         logger.info(`Retrieved WorkspaceManager for workspace: ${workspaceId}`);
         return manager;
       } catch (error) {
