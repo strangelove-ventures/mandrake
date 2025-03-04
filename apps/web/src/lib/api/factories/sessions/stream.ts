@@ -1,4 +1,3 @@
-// /apps/web/src/lib/api/factories/sessions/stream.ts
 import { NextRequest } from 'next/server';
 import { validateBody } from '../../middleware/validation';
 import { ApiError, ErrorCode } from '../../middleware/errorHandling';
@@ -105,7 +104,7 @@ export async function streamSession(
                                 // Check if we should complete the stream
                                 checkAndCompleteStream();
                             })
-                            .catch((error) => {
+                            .catch((error: { message: any; }) => {
                                 // Send an error event
                                 sendEvent({
                                     type: 'error',
@@ -145,15 +144,16 @@ export async function streamSession(
                                         stopTrackingFn = sessionManager.trackStreamingTurns(
                                             latestRound.responseId,
                                             (turn) => {
+                                                console.log('Got turn update:', turn);
                                                 // Send the turn update to the client
                                                 sendEvent({
                                                     type: 'update',
                                                     turn: {
                                                         id: turn.id,
                                                         index: turn.index,
-                                                        content: turn.content,
+                                                        content: turn.rawResponse,
                                                         status: turn.status,
-                                                        toolCalls: JSON.parse(turn.toolCalls), // Parse the JSON string for the client
+                                                        toolCalls: JSON.parse(turn.toolCalls),
                                                         responseId: turn.responseId
                                                     }
                                                 });
@@ -162,27 +162,10 @@ export async function streamSession(
                                                 if (turn.status === 'completed' || turn.status === 'error') {
                                                     sessionManager.getStreamingStatus(latestRound.responseId)
                                                         .then(({ isComplete }) => {
-                                                            // If all turns are complete and processing is done, finish the stream
                                                             if (isComplete) {
                                                                 console.log('All turns complete, marking for stream end');
                                                                 allTurnsComplete = true;
                                                                 checkAndCompleteStream();
-                                                            } else if (processingComplete) {
-                                                                // If processing is complete but not all turns, check more frequently
-                                                                console.log('Processing complete but turns still streaming, scheduling recheck');
-                                                                setTimeout(() => {
-                                                                    sessionManager.getStreamingStatus(latestRound.responseId)
-                                                                        .then(({ isComplete: recheckedComplete }) => {
-                                                                            if (recheckedComplete) {
-                                                                                console.log('All turns now complete on recheck');
-                                                                                allTurnsComplete = true;
-                                                                                checkAndCompleteStream();
-                                                                            }
-                                                                        })
-                                                                        .catch(error => {
-                                                                            console.error('Error on streaming status recheck:', error);
-                                                                        });
-                                                                }, 1000);
                                                             }
                                                         })
                                                         .catch(error => {
@@ -199,7 +182,7 @@ export async function streamSession(
                             } catch (error) {
                                 console.error('Error in polling interval:', error);
                             }
-                        }, 500);
+                        }, 50);
 
                         // Set a timeout to ensure the stream doesn't hang indefinitely
                         let timeoutId = setTimeout(() => {

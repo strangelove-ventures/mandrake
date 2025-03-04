@@ -9,12 +9,20 @@ import {
 import { TestDirectory } from '../../../utils/test-dir';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { createSessionRoutes } from '@/lib/api/factories/sessions';
-import { getSessionCoordinatorForRequest, getMCPManagerForRequest } from '@/lib/services/helpers';
+import { getSessionCoordinatorForRequest, getMCPManagerForRequest, getWorkspaceManagerForRequest } from '@/lib/services/helpers';
 import { createLogger } from '@mandrake/utils';
 import { config } from 'dotenv';
 import { resolve } from 'path';
 
 const logger = createLogger('SessionStreamingTests');
+
+export async function createTestSession(workspaceId: string, opts: {
+    title?: string;
+    description?: string;
+} = {}): Promise<{ id: string }> {
+    const workspace = await getWorkspaceManagerForRequest(workspaceId);
+    return workspace.sessions.createSession(opts);
+}
 
 /**
  * Tests focusing on the streaming aspects of the Sessions API:
@@ -32,34 +40,9 @@ describe('Session Streaming API Tests', () => {
     // Test session ID for reuse in tests
     let testSessionId: string;
 
-    // Check if ripper-server is in PATH
-    const checkRipperServer = () => {
-        try {
-            const { stdout, stderr, exitCode } = Bun.spawnSync(['which', 'ripper-server']);
-            const path = stdout.toString().trim();
-            if (exitCode !== 0 || !path) {
-                console.warn('Warning: ripper-server not found in PATH. Some tests may fail.');
-                return false;
-            }
-            console.log(`Found ripper-server at: ${path}`);
-            return true;
-        } catch (error) {
-            console.warn('Warning: Failed to check for ripper-server:', error);
-            return false;
-        }
-    };
-
     // Set up the test environment once
     beforeAll(async () => {
         config({ path: resolve(__dirname, '../../../../../../.env') });
-
-        // Verify ripper-server is available
-        const hasRipperServer = checkRipperServer();
-        if (!hasRipperServer) {
-            console.warn(
-                'ripper-server not found in PATH. Please run the build-ripper.sh script in packages/ripper directory.'
-            );
-        }
 
         const setup = await setupApiTest();
         testDir = setup.testDir;
@@ -77,7 +60,6 @@ describe('Session Streaming API Tests', () => {
             // Log the current ripper config for debugging
             const defaultSet = 'default';
             const ripperConfig = await testWorkspace.tools.getServerConfig(defaultSet, 'ripper');
-            console.log('Current ripper config:', ripperConfig);
         } catch (error) {
             console.warn('Failed to get ripper config:', error);
         }
@@ -90,7 +72,6 @@ describe('Session Streaming API Tests', () => {
                 includeSystemInfo: true,
                 includeDateTime: true
             });
-            console.log('Updated prompt config to include tools');
         } catch (error) {
             console.warn('Failed to update prompt config:', error);
         }
@@ -105,12 +86,9 @@ describe('Session Streaming API Tests', () => {
 
         // Create route handlers
         workspaceRoutes = createSessionRoutes({ workspace: testWorkspace.id });
-
-        // Initialize sessions manager and create a test session
-        await testWorkspace.sessions.init();
         
         try {
-            const session = await testWorkspace.sessions.createSession({
+            const session = await createTestSession(testWorkspace.id, {
                 title: 'Streaming Test Session',
                 description: 'Session for testing streaming functionality'
             });
@@ -177,12 +155,6 @@ describe('Session Streaming API Tests', () => {
             // Skip this test if we don't have a valid testSessionId
             if (!testSessionId || process.env.TEST_ENVIRONMENT === 'ci') {
                 console.log('Skipping E2E streaming test - not suitable for this environment');
-                return;
-            }
-
-            const ripperServer = checkRipperServer();
-            if (!ripperServer) {
-                console.log('Skipping E2E streaming test - ripper-server not available');
                 return;
             }
 

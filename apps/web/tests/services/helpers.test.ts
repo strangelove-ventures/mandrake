@@ -90,7 +90,7 @@ describe('Service Helpers', () => {
             }
 
             expect(error).not.toBeNull();
-            expect(error?.message).toContain('Workspace with ID');
+            expect(error?.message).toContain('not found');
         });
     });
     describe('getMCPManagerForRequest', () => {

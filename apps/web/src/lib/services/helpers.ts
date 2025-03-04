@@ -64,14 +64,7 @@ export async function getWorkspaceManagerForRequest(
   workspaceId: string
 ): Promise<WorkspaceManager> {
   const registry = getServiceRegistry();
-  
-  logger.debug(`Getting WorkspaceManager for workspace: ${workspaceId}`);
-  
-  // Get the workspace through the MandrakeManager
-  const mandrakeManager = await registry.getMandrakeManager();
-  const mgr = await mandrakeManager.getWorkspace(workspaceId);
-  await mgr.init()
-  return mgr
+  return registry.getWorkspaceManager(workspaceId);
 }
 
 /**
@@ -159,9 +152,9 @@ export async function createWorkspaceForRequest(
 ): Promise<WorkspaceManager> {
   const registry = getServiceRegistry();
   const mandrakeManager = await registry.getMandrakeManager();
-  
-  logger.debug(`Creating workspace: ${name}`);
-  return mandrakeManager.createWorkspace(name, description, path);
+  const workspace = await mandrakeManager.createWorkspace(name, description, path);
+  registry.cacheWorkspaceManager(workspace.id, workspace);
+  return workspace;
 }
 
 /**
@@ -178,9 +171,9 @@ export async function adoptWorkspaceForRequest(
 ): Promise<WorkspaceManager> {
   const registry = getServiceRegistry();
   const mandrakeManager = await registry.getMandrakeManager();
-  
-  logger.debug(`Adopting workspace: ${name} from path: ${path}`);
-  return mandrakeManager.adoptWorkspace(name, path, description);
+  const workspace = await mandrakeManager.adoptWorkspace(name, path, description);
+  registry.cacheWorkspaceManager(workspace.id, workspace);
+  return workspace;
 }
 
 /**
@@ -190,9 +183,8 @@ export async function adoptWorkspaceForRequest(
 export async function deleteWorkspaceForRequest(workspaceId: string): Promise<void> {
   const registry = getServiceRegistry();
   const mandrakeManager = await registry.getMandrakeManager();
-  
-  logger.debug(`Deleting workspace: ${workspaceId}`);
   await mandrakeManager.deleteWorkspace(workspaceId);
+  registry.clearWorkspaceManager(workspaceId);
 }
 
 /**

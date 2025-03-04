@@ -219,7 +219,7 @@ export class SessionCoordinator {
 
           await this.opts.sessionManager.updateTurn(currentTurn.id, {
             rawResponse: textBuffer,
-            content: JSON.stringify([textBuffer])
+            content: textBuffer
           });
 
           if (xmlBuffer.includes('<tool_call>') && xmlBuffer.includes('</tool_call>')) {

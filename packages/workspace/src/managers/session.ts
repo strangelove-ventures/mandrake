@@ -24,6 +24,7 @@ export class SessionManager {
     private initialized: boolean = false;
     private logger: Logger;
     
+    private instanceId: string = crypto.randomUUID();
     // Event emitter for turn updates
     private turnUpdateListeners = new Map<string, Set<(turn: Turn) => void>>();
     
@@ -35,7 +36,7 @@ export class SessionManager {
                 dbPath
             }
         });
-        this.logger.info(`Creating new SessionManager for ${dbPath}`);
+        this.logger.info(`Creating new SessionManager for ${dbPath} with instance ID ${this.instanceId}`);
     }
 
     public async init(): Promise<void> {
@@ -341,7 +342,6 @@ export class SessionManager {
         outputCost?: number;
     }): Promise<Turn> {
         this.ensureInitialized();
-
         const updateData: any = { ...updates };
 
         // Handle JSON stringification
@@ -365,6 +365,7 @@ export class SessionManager {
         }
 
         // Notify any listeners
+        console.log('Turn updated');
         this.notifyTurnListeners(id, turn);
 
         return turn;
@@ -451,9 +452,20 @@ export class SessionManager {
      */
     addTurnUpdateListener(turnId: string, listener: (turn: Turn) => void): () => void {
         if (!this.turnUpdateListeners.has(turnId)) {
+            console.log('Creating new listener set for turn:', turnId);
             this.turnUpdateListeners.set(turnId, new Set());
         }
-        this.turnUpdateListeners.get(turnId)!.add(listener);
+        const listeners = this.turnUpdateListeners.get(turnId)!;
+        listeners.add(listener);
+        console.log('Added listener, set now has size:', listeners.size);
+
+        // Debug check - is the set still there?
+        console.log('Immediate verify:', {
+            turnId,
+            hasListeners: this.turnUpdateListeners.has(turnId),
+            listenerCount: this.turnUpdateListeners.get(turnId)?.size || 0
+        });
+
         return () => {
             const listeners = this.turnUpdateListeners.get(turnId);
             if (listeners) {
@@ -470,8 +482,14 @@ export class SessionManager {
      */
     private notifyTurnListeners(turnId: string, turn: Turn): void {
         const listeners = this.turnUpdateListeners.get(turnId);
+        console.log('Notifying turn listeners:', {
+            turnId,
+            hasListeners: !!listeners,
+            listenerCount: listeners?.size || 0
+        });
         if (listeners) {
             listeners.forEach(listener => {
+                console.log('Calling listener for turn:', turnId);
                 try {
                     listener(turn);
                 } catch (error) {
@@ -489,38 +507,45 @@ export class SessionManager {
      */
     trackStreamingTurns(responseId: string, onUpdate: (turn: Turn) => void): () => void {
         this.ensureInitialized();
-        
-        // Set up listeners for existing and future turns
         const listeners: Array<() => void> = [];
-        
-        // Function to check for new turns
+
+        // Function to check for new turns and set up streaming
         const checkForNewTurns = async () => {
             const turns = await this.listTurns(responseId);
-            
-            // For each turn, add a listener if it's not already being tracked
+
+            // For each turn, add a listener immediately to catch all updates
             for (const turn of turns) {
                 if (!this.turnUpdateListeners.has(turn.id)) {
-                    const removeListener = this.addTurnUpdateListener(turn.id, onUpdate);
+                    console.log('Setting up streaming for turn:', turn.id);
+                    const removeListener = this.addTurnUpdateListener(turn.id, (updatedTurn) => {
+                        // Always notify of updates - chunks, tool calls, status changes
+                        console.log('Turn update streaming:', {
+                            id: updatedTurn.id,
+                            contentLength: updatedTurn.rawResponse.length,
+                            status: updatedTurn.status
+                        });
+                        onUpdate(updatedTurn);
+                    });
                     listeners.push(removeListener);
-                    
                     // Immediately notify with current state
-                    onUpdate(turn);
+                    const currentTurn = await this.getTurn(turn.id);
+                    onUpdate(currentTurn);
                 }
             }
-            
-            // Check if all turns are complete
-            const allComplete = turns.every(turn => turn.status !== 'streaming');
+
+            // Check if complete to stop polling
+            const allComplete = turns.every(turn =>
+                turn.status === 'completed' || turn.status === 'error'
+            );
             if (allComplete && turns.length > 0) {
-                // If all turns are complete, stop polling
                 clearInterval(intervalId);
             }
         };
-        
-        // Start polling for new turns
+
+        // Poll for new turns but stream updates within turns
         const intervalId = setInterval(checkForNewTurns, 500);
         checkForNewTurns(); // Check immediately
-        
-        // Return function to stop tracking
+
         return () => {
             clearInterval(intervalId);
             listeners.forEach(removeListener => removeListener());

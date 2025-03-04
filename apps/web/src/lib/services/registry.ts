@@ -1,4 +1,4 @@
-import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
+import { WorkspaceManager, MandrakeManager, SessionManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
 import { createLogger } from '@mandrake/utils';
@@ -53,8 +53,15 @@ class ServiceRegistry implements IServiceRegistry {
    * @param path Optional path to create a new workspace if it doesn't exist
    */
   async getWorkspaceManager(workspaceId: string, path?: string): Promise<WorkspaceManager> {
+    logger.info('Getting workspace manager', {
+      workspaceId,
+      cached: this.workspaceManagers.has(workspaceId),
+      existingManagers: Array.from(this.workspaceManagers.keys())
+    });
+
     // First check if we have it cached
     if (this.workspaceManagers.has(workspaceId)) {
+      logger.info('Returning cached workspace manager', { workspaceId });
       // Update activity timestamp
       this.workspaceActivity.set(workspaceId, {
         lastUsed: new Date(),
@@ -66,10 +73,16 @@ class ServiceRegistry implements IServiceRegistry {
     // If not cached, try to get from MandrakeManager
     try {
       const mandrakeManager = await this.getMandrakeManager();
+      logger.info('Got mandrake manager, getting workspace', { workspaceId });
 
       try {
         // Always try to get the workspace from MandrakeManager first
         const manager = await mandrakeManager.getWorkspace(workspaceId);
+        logger.info('Got workspace from mandrake manager', {
+          workspaceId,
+          sessionManager: manager.sessions instanceof SessionManager
+        });
+
         this.workspaceManagers.set(workspaceId, manager);
         this.workspaceActivity.set(workspaceId, {
           lastUsed: new Date(),
@@ -335,6 +348,18 @@ class ServiceRegistry implements IServiceRegistry {
       logger.info(`Releasing oldest session ${sessionId} due to resource limits`);
       await this.releaseSessionCoordinator(workspaceId, sessionId);
     }
+  }
+  cacheWorkspaceManager(id: string, manager: WorkspaceManager): void {
+    this.workspaceManagers.set(id, manager);
+    this.workspaceActivity.set(id, {
+      lastUsed: new Date(),
+      isActive: true
+    });
+  }
+
+  clearWorkspaceManager(id: string): void {
+    this.workspaceManagers.delete(id);
+    this.workspaceActivity.delete(id);
   }
 }
 
