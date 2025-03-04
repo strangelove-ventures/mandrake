@@ -23,8 +23,7 @@ export class SessionManager {
     private dbPath: string;
     private initialized: boolean = false;
     private logger: Logger;
-    
-    private instanceId: string = crypto.randomUUID();
+
     // Event emitter for turn updates
     private turnUpdateListeners = new Map<string, Set<(turn: Turn) => void>>();
     
@@ -36,7 +35,7 @@ export class SessionManager {
                 dbPath
             }
         });
-        this.logger.info(`Creating new SessionManager for ${dbPath} with instance ID ${this.instanceId}`);
+        this.logger.info(`Creating new SessionManager for ${dbPath}`);
     }
 
     public async init(): Promise<void> {
@@ -352,7 +351,6 @@ export class SessionManager {
             updateData.toolCalls = JSON.stringify(updates.toolCalls);
         }
 
-        // Set updated timestamp
         updateData.updatedAt = new Date(Date.now());
 
         const [turn] = await this.db.update(schema.turns)
@@ -364,8 +362,6 @@ export class SessionManager {
             throw new Error(`Turn not found: ${ id } `);
         }
 
-        // Notify any listeners
-        console.log('Turn updated');
         this.notifyTurnListeners(id, turn);
 
         return turn;
@@ -452,20 +448,10 @@ export class SessionManager {
      */
     addTurnUpdateListener(turnId: string, listener: (turn: Turn) => void): () => void {
         if (!this.turnUpdateListeners.has(turnId)) {
-            console.log('Creating new listener set for turn:', turnId);
             this.turnUpdateListeners.set(turnId, new Set());
         }
         const listeners = this.turnUpdateListeners.get(turnId)!;
         listeners.add(listener);
-        console.log('Added listener, set now has size:', listeners.size);
-
-        // Debug check - is the set still there?
-        console.log('Immediate verify:', {
-            turnId,
-            hasListeners: this.turnUpdateListeners.has(turnId),
-            listenerCount: this.turnUpdateListeners.get(turnId)?.size || 0
-        });
-
         return () => {
             const listeners = this.turnUpdateListeners.get(turnId);
             if (listeners) {
@@ -482,14 +468,8 @@ export class SessionManager {
      */
     private notifyTurnListeners(turnId: string, turn: Turn): void {
         const listeners = this.turnUpdateListeners.get(turnId);
-        console.log('Notifying turn listeners:', {
-            turnId,
-            hasListeners: !!listeners,
-            listenerCount: listeners?.size || 0
-        });
         if (listeners) {
             listeners.forEach(listener => {
-                console.log('Calling listener for turn:', turnId);
                 try {
                     listener(turn);
                 } catch (error) {
@@ -516,14 +496,8 @@ export class SessionManager {
             // For each turn, add a listener immediately to catch all updates
             for (const turn of turns) {
                 if (!this.turnUpdateListeners.has(turn.id)) {
-                    console.log('Setting up streaming for turn:', turn.id);
                     const removeListener = this.addTurnUpdateListener(turn.id, (updatedTurn) => {
                         // Always notify of updates - chunks, tool calls, status changes
-                        console.log('Turn update streaming:', {
-                            id: updatedTurn.id,
-                            contentLength: updatedTurn.rawResponse.length,
-                            status: updatedTurn.status
-                        });
                         onUpdate(updatedTurn);
                     });
                     listeners.push(removeListener);

@@ -93,7 +93,6 @@ describe('Session Streaming API Tests', () => {
                 description: 'Session for testing streaming functionality'
             });
             testSessionId = session.id;
-            console.log(`Created test session: ${testSessionId}`);
             
             // Verify that a SessionCoordinator can be created with this session
             const coordinator = await getSessionCoordinatorForRequest(
@@ -248,13 +247,6 @@ describe('Session Streaming API Tests', () => {
                 // Release the reader
                 reader.releaseLock();
                 
-                // Analyze the events we received
-                console.log(`Received ${events.length} events from stream`);
-
-                events.forEach((event, index) => {
-                    console.log(`Event ${index}:`, event);
-                });
-                
                 // Should have at least some events
                 expect(events.length).toBeGreaterThan(0);
                 
@@ -262,7 +254,6 @@ describe('Session Streaming API Tests', () => {
                 const startEvent = events.find(e => e.type === 'start');
                 
                 if (events.some(e => e.type === 'error')) {
-                    console.log('Stream encountered an error, skipping further expectations');
                     return;
                 }
                 

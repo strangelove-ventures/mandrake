@@ -53,15 +53,11 @@ class ServiceRegistry implements IServiceRegistry {
    * @param path Optional path to create a new workspace if it doesn't exist
    */
   async getWorkspaceManager(workspaceId: string, path?: string): Promise<WorkspaceManager> {
-    logger.info('Getting workspace manager', {
-      workspaceId,
-      cached: this.workspaceManagers.has(workspaceId),
-      existingManagers: Array.from(this.workspaceManagers.keys())
-    });
+    logger.debug('Getting workspace manager', { workspaceId });
 
     // First check if we have it cached
     if (this.workspaceManagers.has(workspaceId)) {
-      logger.info('Returning cached workspace manager', { workspaceId });
+      logger.debug('Returning cached workspace manager', { workspaceId });
       // Update activity timestamp
       this.workspaceActivity.set(workspaceId, {
         lastUsed: new Date(),
@@ -73,12 +69,12 @@ class ServiceRegistry implements IServiceRegistry {
     // If not cached, try to get from MandrakeManager
     try {
       const mandrakeManager = await this.getMandrakeManager();
-      logger.info('Got mandrake manager, getting workspace', { workspaceId });
+      logger.debug('Got mandrake manager, getting workspace', { workspaceId });
 
       try {
         // Always try to get the workspace from MandrakeManager first
         const manager = await mandrakeManager.getWorkspace(workspaceId);
-        logger.info('Got workspace from mandrake manager', {
+        logger.debug('Got workspace from mandrake manager', {
           workspaceId,
           sessionManager: manager.sessions instanceof SessionManager
         });
@@ -89,7 +85,7 @@ class ServiceRegistry implements IServiceRegistry {
           isActive: true
         });
         await manager.init(); // ensure workspace is initialized
-        logger.info(`Retrieved WorkspaceManager for workspace: ${workspaceId}`);
+        logger.debug(`Retrieved WorkspaceManager for workspace: ${workspaceId}`);
         return manager;
       } catch (error) {
         // If not found and path provided, we might want to create or adopt a workspace

@@ -144,8 +144,6 @@ export async function streamSession(
                                         stopTrackingFn = sessionManager.trackStreamingTurns(
                                             latestRound.responseId,
                                             (turn) => {
-                                                console.log('Got turn update:', turn);
-                                                // Send the turn update to the client
                                                 sendEvent({
                                                     type: 'update',
                                                     turn: {
@@ -163,7 +161,6 @@ export async function streamSession(
                                                     sessionManager.getStreamingStatus(latestRound.responseId)
                                                         .then(({ isComplete }) => {
                                                             if (isComplete) {
-                                                                console.log('All turns complete, marking for stream end');
                                                                 allTurnsComplete = true;
                                                                 checkAndCompleteStream();
                                                             }
