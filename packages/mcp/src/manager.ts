@@ -1,9 +1,14 @@
 import { MCPServerImpl } from './server'
+import { createLogger } from '@mandrake/utils'
 import type { ServerConfig, ServerState } from './types'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 
 export class MCPManager {
   private servers: Map<string, MCPServerImpl>
+  private logger = createLogger('mcp').child(
+    { meta: { component: 'manager' }
+  });
+
   
   constructor() {
     this.servers = new Map()
@@ -18,8 +23,12 @@ export class MCPManager {
       const server = new MCPServerImpl(id, config)
       await server.start()
       this.servers.set(id, server)
+      this.logger.info('Server started successfully', { id });
     } catch (error) {
-      console.error(`Failed to start server ${id}:`, error)
+      this.logger.error('Failed to start server', {
+        id,
+        error: error instanceof Error ? error.message : String(error)
+      });
       throw error
     }
   }

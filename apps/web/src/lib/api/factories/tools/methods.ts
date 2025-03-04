@@ -52,20 +52,8 @@ export async function listServerMethods(
     }
     
     try {
-      // List tools (which contain methods)
       const tools = await server.listTools();
-      
-      // Extract methods from tools
-      const methods = tools.flatMap(tool => 
-        tool.methods.map(method => ({
-          name: method.name,
-          description: method.description,
-          parameters: method.parameters,
-          tool: tool.name
-        }))
-      );
-      
-      return createApiResponse(methods);
+      return createApiResponse(tools);
     } catch (error) {
       throw new ApiError(
         `Failed to list server methods: ${error instanceof Error ? error.message : String(error)}`,

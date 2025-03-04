@@ -42,14 +42,6 @@ describe('MCP Integration Tests', () => {
         const wsName = `ws-${randomUUID().slice(0, 8)}`;
         const workspace = await mandrakeManager.createWorkspace(wsName);
         workspaceId = workspace.id;
-        
-        // Diagnostic: log environment info
-        console.log('\n--- Test Environment Info ---');
-        console.log('MANDRAKE_ROOT:', process.env.MANDRAKE_ROOT);
-        console.log('Current Directory:', process.cwd());
-        console.log('Node Version:', process.version);
-        console.log('Platform:', process.platform);
-        console.log('----------------------------\n');
     });
     
     afterEach(async () => {
@@ -80,7 +72,6 @@ describe('MCP Integration Tests', () => {
         
         // Get the current ripper configuration
         const ripperConfig = await workspaceManager.tools.getServerConfig(defaultSet, 'ripper');
-        console.log('Current ripper config:', ripperConfig);
         
         // Get MCP manager for the workspace
         const mcpManager = await getMCPManagerForRequest(workspaceId);
@@ -89,7 +80,6 @@ describe('MCP Integration Tests', () => {
         // Check if servers were started
         try {
             const startedTools = await mcpManager.listAllTools();
-            console.log(`Found ${startedTools.length} tools`);
             
             // Verify that ripper tools are available
             expect(startedTools.length).toBeGreaterThan(0);

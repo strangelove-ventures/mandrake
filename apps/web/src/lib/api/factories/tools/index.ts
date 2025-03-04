@@ -111,16 +111,18 @@ export function createActiveConfigSetRoutes(workspaceScoped = false) {
       req: NextRequest,
       { params }: { params?: { id?: string } } = {}
     ) {
+      if (!params) { params = {}; }
       return getActiveConfigSet(req, { params, workspaceScoped });
     },
     
     /**
      * PUT - Set the active config set
-     */
-    async PUT(
-      req: NextRequest,
-      { params }: { params?: { id?: string } } = {}
+    */
+   async PUT(
+     req: NextRequest,
+     { params }: { params?: { id?: string } } = {}
     ) {
+      if (!params) { params = {}; }
       return setActiveConfigSet(req, { params, workspaceScoped });
     }
   };

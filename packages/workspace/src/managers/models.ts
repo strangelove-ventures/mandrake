@@ -120,11 +120,21 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
     if (updates.providerId && !current.providers[updates.providerId]) {
       throw new Error(`Provider ${updates.providerId} not found`);
     }
+
+    // Handle partial config updates by merging with existing config
+    const updatedConfig = updates.config
+      ? { ...model.config, ...updates.config }
+      : model.config;
+
     await this.write({
       ...current,
       models: {
         ...current.models,
-        [id]: { ...model, ...updates },
+        [id]: {
+          ...model,               // Start with existing model
+          ...updates,            // Apply all updates
+          config: updatedConfig  // Override with merged config
+        },
       },
     });
   }

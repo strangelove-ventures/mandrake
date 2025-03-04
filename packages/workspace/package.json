@@ -8,7 +8,7 @@
   "scripts": {
     "build": "tsc && cp -r src/session/db/migrations dist/session/db/migrations",
     "test": "bun test",
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist tsconfig.tsbuildinfo",
     "db:generate": "drizzle-kit generate:sqlite",
     "db:migrate": "bun run ./src/session/db/migrate.ts"
   },

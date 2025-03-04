@@ -18,7 +18,7 @@ export const modelConfigSchema = z.object({
     modelId: z.string(),
     config: z.object({
         temperature: z.number().min(0).max(1).optional(),
-        maxTokens: z.number().positive().int(),
+        maxTokens: z.number().positive().int().optional(),
     }),
 });
 export type ModelConfig = z.infer<typeof modelConfigSchema>;
