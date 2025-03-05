@@ -8,8 +8,8 @@ import {
 } from '../../utils/setup';
 import { TestDirectory } from '../../../utils/test-dir';
 import { WorkspaceManager } from '@mandrake/workspace';
-import { createSessionRoutes } from '@/lib/api/factories/sessions';
-import { getSessionCoordinatorForRequest, getMCPManagerForRequest, getWorkspaceManagerForRequest } from '@/lib/services/helpers';
+import { createSessionRoutes } from '@/server/api/factories/sessions';
+import { getSessionCoordinatorForRequest, getMCPManagerForRequest, getWorkspaceManagerForRequest } from '@/server/services/helpers';
 import { createLogger } from '@mandrake/utils';
 import { config } from 'dotenv';
 import { resolve } from 'path';

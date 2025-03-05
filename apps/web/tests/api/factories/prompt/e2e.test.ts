@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { createPromptRoutes } from '@/lib/api/factories/prompt';
+import { createPromptRoutes } from '@/server/api/factories/prompt';
 import { 
   setupApiTest, 
   cleanupApiTest, 

@@ -9,7 +9,7 @@ import {
   createServerStatusRoutes,
   createServerMethodsRoutes,
   createExecuteMethodRoutes
-} from '@/lib/api/factories/tools';
+} from '@/server/api/factories/tools';
 
 describe('Tools Routes Factory', () => {
   // Test tool config routes

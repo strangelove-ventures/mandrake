@@ -3,7 +3,7 @@ import {
   createToolsConfigRoutes, 
   createServerConfigRoutes,
   createActiveConfigSetRoutes 
-} from '@/lib/api/factories/tools';
+} from '@/server/api/factories/tools';
 import { 
   setupApiTest, 
   cleanupApiTest, 

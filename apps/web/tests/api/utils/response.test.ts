@@ -5,7 +5,7 @@ import {
   createApiStreamResponse, 
   createNoContentResponse,
   createRedirectResponse
-} from '@/lib/api/utils/response';
+} from '@/server/api/utils/response';
 import { NextResponse } from 'next/server';
 
 describe('API Response Utilities', () => {

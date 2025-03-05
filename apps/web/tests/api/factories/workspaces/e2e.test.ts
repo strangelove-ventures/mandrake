@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { createWorkspacesRoutes, createWorkspaceAdoptRoutes } from '@/lib/api/factories/workspaces';
+import { createWorkspacesRoutes, createWorkspaceAdoptRoutes } from '@/server/api/factories/workspaces';
 import { 
   setupApiTest, 
   cleanupApiTest, 
@@ -9,7 +9,7 @@ import {
 import { TestDirectory } from '../../../utils/test-dir';
 import { randomUUID } from 'crypto';
 import { MandrakeManager } from '@mandrake/workspace';
-import { getMandrakeManagerForRequest } from '@/lib/services/helpers';
+import { getMandrakeManagerForRequest } from '@/server/services/helpers';
 import { mkdir, writeFile } from 'fs/promises';
 import { join } from 'path';
 

@@ -18,8 +18,7 @@
     "test": "NODE_ENV=test bun test",
     "build-image": "docker build -t mandrake/ripper -f Dockerfile .",
     "make-executable": "chmod +x ./dist/server.js",
-    "build-exec": "npm run build && npm run make-executable",
-    "postinstall": "npm run make-executable"
+    "build-exec": "npm run build && npm run make-executable"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.5.0",

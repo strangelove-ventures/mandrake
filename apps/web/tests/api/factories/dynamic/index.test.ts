@@ -2,7 +2,7 @@
  * Tests for dynamic context routes factory
  */
 import { describe, test, expect } from 'bun:test';
-import { createDynamicContextRoutes } from '@/lib/api/factories/dynamic';
+import { createDynamicContextRoutes } from '@/server/api/factories/dynamic';
 
 describe('Dynamic Context Routes Factory', () => {
   test('should create route handlers for workspace-scoped routes', () => {

@@ -3,7 +3,7 @@ import {
   createServerStatusRoutes,
   createServerMethodsRoutes,
   createExecuteMethodRoutes
-} from '@/lib/api/factories/tools';
+} from '@/server/api/factories/tools';
 import { 
   setupApiTest, 
   cleanupApiTest, 
@@ -14,7 +14,7 @@ import {
 import { TestDirectory } from '../../../utils/test-dir';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
-import { getMCPManagerForRequest, cleanupSystemResources } from '@/lib/services/helpers';
+import { getMCPManagerForRequest, cleanupSystemResources } from '@/server/services/helpers';
 import { randomUUID } from 'crypto';
 import { ApiError } from 'next/dist/server/api-utils';
 

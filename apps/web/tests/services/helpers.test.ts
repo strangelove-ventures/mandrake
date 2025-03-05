@@ -9,8 +9,8 @@ import {
     releaseSessionResources,
     releaseWorkspaceResources,
     triggerResourceCleanup
-} from '../../src/lib/services/helpers';
-import { getServiceRegistry, resetServiceRegistryForTesting } from '../../src/lib/services/registry';
+} from '../../src/server/services/helpers';
+import { getServiceRegistry, resetServiceRegistryForTesting } from '../../src/server/services/registry';
 import { createTestDirectory } from '../utils/test-dir';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';

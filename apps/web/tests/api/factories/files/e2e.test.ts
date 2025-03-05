@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { createFilesRoutes, createFileActiveRoutes } from '@/lib/api/factories/files';
+import { createFilesRoutes, createFileActiveRoutes } from '@/server/api/factories/files';
 import { 
   setupApiTest, 
   cleanupApiTest, 

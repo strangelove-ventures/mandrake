@@ -5,7 +5,7 @@ import { describe, test, expect, beforeEach, afterEach } from 'bun:test';
 import {
     getServiceRegistry,
     resetServiceRegistryForTesting
-} from '../../src/lib/services';
+} from '../../src/server/services';
 import { createTestDirectory } from '../utils/test-dir';
 import { randomUUID } from 'crypto';
 

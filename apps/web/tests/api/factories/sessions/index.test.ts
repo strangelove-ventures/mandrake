@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { createSessionRoutes } from '@/lib/api/factories/sessions';
+import { createSessionRoutes } from '@/server/api/factories/sessions';
 
 describe('Session Routes Factory', () => {
     test('should create route handlers for workspace-scoped routes', () => {

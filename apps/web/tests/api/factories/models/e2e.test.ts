@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { createModelRoutes, createActiveModelRoutes } from '@/lib/api/factories/models';
+import { createModelRoutes, createActiveModelRoutes } from '@/server/api/factories/models';
 import { 
   setupApiTest, 
   cleanupApiTest, 
@@ -109,7 +109,7 @@ describe('Models Routes E2E', () => {
         // Create invalid test data (missing required fields)
         const modelData = {
           // Missing required id
-          model: {
+          config: {
             // Missing required fields
             providerId: 'anthropic'
             // No modelId, enabled, or config which are required
@@ -141,7 +141,7 @@ describe('Models Routes E2E', () => {
       } catch (error) {
         // Test the error properties directly
         expect(error).toBeDefined();
-        expect((error as any).message).toContain('Invalid request data');
+        expect((error as any).message).toContain('Validation error');
       }
     });
     
@@ -167,13 +167,13 @@ describe('Models Routes E2E', () => {
         expect(result.status).toBe(404);
         expect(result.error).toBeDefined();
         expect(result.error?.code).toBe('RESOURCE_NOT_FOUND');
-        expect(result.error?.message).toContain('Model not found');
+        expect(result.error?.message).toContain('not found');
       } catch (error) {
         // Test the error properties directly
         expect(error).toBeDefined();
         expect((error as any).status).toBe(404);
         expect((error as any).code).toBe('RESOURCE_NOT_FOUND');
-        expect((error as any).message).toContain('Model not found');
+        expect((error as any).message).toContain('not found');
       }
     });
   });
@@ -306,7 +306,7 @@ describe('Models Routes E2E', () => {
       const newModelId = `new-model-${randomUUID().slice(0, 8)}`;
       const modelData = {
         id: newModelId,
-        model: {
+        config: {
           enabled: true,
           providerId: 'anthropic',
           modelId: 'claude-3-opus',

@@ -12,7 +12,7 @@ import {
     getServiceRegistry,
     resetServiceRegistryForTesting,
     getMCPManagerForRequest
-} from '../../src/lib/services';
+} from '../../src/server/services';
 import { createTestDirectory } from '../utils/test-dir';
 import { MCPManager } from '@mandrake/mcp';
 import { randomUUID } from 'crypto';

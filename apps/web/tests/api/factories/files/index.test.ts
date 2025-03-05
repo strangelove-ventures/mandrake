@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { createFileActiveRoutes, createFilesRoutes } from '@/lib/api/factories/files';
+import { createFileActiveRoutes, createFilesRoutes } from '@/server/api/factories/files';
 
 describe('Files Routes Factory', () => {
   test('should create route handlers for active file routes', () => {

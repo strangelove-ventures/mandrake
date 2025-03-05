@@ -8,7 +8,7 @@ import {
 } from '../../utils/setup';
 import { TestDirectory } from '../../../utils/test-dir';
 import { WorkspaceManager } from '@mandrake/workspace';
-import { createSessionRoutes } from '@/lib/api/factories/sessions';
+import { createSessionRoutes } from '@/server/api/factories/sessions';
 import { randomUUID } from 'crypto';
 
 /**

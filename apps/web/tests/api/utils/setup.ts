@@ -3,8 +3,8 @@
  */
 import { NextRequest } from 'next/server';
 import { createTestDirectory, TestDirectory } from '../../utils/test-dir';
-import { resetServiceRegistryForTesting } from '@/lib/services/registry';
-import { getMandrakeManagerForRequest, getWorkspaceManagerForRequest } from '@/lib/services/helpers';
+import { resetServiceRegistryForTesting } from '@/server/services/registry';
+import { getMandrakeManagerForRequest, getWorkspaceManagerForRequest } from '@/server/services/helpers';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { randomUUID } from 'crypto';
 

@@ -1,8 +1,0 @@
-import { createToolsConfigRoutes } from '@/lib/api/factories/tools';
-import { handleApiError } from '@/lib/api/middleware/errorHandling';
-
-const handlers = createToolsConfigRoutes(true);
-
-export const GET = handleApiError(handlers.GET);
-export const POST = handleApiError(handlers.POST);
-export const DELETE = handleApiError(handlers.DELETE);

@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { NextRequest } from 'next/server';
-import { validateBody, validateParams, validateQuery } from '@/lib/api/middleware/validation';
+import { validateBody, validateParams, validateQuery } from '@/server/api/middleware/validation';
 import { z } from 'zod';
-import { ApiError, ErrorCode } from '@/lib/api/middleware/errorHandling';
+import { ApiError, ErrorCode } from '@/server/api/middleware/errorHandling';
 
 describe('Validation Middleware', () => {
   // Common test schema

@@ -2,7 +2,7 @@
  * Tests for service registry initialization and lifecycle
  */
 import { describe, test, expect, beforeEach, afterEach, beforeAll, afterAll } from 'bun:test';
-import { getServiceRegistry } from '../../src/lib/services/registry';
+import { getServiceRegistry } from '../../src/server/services/registry';
 import { createTestDirectory } from '../utils/test-dir';
 import { join } from 'path';
 

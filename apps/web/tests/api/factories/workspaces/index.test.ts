@@ -5,7 +5,7 @@ import { describe, test, expect } from 'bun:test';
 import { 
   createWorkspacesRoutes,
   createWorkspaceAdoptRoutes
-} from '@/lib/api/factories/workspaces';
+} from '@/server/api/factories/workspaces';
 
 describe('Workspace Routes Factory', () => {
   describe('Workspace Routes', () => {

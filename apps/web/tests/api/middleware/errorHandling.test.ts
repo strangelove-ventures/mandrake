@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { NextResponse } from 'next/server';
-import { ApiError, ErrorCode, handleApiError } from '@/lib/api/middleware/errorHandling';
+import { ApiError, ErrorCode, handleApiError } from '@/server/api/middleware/errorHandling';
 
 describe('Error Handling Middleware', () => {
   describe('ApiError', () => {

@@ -1,4 +1,12 @@
-// app/api/models/route.ts
-import { createModelRoutes } from '@/lib/api/factories/models';
+import { NextRequest } from 'next/server';
+import { createModelRoutes } from '@/server/api/factories/models';
 
-export const { GET, POST } = createModelRoutes();
+// Set the route to run on the server only
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+// Create route handlers
+const { GET, POST, PUT, DELETE } = createModelRoutes();
+
+// Export route handlers
+export { GET, POST, PUT, DELETE };

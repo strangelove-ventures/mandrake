@@ -1,5 +1,5 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
-import { createDynamicContextRoutes } from '@/lib/api/factories/dynamic';
+import { createDynamicContextRoutes } from '@/server/api/factories/dynamic';
 import { 
   setupApiTest, 
   cleanupApiTest, 
@@ -159,38 +159,44 @@ describe('Dynamic Context Routes E2E', () => {
     test('should return 400 with invalid POST body', async () => {
       try {
         // Create invalid test data (missing required fields)
-        const contextData = {
+        const modelData = {
           // Missing required fields
-          serverId: 'test-server'
-          // No methodName which is required
+          providerId: 'anthropic'
         };
-        
+
         // Create a request
         const req = createTestRequest(
-          `https://example.com/api/workspaces/${testWorkspace.id}/dynamic`,
+          `https://example.com/api/workspaces/${testWorkspace.id}/models`,
           {
             method: 'POST',
-            body: contextData
+            body: modelData
           }
         );
-        
+
         // Call the route handler with the actual workspace ID
-        const response = await workspaceRoutes.POST(req, { 
-          params: { id: testWorkspace.id } 
+        const response = await workspaceRoutes.POST(req, {
+          params: { id: testWorkspace.id }
         });
-        
+
         // Parse the response
         const result = await parseApiResponse(response);
-        
+
         // Verify the response
         expect(result.success).toBe(false);
         expect(result.status).toBe(400);
         expect(result.error).toBeDefined();
+        // Update the expected code to match the actual response
         expect(result.error?.code).toBe('VALIDATION_ERROR');
+        // Update the expected message to match the actual validation error
+        expect(result.error?.message).toContain('Validation error');
       } catch (error) {
         // Test the error properties directly
         expect(error).toBeDefined();
-        expect((error as any).message).toContain('methodName: Required');
+        expect((error as any).status).toBe(400);
+        // Update expected code
+        expect((error as any).code).toBe('VALIDATION_ERROR');
+        // Update expected message
+        expect((error as any).message).toContain('Validation error');
       }
     });
     

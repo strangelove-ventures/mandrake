@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test';
-import { createActiveModelRoutes, createModelRoutes } from '@/lib/api/factories/models';
+import { createActiveModelRoutes, createModelRoutes } from '@/server/api/factories/models';
 
 describe('Models Routes Factory', () => {
   test('should create route handlers for createActiveModelRoutes', () => {
