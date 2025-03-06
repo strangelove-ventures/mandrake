@@ -1,0 +1,25 @@
+{
+  "name": "@mandrake/api",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/index.ts --outdir dist --target bun",
+    "dev": "bun --watch src/index.ts",
+    "test": "bun test",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "hono": "^4.6.6",
+    "@mandrake/workspace": "workspace:*",
+    "@mandrake/mcp": "workspace:*",
+    "@mandrake/session": "workspace:*",
+    "@mandrake/utils": "workspace:*",
+    "@mandrake/provider": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/tmp": "^0.2.6",
+    "tmp": "^0.2.3",
+    "typescript": "^5.0.0"
+  }
+}
