@@ -38,8 +38,8 @@ export function dynamicContextRoutes(dynamicContextManager: DynamicContextManage
   app.post('/', async (c) => {
     try {
       const config = await c.req.json();
-      await dynamicContextManager.create(config);
-      return c.json({ success: true, id: config.id }, 201);
+      const id = await dynamicContextManager.create(config);
+      return c.json({ success: true, id }, 201);
     } catch (error) {
       console.error('Error creating dynamic context method:', error);
       return c.json({ error: 'Failed to create dynamic context method' }, 500);
@@ -68,6 +68,19 @@ export function dynamicContextRoutes(dynamicContextManager: DynamicContextManage
     } catch (error) {
       console.error(`Error deleting dynamic context method ${id}:`, error);
       return c.json({ error: `Failed to delete dynamic context method ${id}` }, 500);
+    }
+  });
+  
+  // Toggle active status for a dynamic context method
+  app.patch('/:id/refresh', async (c) => {
+    const id = c.req.param('id');
+    try {
+      const { enabled } = await c.req.json();
+      await dynamicContextManager.setEnabled(id, enabled);
+      return c.json({ success: true, id });
+    } catch (error) {
+      console.error(`Error updating refresh status for method ${id}:`, error);
+      return c.json({ error: `Failed to update refresh status for method ${id}` }, 500);
     }
   });
   

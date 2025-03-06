@@ -280,10 +280,7 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
         // The default tool set is ripper and fetch
         // we should consider adding search and other tools here
         default: {
-          ripper: ripperConfig,
-          fetch: {
-            command: 'mcp-fetch-server'
-          }
+          ripper: ripperConfig
         },
         // The system tool set is to make changes to the workspace
         // We should consider adding other useful system tools

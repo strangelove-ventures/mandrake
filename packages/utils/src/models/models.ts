@@ -67,6 +67,14 @@ export const ollamaModels = {
     supportsComputerUse: true,
     inputPrice: 0.25, // $0.25 per million input tokens
     outputPrice: 1.25, // $1.25 per million output tokens
+  },
+  "qwq:32b": {
+    maxTokens: 4096,
+    contextWindow: 128_000,
+    supportsImages: true,
+    supportsComputerUse: true,
+    inputPrice: 0.25, // $0.25 per million input tokens
+    outputPrice: 1.25, // $1.25 per million output tokens
   }
 } as const satisfies Record<string, ModelInfo>;
 
@@ -138,7 +146,7 @@ export const PROVIDER_MODELS: Record<ProviderType, Record<string, ModelInfo>> = 
 // Default models for each provider
 export const DEFAULT_MODELS: Record<ProviderType, string> = {
   'anthropic': 'claude-3-5-sonnet-20241022',
-  'ollama': 'llama3.3:70b',
+  'ollama': 'qwq:32b',
   'xai': 'grok-beta'
 } as const;
 

@@ -4,6 +4,7 @@ import type { SessionCoordinator } from '@mandrake/session';
 import { join } from 'path';
 import { readdir } from 'fs/promises';
 import type { Managers, ManagerAccessors } from './types';
+import { loadWorkspace } from './routes/workspace';
 
 /**
  * Initialize managers with a specified home directory
@@ -94,7 +95,7 @@ async function loadWorkspaces(
     // Load each workspace in parallel
     await Promise.all(
       Object.entries(workspaces).map(([id, config]) => 
-        loadWorkspace(id, config.path, workspaceManagers, mcpManagers, sessionCoordinators)
+        loadWorkspace(id, config.path, workspaceManagers, mcpManagers, sessionCoordinators, mandrakeManager)
       )
     );
   } catch (error) {
@@ -102,61 +103,7 @@ async function loadWorkspaces(
   }
 }
 
-/**
- * Load a single workspace into memory
- */
-async function loadWorkspace(
-  id: string,
-  path: string,
-  workspaceManagers: Map<string, WorkspaceManager>,
-  mcpManagers: Map<string, MCPManager>,
-  sessionCoordinators: Map<string, Map<string, SessionCoordinator>>
-): Promise<void> {
-  try {
-    // Initialize WorkspaceManager
-    const ws = new WorkspaceManager(path, id);
-    await ws.init(id);
-    workspaceManagers.set(ws.id, ws);
-    
-    // Initialize MCPManager for this workspace
-    const mcpManager = new MCPManager();
-    
-    // Set up tools for this workspace if needed
-    try {
-      // Get workspace tool configuration and set up servers
-      const toolConfigs = await ws.tools.listConfigSets();
-      
-      // For each tool config, potentially start an MCP server
-      for (const [name, config] of Object.entries(toolConfigs)) {
-        // Skip if no server configuration is available
-        if (!config) continue;
-        
-        // Try to start the server with the provided config
-        try {
-          // Only start server if it has a valid command
-          const serverConfig = Object.values(config)[0];
-          if (serverConfig && serverConfig.command) {
-            await mcpManager.startServer(name, config);
-          }
-        } catch (serverError) {
-          console.warn(`Failed to start server for tool ${name}:`, serverError);
-          // Continue with other tools even if this one fails
-        }
-      }
-    } catch (toolsError) {
-      console.warn(`Error loading tools for workspace ${id}:`, toolsError);
-      // Continue workspace initialization even if tools fail
-    }
-    
-    mcpManagers.set(ws.id, mcpManager);
-    
-    // Initialize empty session coordinators map for this workspace
-    sessionCoordinators.set(ws.id, new Map<string, SessionCoordinator>());
-    
-  } catch (error) {
-    console.error(`Error loading workspace ${id}:`, error);
-  }
-}
+// loadWorkspace function moved to ./routes/workspace.ts
 
 /**
  * Cleanup managers on application shutdown

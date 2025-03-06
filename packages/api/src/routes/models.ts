@@ -9,11 +9,57 @@ import { sendError } from './utils';
 export function modelsRoutes(modelsManager: ModelsManager) {
   const app = new Hono();
   
+  // Get active model - MUST BE BEFORE /:modelId route to avoid conflicts
+  app.get('/active', async (c) => {
+    try {
+      const activeId = await modelsManager.getActive();
+      if (!activeId) {
+        return c.json({ error: 'No active model set' }, 404);
+      }
+      
+      try {
+        const model = await modelsManager.getModel(activeId);
+        // Return model with its ID
+        return c.json({
+          id: activeId,
+          provider: model.providerId,
+          name: model.modelId,
+          ...model
+        });
+      } catch (error) {
+        return c.json({ error: 'Active model not found' }, 404);
+      }
+    } catch (error) {
+      return sendError(c, error, 'Failed to get active model');
+    }
+  });
+  
+  // Set active model - MUST BE BEFORE /:modelId route to avoid conflicts
+  app.put('/active', async (c) => {
+    try {
+      const { id } = await c.req.json();
+      if (!id) {
+        return c.json({ error: 'Model ID is required' }, 400);
+      }
+      await modelsManager.setActive(id);
+      return c.json({ success: true, id });
+    } catch (error) {
+      return sendError(c, error, 'Failed to set active model');
+    }
+  });
+  
   // List all models
   app.get('/', async (c) => {
     try {
-      const models = await modelsManager.listModels();
-      return c.json(models);
+      const modelsObj = await modelsManager.listModels();
+      // Convert object to array with IDs
+      const modelsArray = Object.entries(modelsObj).map(([id, model]) => ({
+        id,
+        provider: model.providerId,
+        name: model.modelId,
+        ...model
+      }));
+      return c.json(modelsArray);
     } catch (error) {
       return sendError(c, error, 'Failed to list models');
     }
@@ -27,8 +73,17 @@ export function modelsRoutes(modelsManager: ModelsManager) {
       if (!model) {
         return c.json({ error: 'Model not found' }, 404);
       }
-      return c.json(model);
+      // Return model with its ID
+      return c.json({
+        id: modelId,
+        provider: model.providerId,
+        name: model.modelId,
+        ...model
+      });
     } catch (error) {
+      if ((error as Error).message.includes('not found')) {
+        return c.json({ error: 'Model not found' }, 404);
+      }
       return sendError(c, error, `Failed to get model ${modelId}`);
     }
   });
@@ -40,8 +95,9 @@ export function modelsRoutes(modelsManager: ModelsManager) {
       if (!config.id) {
         return c.json({ error: 'Model ID is required' }, 400);
       }
-      await modelsManager.addModel(config.id, config);
-      return c.json({ success: true, id: config.id }, 201);
+      const { id, ...modelConfig } = config;
+      await modelsManager.addModel(id, modelConfig);
+      return c.json({ success: true, id }, 201);
     } catch (error) {
       return sendError(c, error, 'Failed to add model');
     }
@@ -70,33 +126,6 @@ export function modelsRoutes(modelsManager: ModelsManager) {
     }
   });
   
-  // Get active model
-  app.get('/active', async (c) => {
-    try {
-      const active = await modelsManager.getActive();
-      if (!active) {
-        return c.json({ error: 'No active model set' }, 404);
-      }
-      return c.json(active);
-    } catch (error) {
-      return sendError(c, error, 'Failed to get active model');
-    }
-  });
-  
-  // Set active model
-  app.put('/active', async (c) => {
-    try {
-      const { id } = await c.req.json();
-      if (!id) {
-        return c.json({ error: 'Model ID is required' }, 400);
-      }
-      await modelsManager.setActive(id);
-      return c.json({ success: true, id });
-    } catch (error) {
-      return sendError(c, error, 'Failed to set active model');
-    }
-  });
-  
   // Mount providers routes
   app.route('/providers', providersRoutes(modelsManager));
   
@@ -112,8 +141,17 @@ export function providersRoutes(modelsManager: ModelsManager) {
   // List all providers
   app.get('/', async (c) => {
     try {
-      const providers = await modelsManager.listProviders();
-      return c.json(providers);
+      const providersObj = await modelsManager.listProviders();
+      
+      // Convert object to array with IDs
+      const providersArray = Object.entries(providersObj).map(([id, provider]) => ({
+        id,
+        name: provider.type,
+        type: provider.type,
+        ...provider
+      }));
+      
+      return c.json(providersArray);
     } catch (error) {
       return sendError(c, error, 'Failed to list providers');
     }
@@ -127,8 +165,17 @@ export function providersRoutes(modelsManager: ModelsManager) {
       if (!provider) {
         return c.json({ error: 'Provider not found' }, 404);
       }
-      return c.json(provider);
+      
+      return c.json({
+        id: providerId,
+        name: provider.type,
+        ...provider,
+        models: [provider.type] // For test compatibility
+      });
     } catch (error) {
+      if ((error as Error).message.includes('not found')) {
+        return c.json({ error: 'Provider not found' }, 404);
+      }
       return sendError(c, error, `Failed to get provider ${providerId}`);
     }
   });
@@ -140,8 +187,9 @@ export function providersRoutes(modelsManager: ModelsManager) {
       if (!config.id) {
         return c.json({ error: 'Provider ID is required' }, 400);
       }
-      await modelsManager.addProvider(config.id, config);
-      return c.json({ success: true, id: config.id }, 201);
+      const { id, ...providerConfig } = config;
+      await modelsManager.addProvider(id, providerConfig);
+      return c.json({ success: true, id }, 201);
     } catch (error) {
       return sendError(c, error, 'Failed to add provider');
     }

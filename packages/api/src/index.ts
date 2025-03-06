@@ -5,12 +5,6 @@ import { initializeManagers, cleanupManagers } from './managers';
 import type { ApiEnv, Managers, ManagerAccessors } from './types';
 import { systemRoutes } from './routes/system';
 import { workspaceRoutes } from './routes/workspaces';
-import { mandrakeConfigRoutes, workspaceConfigRoutes } from './routes/config';
-import { modelsRoutes, providersRoutes } from './routes/models';
-import { filesRoutes } from './routes/files';
-import { dynamicContextRoutes } from './routes/dynamic';
-import { promptRoutes } from './routes/prompt';
-import { toolsConfigRoutes, toolsOperationRoutes, serverRoutes, allToolRoutes } from './routes/tools';
 
 // Setup for graceful shutdown
 let shutdownInitiated = false;
@@ -33,36 +27,102 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
   // API status endpoint
   app.get('/', (c) => c.json({ status: 'Mandrake API is running' }));
   
-  // Mount system routes
+  // Mount system routes - these handle all /system/* routes
   app.route('/system', systemRoutes(mgrs, accessors));
   
-  // Mount config routes directly
-  app.route('/config', mandrakeConfigRoutes(mgrs.mandrakeManager.config));
-  
-  // Mount models routes directly
-  app.route('/models', modelsRoutes(mgrs.mandrakeManager.models));
-  
-  // Mount providers routes directly
-  app.route('/providers', providersRoutes(mgrs.mandrakeManager.models));
-  
-  // Mount tool-related routes
-  app.route('/tools', allToolRoutes(mgrs.mandrakeManager.tools, mgrs.systemMcpManager));
-  
-  // Mount files routes directly
-  app.route('/files', filesRoutes(mgrs.mandrakeManager.files));
-  
-  // Mount dynamic context routes directly
-  app.route('/dynamic', dynamicContextRoutes(mgrs.mandrakeManager.dynamic));
-  
-  // Mount prompt routes directly
-  app.route('/prompt', promptRoutes(mgrs.mandrakeManager.prompt));
-  
-  // Mount workspace routes
+  // Mount workspace routes - these handle all /workspaces/* routes
   app.route('/workspaces', workspaceRoutes(mgrs, accessors));
+  
+  // Root-level routes that mirror system routes
+  // These allow for both /system/config and /config to work
+  
+  // Create a simplified system router for root-level routes
+  const rootSystemRouter = systemRoutes(mgrs, accessors);
+  
+  // For each root path, forward to the system router
+  app.all('/config/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/config', '/system/config')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/tools/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/tools', '/system/tools')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/models/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/models', '/system/models')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/providers/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/providers', '/system/providers')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/prompt/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/prompt', '/system/prompt')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/dynamic/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/dynamic', '/system/dynamic')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/files/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/files', '/system/files')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/sessions/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/sessions', '/system/sessions')}`, c.req.raw),
+    c.env
+  ));
+  
+  // Handle root paths without wildcards
+  app.all('/config', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/config', '/system/config')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/tools', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/tools', '/system/tools')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/models', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/models', '/system/models')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/providers', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/providers', '/system/providers')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/prompt', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/prompt', '/system/prompt')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/dynamic', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/dynamic', '/system/dynamic')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/files', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/files', '/system/files')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/sessions', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/sessions', '/system/sessions')}`, c.req.raw),
+    c.env
+  ));
   
   return app;
 }
-
 
 /**
  * Handle process cleanup for graceful shutdown

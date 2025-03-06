@@ -1,0 +1,193 @@
+import { Hono } from 'hono';
+import type { Managers, ManagerAccessors } from '../types';
+import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
+import { MCPManager } from '@mandrake/mcp';
+import { sendError } from './utils';
+
+/**
+ * Create routes for workspace management (CRUD operations on workspaces)
+ */
+export function workspaceManagementRoutes(managers: Managers, accessors: ManagerAccessors) {
+  const app = new Hono();
+  
+  // List all workspaces
+  app.get('/', async (c) => {
+    try {
+      const workspaces = await managers.mandrakeManager.listWorkspaces();
+      // Ensure we return objects with id, name, description, path
+      const workspaceList = workspaces.map(ws => ({
+        id: ws.id,
+        name: ws.name, 
+        description: ws.description,
+        path: ws.path
+      }));
+      return c.json(workspaceList);
+    } catch (error) {
+      return sendError(c, error, 'Failed to list workspaces');
+    }
+  });
+  
+  // Create a new workspace
+  app.post('/', async (c) => {
+    try {
+      const { name, description, path } = await c.req.json();
+      
+      if (!name || !path) {
+        return c.json({ error: 'Name and path are required' }, 400);
+      }
+      
+      // This returns a WorkspaceManager instance that's already initialized
+      const workspace = await managers.mandrakeManager.createWorkspace(name, description, path);
+      
+      // Add it to the managers map
+      managers.workspaceManagers.set(workspace.id, workspace);
+      
+      // Initialize an MCPManager for this workspace and set up tools
+      const mcpManager = new MCPManager();
+      
+      // Set up tools for this workspace
+      try {
+        // Get workspace tool configuration and set up servers
+        const active = await workspace.tools.getActive();
+        const toolConfigs = await workspace.tools.getConfigSet(active);
+        
+        // For each tool config, potentially start an MCP server
+        for (const [toolName, config] of Object.entries(toolConfigs)) {
+          if (!config) continue;
+          try {
+            await mcpManager.startServer(toolName, config);
+          } catch (serverError) {
+            console.warn(`Failed to start server for tool ${toolName}:`, serverError);
+          }
+        }
+      } catch (toolsError) {
+        console.warn(`Error loading tools for workspace ${workspace.id}:`, toolsError);
+      }
+      
+      managers.mcpManagers.set(workspace.id, mcpManager);
+      
+      // Initialize empty session coordinators map
+      managers.sessionCoordinators.set(workspace.id, new Map());
+      
+      // Get registered workspace data for the response
+      const workspaceData = await managers.mandrakeManager.getWorkspace(workspace.id);
+      const des = (await workspaceData.config.getConfig()).description;
+      
+      if (!workspaceData) {
+        return c.json({ error: 'Failed to find created workspace' }, 500);
+      }
+      
+      return c.json({
+        id: workspace.id,
+        name: workspaceData.name,
+        description: des,
+        path: workspaceData.paths.root
+      }, 201);
+    } catch (error) {
+      return sendError(c, error, 'Failed to create workspace');
+    }
+  });
+  
+  // Get workspace details
+  app.get('/:workspaceId', async (c) => {
+    try {
+      const workspaceId = c.req.param('workspaceId');
+      
+      try {
+        const workspaceData = await managers.mandrakeManager.getWorkspace(workspaceId);
+        const description = (await workspaceData.config.getConfig()).description;
+        
+        return c.json({
+          id: workspaceId,
+          name: workspaceData.name,
+          description: description,
+          path: workspaceData.paths.root
+        });
+      } catch (error) {
+        // Specific handling for not found errors
+        if ((error as Error).message.includes('not found')) {
+          return c.json({ error: 'Workspace not found' }, 404);
+        }
+        throw error; // Re-throw other errors
+      }
+    } catch (error) {
+      return sendError(c, error, 'Failed to get workspace');
+    }
+  });
+  
+  return app;
+}
+
+/**
+ * Helper function to create a middleware that injects workspace resources into the context
+ */
+export function createWorkspaceMiddleware(accessors: ManagerAccessors) {
+  return async (c: any, next: () => Promise<void>) => {
+    const workspaceId = c.req.param('workspaceId');
+    const workspace = accessors.getWorkspaceManager(workspaceId);
+    const mcpManager = accessors.getMcpManager(workspaceId);
+      
+    if (!workspace) {
+      return c.json({ error: 'Workspace not found' }, 404);
+    }
+    
+    // Make these available to all subroutes
+    c.set('workspace', workspace);
+    c.set('mcpManager', mcpManager);
+    c.set('workspaceId', workspaceId);
+    
+    await next();
+  };
+}
+
+/**
+ * Load a single workspace into memory
+ */
+export async function loadWorkspace(
+  id: string,
+  path: string,
+  workspaceManagers: Map<string, WorkspaceManager>,
+  mcpManagers: Map<string, MCPManager>,
+  sessionCoordinators: Map<string, Map<string, any>>,
+  mandrakeManager?: MandrakeManager
+): Promise<void> {
+  try {
+    let workspaceName = id;
+    if (mandrakeManager) {
+      const workspaceData = await mandrakeManager.getWorkspace(id);
+      if (workspaceData) {
+        workspaceName = workspaceData.name;
+      }
+    }
+    
+    const ws = new WorkspaceManager(path, workspaceName, id);
+    await ws.init();
+    workspaceManagers.set(ws.id, ws);
+    
+    const mcpManager = new MCPManager();
+    
+    try {
+      const active = await ws.tools.getActive();
+      const toolConfigs = await ws.tools.getConfigSet(active);
+      
+      for (const [name, config] of Object.entries(toolConfigs)) {
+        if (!config) continue;
+        try {
+          await mcpManager.startServer(name, config);
+        } catch (serverError) {
+          console.warn(`Failed to start server for tool ${name}:`, serverError);
+        }
+      }
+    } catch (toolsError) {
+      console.warn(`Error loading tools for workspace ${id}:`, toolsError);
+    }
+    
+    mcpManagers.set(ws.id, mcpManager);
+    
+    sessionCoordinators.set(ws.id, new Map());
+    
+  } catch (error) {
+    console.error(`Error loading workspace ${id}:`, error);
+    throw error;
+  }
+}

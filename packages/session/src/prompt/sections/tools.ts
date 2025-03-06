@@ -12,7 +12,6 @@ You have access to a set of tools that can be executed upon the user's approval.
 <${XmlTags.TOOL_CALL}>
 <${XmlTags.SERVER}>server</${XmlTags.SERVER}>
 <${XmlTags.METHOD}>method</${XmlTags.METHOD}>
-<${XmlTags.DESCRIPTION}>Description of the tool call</${XmlTags.DESCRIPTION}>
 <${XmlTags.ARGUMENTS}>
 {
   "param1": "value1",
@@ -21,20 +20,33 @@ You have access to a set of tools that can be executed upon the user's approval.
 </${XmlTags.ARGUMENTS}>
 </${XmlTags.TOOL_CALL}>
 
+## Usage Example
+
+<${XmlTags.TOOL_CALL}>
+<${XmlTags.SERVER}>ripper</${XmlTags.SERVER}>
+<${XmlTags.METHOD}>list_allowed_directories</${XmlTags.METHOD}>
+<${XmlTags.ARGUMENTS}>
+{}
+</${XmlTags.ARGUMENTS}>
+</${XmlTags.TOOL_CALL}>
+
 ## Tool Use Guidelines
 
-1. Use one tool per message and wait for the result before proceeding
-2. Tool responses will include:
+1. Use one tool per message. The user will parse the result and call the tool
+   then they will append the result to the end of the assistant message. You should 
+   read result out of that and conitnue the conversation.
+2. The tool call format is as shown above, it is XML based. 
+3. Tool responses will include:
    - Success or failure status
    - Any error messages or validation failures
    - The tool's output data if successful
-3. Never assume a tool call succeeded - always check the response
-4. Tool calls may fail due to:
+4. Never assume a tool call succeeded - always check the response
+5. Tool calls may fail due to:
    - Invalid parameters
    - Server errors
    - Network issues
    - Authentication failures
-5. If a tool call fails, examine the error and either:
+6. If a tool call fails, examine the error and either:
    - Fix the parameters and try again
    - Try an alternative approach using another tool or method
    - Tell the user what steps can be taken to resolve the error if you can't

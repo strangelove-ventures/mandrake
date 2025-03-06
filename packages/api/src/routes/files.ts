@@ -33,6 +33,9 @@ export function filesRoutes(filesManager: FilesManager) {
       }
       return c.json(file);
     } catch (error) {
+      if ((error as Error).message.includes('not found')) {
+        return c.json({ error: 'File not found' }, 404);
+      }
       console.error(`Error getting file ${fileName}:`, error);
       return c.json({ error: `Failed to get file ${fileName}` }, 500);
     }

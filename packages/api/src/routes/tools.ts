@@ -20,6 +20,32 @@ export function toolsConfigRoutes(toolsManager: ToolsManager) {
     }
   });
   
+  // Get active tool configuration - IMPORTANT: This must come before /:toolId route to avoid conflicts
+  app.get('/active', async (c) => {
+    try {
+      const active = await toolsManager.getActive();
+      return c.json({ active });
+    } catch (error) {
+      console.error('Error getting active tool configuration:', error);
+      return c.json({ error: 'Failed to get active tool configuration' }, 500);
+    }
+  });
+  
+  // Set active tool configuration - IMPORTANT: This must come before /:toolId route to avoid conflicts
+  app.put('/active', async (c) => {
+    try {
+      const { id } = await c.req.json();
+      if (!id) {
+        return c.json({ error: 'Tool configuration ID is required' }, 400);
+      }
+      await toolsManager.setActive(id);
+      return c.json({ success: true, id });
+    } catch (error) {
+      console.error('Error setting active tool configuration:', error);
+      return c.json({ error: 'Failed to set active tool configuration' }, 500);
+    }
+  });
+  
   // Get a specific tool configuration
   app.get('/:toolId', async (c) => {
     const toolId = c.req.param('toolId');
@@ -43,8 +69,10 @@ export function toolsConfigRoutes(toolsManager: ToolsManager) {
         return c.json({ error: 'Tool ID is required' }, 400);
       }
       
-      await toolsManager.addConfigSet(config.id, config);
-      return c.json({ success: true, id: config.id }, 201);
+      // Extract the ID from the config and pass the rest as the config object
+      const { id, ...toolConfig } = config;
+      await toolsManager.addConfigSet(id, toolConfig);
+      return c.json({ success: true, id }, 201);
     } catch (error) {
       console.error('Error creating tool configuration:', error);
       return c.json({ error: 'Failed to create tool configuration' }, 500);
@@ -73,32 +101,6 @@ export function toolsConfigRoutes(toolsManager: ToolsManager) {
     } catch (error) {
       console.error(`Error deleting tool configuration ${toolId}:`, error);
       return c.json({ error: `Failed to delete tool configuration ${toolId}` }, 500);
-    }
-  });
-  
-  // Get active tool configuration
-  app.get('/active', async (c) => {
-    try {
-      const active = await toolsManager.getActive();
-      return c.json({ active });
-    } catch (error) {
-      console.error('Error getting active tool configuration:', error);
-      return c.json({ error: 'Failed to get active tool configuration' }, 500);
-    }
-  });
-  
-  // Set active tool configuration
-  app.put('/active', async (c) => {
-    try {
-      const { id } = await c.req.json();
-      if (!id) {
-        return c.json({ error: 'Tool configuration ID is required' }, 400);
-      }
-      await toolsManager.setActive(id);
-      return c.json({ success: true, id });
-    } catch (error) {
-      console.error('Error setting active tool configuration:', error);
-      return c.json({ error: 'Failed to set active tool configuration' }, 500);
     }
   });
   
