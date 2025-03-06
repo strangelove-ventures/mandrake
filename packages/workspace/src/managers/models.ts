@@ -176,7 +176,7 @@ export class ModelsManager extends BaseConfigManager<ModelsConfig> {
     const ollamaModel = getDefaultModel(ollama);
     const xaiModel = getDefaultModel(xai);
     return {
-      active: ollamaModel,
+      active: anthropicModel,
       providers: {
         anthropic: {
           type: anthropic,

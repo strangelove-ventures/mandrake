@@ -4,7 +4,8 @@ import { toolsConfigRoutes, toolsOperationRoutes, serverRoutes, allToolRoutes } 
 import { modelsRoutes, providersRoutes } from './models';
 import { promptRoutes } from './prompt';
 import { mandrakeConfigRoutes } from './config';
-import { sessionDatabaseRoutes } from './sessions';
+import { sessionDatabaseRoutes, systemSessionDatabaseRoutes } from './sessions';
+import { systemSessionStreamingRoutes } from './streaming';
 import { dynamicContextRoutes } from './dynamic';
 import { filesRoutes } from './files';
 
@@ -42,8 +43,11 @@ export function systemRoutes(managers: Managers, accessors: ManagerAccessors) {
   // Prompt routes
   app.route('/prompt', promptRoutes(managers.mandrakeManager.prompt));
   
-  // Session routes - using the sessionDatabaseRoutes helper
-  app.route('/sessions', sessionDatabaseRoutes(managers, accessors));
+  // Session database routes
+  app.route('/sessions', systemSessionDatabaseRoutes(managers, accessors));
+  
+  // Session streaming routes
+  app.route('/streaming', systemSessionStreamingRoutes(managers, accessors));
   
   return app;
 }

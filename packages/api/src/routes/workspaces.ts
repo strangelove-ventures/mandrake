@@ -7,6 +7,7 @@ import { workspaceConfigRoutes } from './config';
 import { filesRoutes } from './files';
 import { dynamicContextRoutes } from './dynamic';
 import { workspaceSessionDatabaseRoutes } from './sessions';
+import { workspaceSessionStreamingRoutes } from './streaming';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { workspaceManagementRoutes } from './workspace';
@@ -86,6 +87,11 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
     return workspaceSessionDatabaseRoutes(managers, accessors, workspaceId, workspace);
   }
   
+  function createStreamingRouter(c: any) {
+    const workspaceId = c.get('workspaceId') as string;
+    return workspaceSessionStreamingRoutes(managers, accessors, workspaceId);
+  }
+  
   // Mount resource routes
   workspaceRouter.all('/config/*', async (c) => {
     return createConfigRouter(c).fetch(c.req.raw, c.env);
@@ -119,6 +125,10 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
     return createSessionsRouter(c).fetch(c.req.raw, c.env);
   });
   
+  workspaceRouter.all('/streaming/*', async (c) => {
+    return createStreamingRouter(c).fetch(c.req.raw, c.env);
+  });
+  
   // For root paths, handle them explicitly
   workspaceRouter.all('/config', async (c) => {
     return createConfigRouter(c).fetch(c.req.raw, c.env);
@@ -150,6 +160,10 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
   
   workspaceRouter.all('/sessions', async (c) => {
     return createSessionsRouter(c).fetch(c.req.raw, c.env);
+  });
+  
+  workspaceRouter.all('/streaming', async (c) => {
+    return createStreamingRouter(c).fetch(c.req.raw, c.env);
   });
   
   // Mount the workspace router

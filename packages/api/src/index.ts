@@ -80,6 +80,11 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
     c.env
   ));
   
+  app.all('/streaming/*', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/streaming', '/system/streaming')}`, c.req.raw),
+    c.env
+  ));
+  
   // Handle root paths without wildcards
   app.all('/config', (c) => rootSystemRouter.fetch(
     new Request(`${c.req.url.replace('/config', '/system/config')}`, c.req.raw),
@@ -118,6 +123,11 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
   
   app.all('/sessions', (c) => rootSystemRouter.fetch(
     new Request(`${c.req.url.replace('/sessions', '/system/sessions')}`, c.req.raw),
+    c.env
+  ));
+  
+  app.all('/streaming', (c) => rootSystemRouter.fetch(
+    new Request(`${c.req.url.replace('/streaming', '/system/streaming')}`, c.req.raw),
     c.env
   ));
   

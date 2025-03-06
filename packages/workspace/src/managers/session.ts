@@ -280,9 +280,10 @@ export class SessionManager {
     // Turn Operations
     async createTurn(opts: {
         responseId: string;
+        index?: number;
         content: string;
         rawResponse: string;
-        toolCalls?: import('../session/db/schema/turns').ToolCall;
+        toolCalls?: string | import('../session/db/schema/turns').ToolCall;
         status?: 'streaming' | 'completed' | 'error';
         inputTokens: number;
         outputTokens: number;
@@ -295,7 +296,7 @@ export class SessionManager {
             .from(schema.turns)
             .where(eq(schema.turns.responseId, opts.responseId));
 
-        const turnIndex = existingTurns[0]?.count || 0;
+        const turnIndex = opts.index !== undefined ? opts.index : (existingTurns[0]?.count || 0);
 
         const [turn] = await this.db.insert(schema.turns)
             .values({
@@ -303,7 +304,7 @@ export class SessionManager {
                 index: turnIndex,
                 rawResponse: opts.rawResponse,
                 content: opts.content,
-                toolCalls: JSON.stringify(opts.toolCalls || { call: null, response: null }),
+                toolCalls: typeof opts.toolCalls === 'string' ? opts.toolCalls : JSON.stringify(opts.toolCalls || { call: null, response: null }),
                 status: opts.status || 'streaming',
                 inputTokens: opts.inputTokens,
                 outputTokens: opts.outputTokens,
@@ -395,6 +396,32 @@ export class SessionManager {
         this.ensureInitialized();
         await this.db.delete(schema.turns)
             .where(eq(schema.turns.id, id));
+    }
+    
+    async getRequest(id: string): Promise<Request> {
+        this.ensureInitialized();
+        const [request] = await this.db
+            .select()
+            .from(schema.requests)
+            .where(eq(schema.requests.id, id));
+
+        if (!request) {
+            throw new Error(`Request not found: ${ id } `);
+        }
+        return request;
+    }
+    
+    async getResponse(id: string): Promise<Response> {
+        this.ensureInitialized();
+        const [response] = await this.db
+            .select()
+            .from(schema.responses)
+            .where(eq(schema.responses.id, id));
+
+        if (!response) {
+            throw new Error(`Response not found: ${ id } `);
+        }
+        return response;
     }
 
     async listTurns(responseId: string): Promise<Turn[]> {
