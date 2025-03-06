@@ -6,7 +6,7 @@ import { promptRoutes } from './prompt';
 import { workspaceConfigRoutes } from './config';
 import { filesRoutes } from './files';
 import { dynamicContextRoutes } from './dynamic';
-import { workspaceSessionsRoutes } from './sessions';
+import { workspaceSessionDatabaseRoutes } from './sessions';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { workspaceManagementRoutes } from './workspace';
@@ -83,7 +83,7 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
   function createSessionsRouter(c: any) {
     const workspace = c.get('workspace') as WorkspaceManager;
     const workspaceId = c.get('workspaceId') as string;
-    return workspaceSessionsRoutes(managers, accessors, workspaceId, workspace);
+    return workspaceSessionDatabaseRoutes(managers, accessors, workspaceId, workspace);
   }
   
   // Mount resource routes
