@@ -18,8 +18,234 @@ export class SessionCoordinator {
     // We don't really do any cleanup yet but maybe want to later?
     this.logger.info('Cleaning up session coordinator');
   }
+  
+  /**
+   * Handles a request and sets up a stream for real-time updates.
+   * This method creates a request, sets up streaming, and returns everything needed to track the response.
+   * 
+   * @param sessionId The session ID
+   * @param requestContent The user's request content
+   * @returns Object containing the response ID, an async iterable of turns, and a promise that resolves when complete
+   */
+  async streamRequest(sessionId: string, requestContent: string): Promise<{
+    responseId: string;
+    stream: AsyncIterable<any>; // Use the Turn type from workspace package once available
+    completionPromise: Promise<void>;
+  }> {
+    // Get response ID and completion promise from handleRequest
+    const { responseId, completionPromise } = await this.handleRequest(sessionId, requestContent);
+    
+    // Create a turn stream using the session manager's tracking functionality
+    const stream = this.createTurnStream(responseId);
+    
+    return {
+      responseId,
+      stream,
+      completionPromise
+    };
+  }
+  
+  /**
+   * Retrieves round data by response ID.
+   * This is useful for getting the full round data after streaming is complete.
+   * 
+   * @param responseId The ID of the response to get the round for
+   * @returns Promise resolving to the round data with request and response
+   */
+  async getRoundByResponseId(responseId: string): Promise<any> {
+    try {
+      // We need to first get the session ID for the response
+      // Since we're looking across all sessions, we'll need to iterate through them
+      // In a real production system, you'd want a more efficient query for this
+      const sessions = await this.opts.sessionManager.listSessions();
+      
+      for (const session of sessions) {
+        // For each session, get all rounds
+        const rounds = await this.opts.sessionManager.listRounds(session.id);
+        
+        // Find the round that contains this response
+        const round = rounds.find(r => r.responseId === responseId);
+        
+        // If found, return the round data
+        if (round) {
+          return this.opts.sessionManager.getRound(round.id);
+        }
+      }
+      
+      // If we get here, no round was found
+      throw new Error(`No round found with response ID: ${responseId}`);
+    } catch (error) {
+      this.logger.error('Failed to get round by response ID', {
+        responseId,
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack
+        } : String(error)
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Creates an async iterable stream of turn updates for a given response.
+   * Uses the session manager's turn update tracking internally.
+   * 
+   * @param responseId The response ID to stream turns for
+   * @returns An async iterable that yields turn updates as they occur
+   */
+  private createTurnStream(responseId: string): AsyncIterable<any> {
+    const sessionManager = this.opts.sessionManager;
+    
+    return {
+      [Symbol.asyncIterator]() {
+        let buffer: any[] = [];
+        let resolveNext: ((value: IteratorResult<any>) => void) | null = null;
+        let done = false;
+        let removeListener: (() => void) | null = null;
+        
+        // Set up the turn update listener
+        const setupListener = () => {
+          removeListener = sessionManager.trackStreamingTurns(responseId, (turn) => {
+            // Add the new turn to the buffer
+            buffer.push(turn);
+            
+            // If someone is waiting for the next item, resolve their promise
+            if (resolveNext) {
+              const next = resolveNext;
+              resolveNext = null;
+              next({ done: false, value: buffer.shift() });
+            }
+            
+            // Mark done when the last turn is completed
+            // We check for completed status, which the session manager sets
+            // when processing is completely done
+            if (turn.status === 'completed') {
+              // Check if this is the final turn (no more tool calls will be made)
+              // Need to parse the toolCalls string to check
+              let hasToolCalls = false;
+              try {
+                const toolCallsObj = JSON.parse(turn.toolCalls);
+                hasToolCalls = !!(toolCallsObj && toolCallsObj.call && 
+                                 Object.keys(toolCallsObj.call).length > 0);
+              } catch (e) {
+                // If we can't parse, assume no tool calls
+                hasToolCalls = false;
+              }
+              
+              // If this turn has no tool calls or is the last in a series,
+              // we can finish streaming
+              if (!hasToolCalls) {
+                done = true;
+                
+                // If someone is waiting and buffer is empty, resolve with done
+                if (resolveNext && buffer.length === 0) {
+                  const next = resolveNext;
+                  resolveNext = null;
+                  next({ done: true, value: undefined });
+                  
+                  // Remove the listener since we're done
+                  if (removeListener) {
+                    removeListener();
+                    removeListener = null;
+                  }
+                }
+              }
+            }
+          });
+        };
+        
+        // Set up the listener right away
+        setupListener();
+        
+        return {
+          next(): Promise<IteratorResult<any>> {
+            return new Promise((resolve) => {
+              // If we have items in the buffer, return the next one
+              if (buffer.length > 0) {
+                resolve({ done: false, value: buffer.shift() });
+                return;
+              }
+              
+              // If we're done and buffer is empty, we're done iterating
+              if (done && buffer.length === 0) {
+                if (removeListener) {
+                  removeListener();
+                  removeListener = null;
+                }
+                resolve({ done: true, value: undefined });
+                return;
+              }
+              
+              // Otherwise, wait for the next update
+              resolveNext = resolve;
+            });
+          },
+          
+          return(): Promise<IteratorResult<any>> {
+            // Clean up when the iterator is closed early
+            if (removeListener) {
+              removeListener();
+              removeListener = null;
+            }
+            done = true;
+            buffer = [];
+            resolveNext = null;
+            return Promise.resolve({ done: true, value: undefined });
+          }
+        };
+      }
+    };
+  }
 
-  async handleRequest(sessionId: string, requestContent: string): Promise<void> {
+  /**
+   * Handles a user request and returns the response ID along with a promise that resolves when processing completes.
+   * This allows consumers to know the response ID immediately for streaming while also being able to await completion.
+   * 
+   * @param sessionId The session ID
+   * @param requestContent The user's request content
+   * @returns An object with the response ID and a completion promise
+   */
+  async handleRequest(sessionId: string, requestContent: string): Promise<{
+    responseId: string;
+    completionPromise: Promise<void>;
+  }> {
+    try {
+      // Create round and initial response right away
+      const { response } = await this.opts.sessionManager.createRound({
+        sessionId,
+        content: requestContent
+      });
+
+      // Start processing in the background and return a promise
+      const completionPromise = this._processRequest(sessionId, requestContent, response.id);
+      
+      // Return the response ID immediately with the completion promise
+      return {
+        responseId: response.id,
+        completionPromise
+      };
+    } catch (error) {
+      this.logger.error('Failed to create round for request', {
+        sessionId,
+        error: error instanceof Error ? {
+          message: error.message,
+          stack: error.stack,
+          cause: (error as any).cause ? (error as any).cause.message : undefined
+        } : String(error)
+      });
+      throw new MessageProcessError('Failed to create round for request', error as Error);
+    }
+  }
+  
+  /**
+   * Internal method that handles the actual processing of a request.
+   * Extracted from handleRequest to allow returning the response ID early.
+   * 
+   * @param sessionId The session ID
+   * @param requestContent The user's request content
+   * @param responseId The response ID (from createRound)
+   */
+  private async _processRequest(sessionId: string, requestContent: string, responseId: string): Promise<void> {
     try {
       const provider = await setupProviderFromManager(this.opts.modelsManager);
       this.logger.debug('Created provider for request', { sessionId });
@@ -27,12 +253,6 @@ export class SessionCoordinator {
       // Build context
       const context = await this.buildContext(sessionId);
       this.logger.debug('Built context for request', { sessionId });
-
-      // Create round and initial response
-      const { response } = await this.opts.sessionManager.createRound({
-        sessionId,
-        content: requestContent
-      });
 
       // Get the initial context including the system prompt and history
       // We'll use this as a starting point
@@ -47,7 +267,7 @@ export class SessionCoordinator {
       }
 
       let currentTurn = await this.opts.sessionManager.createTurn({
-        responseId: response.id,
+        responseId: responseId,
         content: '',
         rawResponse: '',
         inputTokens: 0,
@@ -160,7 +380,7 @@ export class SessionCoordinator {
 
           // Create a new turn for the next part of the conversation
           currentTurn = await this.opts.sessionManager.createTurn({
-            responseId: response.id,
+            responseId: responseId,
             content: '',
             rawResponse: '',
             inputTokens: 0,

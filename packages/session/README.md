@@ -11,6 +11,7 @@ The Session package is a core component of Mandrake, handling the orchestration 
   - Handling model responses
   - Detecting and executing tool calls
   - Managing conversation history
+  - Streaming responses in real-time
 
 - **Context Building**: Dynamically assembles the context for each conversation by:
   - Generating a system prompt with workspace configuration
@@ -110,11 +111,30 @@ const session = await workspace.sessions.createSession({
   title: 'New Project Session'
 });
 
-// Handle user request
-await coordinator.handleRequest(
+// Basic usage - returns response ID and completion promise
+const { responseId, completionPromise } = await coordinator.handleRequest(
   session.id,
   'Create a new React component that displays a counter'
 );
+
+// Wait for completion if needed
+await completionPromise;
+
+// Streaming usage
+const { stream, completionPromise: streamingPromise } = await coordinator.streamRequest(
+  session.id,
+  'Update the component to include a reset button'
+);
+
+// Process streaming updates in real-time
+for await (const turn of stream) {
+  console.log("Turn update:", turn.content);
+  
+  // Access tool calls if present
+  if (turn.parsedToolCalls?.call) {
+    console.log("Tool call:", turn.parsedToolCalls.call);
+  }
+}
 
 // Access session history
 const history = await workspace.sessions.renderSessionHistory(session.id);
@@ -143,8 +163,25 @@ interface SessionCoordinatorOptions {
 class SessionCoordinator {
   constructor(options: SessionCoordinatorOptions);
   
-  // Main method to process a user request
-  async handleRequest(sessionId: string, requestContent: string): Promise<void>;
+  // Process a user request and return responseId with completion promise
+  async handleRequest(sessionId: string, requestContent: string): Promise<{
+    responseId: string;
+    completionPromise: Promise<void>;
+  }>;
+  
+  // Process a request with streaming interface
+  async streamRequest(sessionId: string, requestContent: string): Promise<{
+    responseId: string;
+    stream: AsyncIterable<Turn>;
+    completionPromise: Promise<void>;
+  }>;
+  
+  // Get round data by response ID
+  async getRoundByResponseId(responseId: string): Promise<{
+    round: Round;
+    request: Request;
+    response: Response;
+  }>;
   
   // Builds the context for a conversation
   async buildContext(sessionId: string): Promise<Context>;
@@ -202,3 +239,15 @@ class SystemPromptBuilder {
 - **@mandrake/utils**: Utilizes shared utilities
   - Uses logging infrastructure
   - Uses error handling patterns
+
+## Streaming Support
+
+The session package provides robust streaming support for real-time processing of model responses:
+
+- **Early Response ID Access**: Get the response ID immediately without waiting for processing to complete
+- **Async Iteration**: Process updates using standard `for await...of` syntax
+- **Turn-by-Turn Updates**: Receive updates as each turn is processed, including tool calls
+- **Cleanup Management**: Automatic resource cleanup when streaming is abandoned early
+- **Completion Promise**: Track when the entire request has finished processing
+
+For more details, see the [Streaming API documentation](./docs/STREAMING.md).

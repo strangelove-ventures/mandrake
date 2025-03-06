@@ -24,11 +24,25 @@ interface SessionCoordinator {
     dynamicContextManager?: DynamicContextManager;
   });
 
-  // Main entry point - handles single message
-  handleMessage(opts: {
-    sessionId: string;
-    request: string;
-  }): Promise<void>;
+  // Main entry point - handles single message and returns response ID with completion promise
+  handleRequest(sessionId: string, requestContent: string): Promise<{
+    responseId: string;
+    completionPromise: Promise<void>;
+  }>;
+  
+  // Streaming interface - returns response ID, stream of updates, and completion promise
+  streamRequest(sessionId: string, requestContent: string): Promise<{
+    responseId: string;
+    stream: AsyncIterable<Turn>;
+    completionPromise: Promise<void>;
+  }>;
+  
+  // Utility to get round data by response ID
+  getRoundByResponseId(responseId: string): Promise<{
+    round: Round;
+    request: Request;
+    response: Response;
+  }>;
 
   // Internal methods
   private buildContext(): Promise<Context>;
@@ -271,11 +285,25 @@ const coordinator = new SessionCoordinator({
   dynamicContextManager: workspace.dynamicContextManager
 });
 
-// Handle single message
-await coordinator.handleMessage({
-  sessionId: 'session-1',
-  request: 'Test request'
-});
+// Basic usage - fire and forget
+const { responseId, completionPromise } = await coordinator.handleRequest('session-1', 'Test request');
+await completionPromise; // Wait for completion if needed
+
+// Streaming usage
+const { responseId, stream, completionPromise } = await coordinator.streamRequest('session-1', 'Test request');
+
+// Process streaming updates
+for await (const turn of stream) {
+  console.log("Update:", turn.content);
+  
+  // Process tool calls if present
+  if (turn.parsedToolCalls?.call) {
+    console.log("Tool call:", turn.parsedToolCalls.call);
+  }
+}
+
+// Get complete round data after streaming
+const roundData = await coordinator.getRoundByResponseId(responseId);
 ```
 
 ## Notes
@@ -285,3 +313,6 @@ await coordinator.handleMessage({
 - Direct DB updates from coordinator
 - XML-style system prompts
 - Clean error propagation
+- Streaming support built-in
+- Response ID available immediately for streaming without blocking
+- AsyncIterable interface for easy stream consumption
