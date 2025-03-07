@@ -49,7 +49,8 @@ describe('AnthropicProvider', () => {
       modelInfo: {
         maxTokens: 4096,
         inputPrice: 15,
-        outputPrice: 75
+        outputPrice: 75,
+        contextWindow: 100_000
       }
     });
   });
@@ -90,7 +91,8 @@ describe('AnthropicProvider', () => {
       modelId: 'claude-3-opus-20240229',
       apiKey: 'bad-key',
       modelInfo: {
-        maxTokens: 4096
+        maxTokens: 4096,
+        contextWindow: 100_000
       }
     });
 
@@ -128,7 +130,8 @@ describe('AnthropicProvider', () => {
       modelId: 'claude-3-opus-20240229',
       apiKey: process.env.ANTHROPIC_API_KEY,
       modelInfo: {
-        maxTokens: 10
+        maxTokens: 10,
+        contextWindow: 100_000
       }
     });
 

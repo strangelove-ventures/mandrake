@@ -1,4 +1,3 @@
-import type { ProviderType } from '@mandrake/utils';
 import { getModelInfo, createLogger } from '@mandrake/utils';
 import { BaseProvider } from './base';
 import type { ProviderConfig } from './types';
@@ -6,6 +5,7 @@ import { ProviderError } from './errors';
 import { AnthropicProvider } from './providers/anthropic';
 import { OllamaProvider } from './providers/ollama';
 import { XAIProvider } from './providers/xai';
+import type { ProviderType } from '@mandrake/utils';
 
 const logger = createLogger('provider:factory');
 

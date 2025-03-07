@@ -115,7 +115,7 @@ Each package will have a detailed refactoring plan:
 
 1. **workspace**: ✅ COMPLETED
 2. **mcp**: ✅ COMPLETED
-3. **provider**: [packages/utils/src/types/provider/REFACTORING_PLAN.md](planned)
+3. **provider**: ✅ COMPLETED
 4. **session**: [packages/utils/src/types/session/REFACTORING_PLAN.md](planned)
 5. **api**: [packages/utils/src/types/api/REFACTORING_PLAN.md](planned)
 
@@ -164,14 +164,34 @@ We have successfully completed the MCP package refactoring:
    - Updated imports in server.ts, manager.ts, and transport/index.ts
    - Fixed all tests to work with the new type structure
 
+### Provider Package (COMPLETED)
+
+We have successfully completed the provider package refactoring:
+
+1. ✅ Moved all provider types to the utils package:
+   - Base provider types (`ProviderImplConfig`, `MessageStream`, `MessageStreamChunk`, etc.)
+   - Error types (`IProviderError`, `INetworkError`, etc.)
+   - Provider-specific types for Anthropic, Ollama, and XAI
+   - Model-related types (model IDs and descriptors)
+
+2. ✅ Resolved naming conflicts with existing types:
+   - Renamed `ProviderConfig` to `ProviderImplConfig` to avoid conflict with schema types
+   - Used type imports to handle ProviderType from schemas
+
+3. ✅ Updated the provider package to use the new types:
+   - Implemented error classes based on error interfaces
+   - Updated BaseProvider to implement IProvider interface
+   - Created proper re-exports for backward compatibility
+   - Fixed tests to work with the new type structure
+
 ### Next Steps
 
-1. Proceed with Provider package refactoring:
-   - Move provider base types to utils
-   - Move provider-specific types to utils
-   - Move model types to utils
+1. Proceed with Session package refactoring:
+   - Move session types to utils
+   - Move message types to utils
+   - Move prompt types to utils
 
-2. Continue with Session and API packages in order
+2. Continue with API package
 
 3. Ensure comprehensive test coverage for all refactored components
 

@@ -1,27 +1,12 @@
-import type { ModelInfo, Message } from '@mandrake/utils';
+// Re-export from utils package
+import type { Message } from '@mandrake/utils/src/common-types';
+import type { 
+  MessageStream,
+  MessageStreamChunk,
+  TextChunk,
+  UsageChunk,
+  ProviderImplConfig as ProviderConfig
+} from '@mandrake/utils/src/types/provider';
 
-export type { Message };
-
-export type MessageStream = AsyncGenerator<MessageStreamChunk>;
-
-export type MessageStreamChunk = 
-  | TextChunk
-  | UsageChunk;
-
-export interface TextChunk {
-  type: 'text';
-  text: string;
-}
-
-export interface UsageChunk {
-  type: 'usage';
-  inputTokens: number;
-  outputTokens: number;
-}
-
-export interface ProviderConfig {
-  modelId: string;
-  modelInfo: ModelInfo;
-  apiKey?: string;
-  baseUrl?: string;
-}
+// Re-export for backward compatibility
+export type { Message, MessageStream, MessageStreamChunk, TextChunk, UsageChunk, ProviderConfig };

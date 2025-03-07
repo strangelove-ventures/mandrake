@@ -1,20 +1,22 @@
 import type { Message, MessageStream, ProviderConfig } from './types';
 import { ProviderError } from './errors';
-import { createLogger, type Logger, type LogMeta } from '@mandrake/utils';
+import { createLogger, type Logger, type LogMeta, type IProvider } from '@mandrake/utils';
 
-export abstract class BaseProvider {
+export abstract class BaseProvider implements IProvider {
   protected config: ProviderConfig;
   protected logger: Logger;
 
   constructor(config: ProviderConfig) {
-    this.validateConfig(config);
-    this.config = config;
+    // Create logger first to ensure it's available for validation
     this.logger = createLogger('provider', {
       meta: {
         provider: this.constructor.name,
-        modelId: config.modelId
+        modelId: config?.modelId
       }
     });
+    
+    this.validateConfig(config);
+    this.config = config;
     this.logger.debug('Provider initialized', { baseUrl: config.baseUrl });
   }
 

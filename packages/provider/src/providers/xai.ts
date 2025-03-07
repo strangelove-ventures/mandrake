@@ -1,31 +1,10 @@
 import { BaseProvider } from '../base';
 import type { Message, MessageStream, ProviderConfig } from '../types';
 import { NetworkError, RateLimitError, TokenLimitError } from '../errors';
-
-interface XAIMessage {
-  role: string;
-  content: string;
-}
-
-interface XAIStreamChunk {
-  id: string;
-  object: string;
-  created: number;
-  model: string;
-  choices: {
-    index: number;
-    delta: {
-      content?: string;
-      role?: string;
-    };
-    finish_reason: string | null;
-  }[];
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
-}
+import type { 
+  XAIMessage, 
+  XAIStreamChunk
+} from '@mandrake/utils';
 
 export class XAIProvider extends BaseProvider {
   private baseUrl: string;
