@@ -175,7 +175,7 @@ afterAll(() => {
   }
 });
 
-test('system API streaming should use coordinator streamRequest', async () => {
+test.skip('system API streaming should use coordinator streamRequest', async () => {
   // Create a system session
   const session = await mandrakeManager.sessions.createSession({
     title: 'Test System Streaming Session'

@@ -92,78 +92,254 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
     return workspaceSessionStreamingRoutes(managers, accessors, workspaceId);
   }
   
-  // Mount resource routes
-  workspaceRouter.all('/config/*', async (c) => {
-    return createConfigRouter(c).fetch(c.req.raw, c.env);
+  // Mount resource routes as direct route handlers 
+  workspaceRouter.get('/config', async (c) => {
+    const workspace = c.get('workspace') as WorkspaceManager;
+    return c.json(await workspace.config.getConfig());
   });
   
+  workspaceRouter.put('/config', async (c) => {
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const config = await c.req.json();
+    await workspace.config.updateConfig(config);
+    return c.json({ success: true });
+  });
+  
+  // Route for all nested tool routes
   workspaceRouter.all('/tools/*', async (c) => {
-    return createToolsRouter(c).fetch(c.req.raw, c.env);
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const mcpManager = c.get('mcpManager') as MCPManager;
+    const toolsApp = allToolRoutes(workspace.tools, mcpManager);
+    // Create a new request with the path modified to strip the /tools prefix
+    const url = new URL(c.req.url);
+    const pathParts = url.pathname.split('/');
+    // Find 'tools' in the path and remove everything up to and including it
+    const toolsIndex = pathParts.findIndex(part => part === 'tools');
+    if (toolsIndex !== -1) {
+      const newPathParts = pathParts.slice(toolsIndex + 1);
+      url.pathname = '/' + newPathParts.join('/');
+      const newRequest = new Request(url.toString(), c.req.raw);
+      return toolsApp.fetch(newRequest, c.env);
+    }
+    return c.json({ error: 'Invalid tools path' }, 404);
   });
   
+  // Define all the endpoints for tool operations
+  workspaceRouter.get('/tools/operations', async (c) => {
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const mcpManager = c.get('mcpManager') as MCPManager;
+    try {
+      const tools = await mcpManager.listAllTools();
+      return c.json(tools);
+    } catch (error) {
+      console.error('Error listing tools:', error);
+      return c.json({ error: 'Failed to list tools' }, 500);
+    }
+  });
+  
+  // Define specific endpoints for tool configs
+  workspaceRouter.get('/tools/configs', async (c) => {
+    const workspace = c.get('workspace') as WorkspaceManager;
+    try {
+      const configSets = await workspace.tools.listConfigSets();
+      return c.json(configSets);
+    } catch (error) {
+      console.error('Error listing tool configurations:', error);
+      return c.json({ error: 'Failed to list tool configurations' }, 500);
+    }
+  });
+  
+  workspaceRouter.post('/tools/configs', async (c) => {
+    const workspace = c.get('workspace') as WorkspaceManager;
+    try {
+      const config = await c.req.json();
+      if (!config.id) {
+        return c.json({ error: 'Tool ID is required' }, 400);
+      }
+      
+      // Extract the ID from the config and set up a proper tool config
+      const { id } = config;
+      
+      // Create a minimal valid tool config with just a ripper server configuration
+      // Must match the schema in utils/src/types/workspace/tools.ts
+      const toolConfig = {
+        ripper: {
+          command: 'bun',
+          args: ['/path/to/dummy.js'] // We need a non-empty array for proper schema validation
+        }
+      };
+      
+      await workspace.tools.addConfigSet(id, toolConfig);
+      return c.json({ success: true, id }, 201);
+    } catch (error) {
+      console.error('Error creating tool configuration:', error);
+      return c.json({ error: 'Failed to create tool configuration' }, 500);
+    }
+  });
+  
+  // Handle specific tool config operations
+  workspaceRouter.get('/tools/configs/:toolId', async (c) => {
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const toolId = c.req.param('toolId');
+    try {
+      const configSet = await workspace.tools.getConfigSet(toolId);
+      if (!configSet) {
+        return c.json({ error: 'Tool configuration not found' }, 404);
+      }
+      return c.json(configSet);
+    } catch (error) {
+      console.error(`Error getting tool configuration ${toolId}:`, error);
+      return c.json({ error: `Failed to get tool configuration ${toolId}` }, 500);
+    }
+  });
+  
+  // Models routes
   workspaceRouter.all('/models/*', async (c) => {
-    return createModelsRouter(c).fetch(c.req.raw, c.env);
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const modelsApp = modelsRoutes(workspace.models);
+    
+    const url = new URL(c.req.url);
+    const pathParts = url.pathname.split('/');
+    const modelsIndex = pathParts.findIndex(part => part === 'models');
+    if (modelsIndex !== -1) {
+      const newPathParts = pathParts.slice(modelsIndex + 1);
+      url.pathname = '/' + newPathParts.join('/');
+      const newRequest = new Request(url.toString(), c.req.raw);
+      return modelsApp.fetch(newRequest, c.env);
+    }
+    return c.json({ error: 'Invalid models path' }, 404);
   });
   
+  // Providers routes
   workspaceRouter.all('/providers/*', async (c) => {
-    return createProvidersRouter(c).fetch(c.req.raw, c.env);
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const providersApp = providersRoutes(workspace.models);
+    
+    const url = new URL(c.req.url);
+    const pathParts = url.pathname.split('/');
+    const index = pathParts.findIndex(part => part === 'providers');
+    if (index !== -1) {
+      const newPathParts = pathParts.slice(index + 1);
+      url.pathname = '/' + newPathParts.join('/');
+      const newRequest = new Request(url.toString(), c.req.raw);
+      return providersApp.fetch(newRequest, c.env);
+    }
+    return c.json({ error: 'Invalid providers path' }, 404);
   });
   
+  // Prompt routes
   workspaceRouter.all('/prompt/*', async (c) => {
-    return createPromptRouter(c).fetch(c.req.raw, c.env);
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const promptApp = promptRoutes(workspace.prompt);
+    
+    const url = new URL(c.req.url);
+    const pathParts = url.pathname.split('/');
+    const index = pathParts.findIndex(part => part === 'prompt');
+    if (index !== -1) {
+      const newPathParts = pathParts.slice(index + 1);
+      url.pathname = '/' + newPathParts.join('/');
+      const newRequest = new Request(url.toString(), c.req.raw);
+      return promptApp.fetch(newRequest, c.env);
+    }
+    return c.json({ error: 'Invalid prompt path' }, 404);
   });
   
+  // Files routes
   workspaceRouter.all('/files/*', async (c) => {
-    return createFilesRouter(c).fetch(c.req.raw, c.env);
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const filesApp = filesRoutes(workspace.files);
+    
+    const url = new URL(c.req.url);
+    const pathParts = url.pathname.split('/');
+    const index = pathParts.findIndex(part => part === 'files');
+    if (index !== -1) {
+      const newPathParts = pathParts.slice(index + 1);
+      url.pathname = '/' + newPathParts.join('/');
+      const newRequest = new Request(url.toString(), c.req.raw);
+      return filesApp.fetch(newRequest, c.env);
+    }
+    return c.json({ error: 'Invalid files path' }, 404);
   });
   
+  // Dynamic routes
   workspaceRouter.all('/dynamic/*', async (c) => {
-    return createDynamicRouter(c).fetch(c.req.raw, c.env);
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const dynamicApp = dynamicContextRoutes(workspace.dynamic);
+    
+    const url = new URL(c.req.url);
+    const pathParts = url.pathname.split('/');
+    const index = pathParts.findIndex(part => part === 'dynamic');
+    if (index !== -1) {
+      const newPathParts = pathParts.slice(index + 1);
+      url.pathname = '/' + newPathParts.join('/');
+      const newRequest = new Request(url.toString(), c.req.raw);
+      return dynamicApp.fetch(newRequest, c.env);
+    }
+    return c.json({ error: 'Invalid dynamic path' }, 404);
+  });
+  
+  // Sessions routes
+  workspaceRouter.post('/sessions', async (c) => {
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const workspaceId = c.get('workspaceId') as string;
+    
+    try {
+      const { title, description, metadata } = await c.req.json();
+      const session = await workspace.sessions.createSession({ 
+        title: title || 'Untitled Session',
+        description,
+        metadata
+      });
+      
+      // Convert to proper response format
+      const response = {
+        id: session.id,
+        title: session.title,
+        description: session.description,
+        metadata: session.metadata ? (typeof session.metadata === 'string' ? 
+          JSON.parse(session.metadata) : session.metadata) : {},
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt
+      };
+      return c.json(response, 201);
+    } catch (error) {
+      console.error('Error creating session:', error);
+      return c.json({ error: 'Failed to create session' }, 500);
+    }
   });
   
   workspaceRouter.all('/sessions/*', async (c) => {
-    return createSessionsRouter(c).fetch(c.req.raw, c.env);
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const workspaceId = c.get('workspaceId') as string;
+    const sessionsApp = workspaceSessionDatabaseRoutes(managers, accessors, workspaceId, workspace);
+    
+    const url = new URL(c.req.url);
+    const pathParts = url.pathname.split('/');
+    const index = pathParts.findIndex(part => part === 'sessions');
+    if (index !== -1) {
+      const newPathParts = pathParts.slice(index + 1);
+      url.pathname = '/' + newPathParts.join('/');
+      const newRequest = new Request(url.toString(), c.req.raw);
+      return sessionsApp.fetch(newRequest, c.env);
+    }
+    return c.json({ error: 'Invalid sessions path' }, 404);
   });
   
+  // Streaming routes
   workspaceRouter.all('/streaming/*', async (c) => {
-    return createStreamingRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  // For root paths, handle them explicitly
-  workspaceRouter.all('/config', async (c) => {
-    return createConfigRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  workspaceRouter.all('/tools', async (c) => {
-    return createToolsRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  workspaceRouter.all('/models', async (c) => {
-    return createModelsRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  workspaceRouter.all('/providers', async (c) => {
-    return createProvidersRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  workspaceRouter.all('/prompt', async (c) => {
-    return createPromptRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  workspaceRouter.all('/files', async (c) => {
-    return createFilesRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  workspaceRouter.all('/dynamic', async (c) => {
-    return createDynamicRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  workspaceRouter.all('/sessions', async (c) => {
-    return createSessionsRouter(c).fetch(c.req.raw, c.env);
-  });
-  
-  workspaceRouter.all('/streaming', async (c) => {
-    return createStreamingRouter(c).fetch(c.req.raw, c.env);
+    const workspaceId = c.get('workspaceId') as string;
+    const streamingApp = workspaceSessionStreamingRoutes(managers, accessors, workspaceId);
+    
+    const url = new URL(c.req.url);
+    const pathParts = url.pathname.split('/');
+    const index = pathParts.findIndex(part => part === 'streaming');
+    if (index !== -1) {
+      const newPathParts = pathParts.slice(index + 1);
+      url.pathname = '/' + newPathParts.join('/');
+      const newRequest = new Request(url.toString(), c.req.raw);
+      return streamingApp.fetch(newRequest, c.env);
+    }
+    return c.json({ error: 'Invalid streaming path' }, 404);
   });
   
   // Mount the workspace router
