@@ -113,11 +113,49 @@ To ensure that type changes in the utils package properly propagate through the 
 
 Each package will have a detailed refactoring plan:
 
-1. **workspace**: [packages/utils/src/types/workspace/REFACTORING_PLAN.md](planned)
+1. **workspace**: ✅ COMPLETED
 2. **mcp**: [packages/utils/src/types/mcp/REFACTORING_PLAN.md](planned)
 3. **provider**: [packages/utils/src/types/provider/REFACTORING_PLAN.md](planned)
 4. **session**: [packages/utils/src/types/session/REFACTORING_PLAN.md](planned)
 5. **api**: [packages/utils/src/types/api/REFACTORING_PLAN.md](planned)
+
+## Implementation Progress
+
+### Workspace Package (COMPLETED)
+
+We have successfully completed the workspace package refactoring:
+
+1. ✅ Moved all workspace types to the utils package:
+   - Core workspace types (`Workspace`, `workspaceSchema`)
+   - Files types (`FileInfo`, `fileInfoSchema`)
+   - Tools types (`ServerConfig`, `ToolConfig`, `ToolsConfig`, and their schemas)
+   - Dynamic context types (`DynamicContextMethodConfig`, `ContextConfig`, etc.)
+   - Prompt types (`PromptConfig`, `promptConfigSchema`)
+   - Configuration types (`MandrakeConfig`, `RegisteredWorkspace`, etc.)
+
+2. ✅ Created entity interfaces for database types:
+   - Session entities (`SessionEntity`, `RequestEntity`, `ResponseEntity`, etc.)
+   - Round entities (`RoundEntity`, `RoundWithDataEntity`)
+   - Turn entities (`TurnEntity`, `TurnWithToolCallsEntity`)
+   - Tool call types (`ToolCall`)
+
+3. ✅ Implemented mappers in the workspace package:
+   - Created mapper functions to convert between DB types and entity types
+   - Added documentation on the mapping approach
+   - Ensured all tests pass with the new structure
+
+4. ✅ Updated the SessionManager to use entity types in its public API
+
+### Next Steps
+
+1. Proceed with MCP package refactoring:
+   - Move MCP server types to utils
+   - Move transport types to utils
+   - Move MCP tools types to utils
+
+2. Continue with Provider, Session, and API packages in order
+
+3. Ensure comprehensive test coverage for all refactored components
 
 ## Implementation Guidelines
 
@@ -143,22 +181,3 @@ For types that need implementation details:
 1. Create mapping functions in the original package
 2. Use type assertions or type guards where needed
 3. Create adapter functions to convert between implementation types and interface types
-
-## Next Steps
-
-1. Create the directory structure in utils
-2. Start with the workspace package refactoring
-3. Move on to MCP, Provider, Session, and API in order
-4. Update all references to use the new types
-5. Test and validate
-
-## Initial Focus: Workspace Package
-
-Since we're starting with the workspace package, we'll create a detailed plan for that first:
-
-1. Create the workspace directory structure
-2. Identify workspace types that should be moved (from database schemas, managers, etc.)
-3. Create clean interfaces in the utils package
-4. Create type mappings for database-specific code
-5. Update imports in the workspace package
-6. Test the build

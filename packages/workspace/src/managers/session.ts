@@ -6,11 +6,26 @@ import { mkdir } from 'fs/promises';
 import Database from 'bun:sqlite';
 import { fileURLToPath } from 'url';
 import * as schema from '../session/db/schema';
-import { createLogger, type Logger, type ToolCall } from '@mandrake/utils';
+import { 
+  createLogger, 
+  type Logger, 
+  type ToolCall,
+  type SessionEntity,
+  type RequestEntity,
+  type ResponseEntity,
+  type RoundEntity,
+  type TurnEntity,
+  type TurnWithToolCallsEntity,
+  type RoundWithDataEntity,
+  type SessionHistoryEntity
+} from '@mandrake/utils';
+import * as mappers from '../session/mappers';
 
 const MIGRATIONS_PATH = process.env.NODE_ENV === 'test'
     ? '../session/db/migrations'  // Source context for workspace tests
     : '../session/db/migrations';  // Built context for dependents
+    
+// DB types (internal use only)
 type Session = typeof schema.sessions.$inferSelect;
 type Request = typeof schema.requests.$inferSelect;
 type Response = typeof schema.responses.$inferSelect;
@@ -25,7 +40,7 @@ export class SessionManager {
     private logger: Logger;
 
     // Event emitter for turn updates
-    private turnUpdateListeners = new Map<string, Set<(turn: Turn) => void>>();
+    private turnUpdateListeners = new Map<string, Set<(turn: TurnEntity) => void>>();
     
     constructor(dbPath: string) {
         this.dbPath = dbPath;
@@ -99,7 +114,7 @@ export class SessionManager {
         return session;
     }
 
-    async getSession(id: string): Promise<Session> {
+    async getSession(id: string): Promise<SessionEntity> {
         this.ensureInitialized();
         const [session] = await this.db
             .select()
@@ -109,18 +124,10 @@ export class SessionManager {
         if (!session) {
             throw new Error(`Session not found: ${ id } `);
         }
-        return session;
+        return mappers.mapSessionToEntity(session);
     }
 
-    async renderSessionHistory(id: string): Promise<{
-        session: Session;
-        rounds: (Round & {
-            request: Request;
-            response: Response & {
-                turns: (Turn & { parsedToolCalls: ToolCall })[];
-            };
-        })[];
-    }> {
+    async renderSessionHistory(id: string): Promise<SessionHistoryEntity> {
         const session = await this.getSession(id);
         const rounds = await this.listRounds(session.id);
 
@@ -130,10 +137,10 @@ export class SessionManager {
                 const turns = await this.listTurnsWithParsedToolCalls(response.id);
 
                 return {
-                    ...round,
-                    request,
+                    ...mappers.mapRoundToEntity(round),
+                    request: mappers.mapRequestToEntity(request),
                     response: {
-                        ...response,
+                        ...mappers.mapResponseToEntity(response),
                         turns
                     }
                 };
@@ -142,27 +149,28 @@ export class SessionManager {
 
         return {
             session,
-            rounds: roundsWithData
+            rounds: roundsWithData as RoundWithDataEntity[]
         };
     }
 
     async listSessions(opts?: {
         limit?: number;
         offset?: number;
-    }): Promise<Session[]> {
+    }): Promise<SessionEntity[]> {
         this.ensureInitialized();
         let query = this.db.select().from(schema.sessions);
 
         // TODO: Add limit/offset handling
 
-        return query;
+        const sessions = await query;
+        return sessions.map(mappers.mapSessionToEntity);
     }
 
     async updateSession(id: string, updates: {
         title?: string;
         description?: string;
         metadata?: Record<string, string>;
-    }): Promise<Session> {
+    }): Promise<SessionEntity> {
         this.ensureInitialized();
         const [session] = await this.db.update(schema.sessions)
             .set({
@@ -176,7 +184,7 @@ export class SessionManager {
             throw new Error(`Session not found: ${ id } `);
         }
 
-        return session;
+        return mappers.mapSessionToEntity(session);
     }
 
     async deleteSession(id: string): Promise<void> {
@@ -190,9 +198,9 @@ export class SessionManager {
         sessionId: string;
         content: string;  // Request content
     }): Promise<{
-        round: Round;
-        request: Request;
-        response: Response;
+        round: RoundEntity;
+        request: RequestEntity;
+        response: ResponseEntity;
     }> {
         this.ensureInitialized();
         const [request] = await this.db.insert(schema.requests)
@@ -228,13 +236,17 @@ export class SessionManager {
             throw new Error('Failed to create round');
         }
 
-        return { round, request, response };
+        return { 
+            round: mappers.mapRoundToEntity(round), 
+            request: mappers.mapRequestToEntity(request), 
+            response: mappers.mapResponseToEntity(response) 
+        };
     }
 
     async getRound(id: string): Promise<{
-        round: Round;
-        request: Request;
-        response: Response;
+        round: RoundEntity;
+        request: RequestEntity;
+        response: ResponseEntity;
     }> {
         this.ensureInitialized();
         const [round] = await this.db
@@ -266,15 +278,21 @@ export class SessionManager {
             throw new Error(`Response not found: ${ round.responseId } `);
         }
 
-        return { round, request, response };
+        return { 
+            round: mappers.mapRoundToEntity(round), 
+            request: mappers.mapRequestToEntity(request), 
+            response: mappers.mapResponseToEntity(response) 
+        };
     }
 
-    async listRounds(sessionId: string): Promise<Round[]> {
+    async listRounds(sessionId: string): Promise<RoundEntity[]> {
         this.ensureInitialized();
-        return this.db
+        const rounds = await this.db
             .select()
             .from(schema.rounds)
             .where(eq(schema.rounds.sessionId, sessionId));
+            
+        return rounds.map(mappers.mapRoundToEntity);
     }
 
     // Turn Operations
@@ -368,7 +386,7 @@ export class SessionManager {
         return turn;
     }
     
-    async getLatestTurn(responseId: string): Promise<Turn | null> {
+    async getLatestTurn(responseId: string): Promise<TurnEntity | null> {
         this.ensureInitialized();
         const [turn] = await this.db
             .select()
@@ -376,10 +394,10 @@ export class SessionManager {
             .where(eq(schema.turns.responseId, responseId))
             .orderBy(schema.turns.index);
 
-        return turn || null;
+        return turn ? mappers.mapTurnToEntity(turn) : null;
     }
 
-    async getTurn(id: string): Promise<Turn> {
+    async getTurn(id: string): Promise<TurnEntity> {
         this.ensureInitialized();
         const [turn] = await this.db
             .select()
@@ -389,7 +407,7 @@ export class SessionManager {
         if (!turn) {
             throw new Error(`Turn not found: ${ id } `);
         }
-        return turn;
+        return mappers.mapTurnToEntity(turn);
     }
 
     async deleteTurn(id: string): Promise<void> {
@@ -398,7 +416,7 @@ export class SessionManager {
             .where(eq(schema.turns.id, id));
     }
     
-    async getRequest(id: string): Promise<Request> {
+    async getRequest(id: string): Promise<RequestEntity> {
         this.ensureInitialized();
         const [request] = await this.db
             .select()
@@ -408,10 +426,10 @@ export class SessionManager {
         if (!request) {
             throw new Error(`Request not found: ${ id } `);
         }
-        return request;
+        return mappers.mapRequestToEntity(request);
     }
     
-    async getResponse(id: string): Promise<Response> {
+    async getResponse(id: string): Promise<ResponseEntity> {
         this.ensureInitialized();
         const [response] = await this.db
             .select()
@@ -421,49 +439,39 @@ export class SessionManager {
         if (!response) {
             throw new Error(`Response not found: ${ id } `);
         }
-        return response;
+        return mappers.mapResponseToEntity(response);
     }
 
-    async listTurns(responseId: string): Promise<Turn[]> {
+    async listTurns(responseId: string): Promise<TurnEntity[]> {
         this.ensureInitialized();
-        return this.db
+        const turns = await this.db
             .select()
             .from(schema.turns)
             .where(eq(schema.turns.responseId, responseId))
             .orderBy(schema.turns.index);
+            
+        return turns.map(mappers.mapTurnToEntity);
     }
 
     /**
      * List turns for a response with parsed toolCalls
      */
-    async listTurnsWithParsedToolCalls(responseId: string): Promise<(Turn & { parsedToolCalls: ToolCall })[]> {
+    async listTurnsWithParsedToolCalls(responseId: string): Promise<TurnWithToolCallsEntity[]> {
         const turns = await this.listTurns(responseId);
         return turns.map(turn => ({
             ...turn,
-            parsedToolCalls: this.parseToolCalls(turn.toolCalls)
+            parsedToolCalls: mappers.parseToolCalls(typeof turn.toolCalls === 'string' ? turn.toolCalls : JSON.stringify(turn.toolCalls))
         }));
-    }
-
-    /**
-     * Parse toolCalls JSON string into a ToolCall object
-     */
-    private parseToolCalls(toolCallsJson: string): ToolCall {
-        try {
-            return JSON.parse(toolCallsJson);
-        } catch (error) {
-            this.logger.warn('Failed to parse toolCalls JSON, returning empty tool call', { error });
-            return { call: null, response: null };
-        }
     }
 
     /**
      * Get a turn with parsed toolCalls
      */
-    async getTurnWithParsedToolCalls(id: string): Promise<Turn & { parsedToolCalls: ToolCall }> {
+    async getTurnWithParsedToolCalls(id: string): Promise<TurnWithToolCallsEntity> {
         const turn = await this.getTurn(id);
         return {
             ...turn,
-            parsedToolCalls: this.parseToolCalls(turn.toolCalls)
+            parsedToolCalls: mappers.parseToolCalls(typeof turn.toolCalls === 'string' ? turn.toolCalls : JSON.stringify(turn.toolCalls))
         };
     }
 
@@ -473,7 +481,7 @@ export class SessionManager {
      * @param listener Callback function that will be called with the updated turn
      * @returns Function to remove the listener
      */
-    addTurnUpdateListener(turnId: string, listener: (turn: Turn) => void): () => void {
+    addTurnUpdateListener(turnId: string, listener: (turn: TurnEntity) => void): () => void {
         if (!this.turnUpdateListeners.has(turnId)) {
             this.turnUpdateListeners.set(turnId, new Set());
         }
@@ -496,9 +504,10 @@ export class SessionManager {
     private notifyTurnListeners(turnId: string, turn: Turn): void {
         const listeners = this.turnUpdateListeners.get(turnId);
         if (listeners) {
+            const turnEntity = mappers.mapTurnToEntity(turn);
             listeners.forEach(listener => {
                 try {
-                    listener(turn);
+                    listener(turnEntity);
                 } catch (error) {
                     this.logger.error('Error in turn update listener', { turnId, error });
                 }
@@ -512,7 +521,7 @@ export class SessionManager {
      * @param onUpdate Callback function that will be called with each turn update
      * @returns Function to stop tracking
      */
-    trackStreamingTurns(responseId: string, onUpdate: (turn: Turn) => void): () => void {
+    trackStreamingTurns(responseId: string, onUpdate: (turn: TurnEntity) => void): () => void {
         this.ensureInitialized();
         const listeners: Array<() => void> = [];
 
@@ -558,7 +567,7 @@ export class SessionManager {
      */
     async getStreamingStatus(responseId: string): Promise<{
         isComplete: boolean;
-        turns: Turn[];
+        turns: TurnEntity[];
     }> {
         this.ensureInitialized();
         const turns = await this.listTurns(responseId);
