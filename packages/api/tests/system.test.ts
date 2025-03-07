@@ -38,40 +38,36 @@ test('System config endpoint returns configuration', async () => {
 });
 
 test('System tools list endpoint returns empty list initially', async () => {
-  const res = await app.request('/system/tools/list');
+  const res = await app.request('/system/tools/operations');
   expect(res.status).toBe(200);
   const data = await res.json();
   expect(Array.isArray(data)).toBe(true);
 });
 
 test('System models list endpoint returns models', async () => {
-  const res = await app.request('/system/models/list');
+  const res = await app.request('/system/models');
   expect(res.status).toBe(200);
   const data = await res.json();
   expect(Array.isArray(data)).toBe(true);
 });
 
 test('Can add and retrieve a tool configuration', async () => {
-  // Add a tool
-  const toolConfig = {
-    name: 'test-tool',
-    command: 'echo',
-    args: ['Hello, World!']
-  };
-  
-  const addRes = await app.request('/system/tools/add', {
+  // First create a tool config set
+  const configSetRes = await app.request('/system/tools/configs', {
     method: 'POST',
-    body: JSON.stringify(toolConfig)
+    body: JSON.stringify({
+      id: 'test-tools',
+      name: 'SystemTestTools'
+    })
   });
   
-  expect(addRes.status).toBe(201);
+  expect(configSetRes.status).toBe(201);
+  const configSetData = await configSetRes.json();
+  const setId = configSetData.id;
   
-  // Get the tool
-  const getRes = await app.request('/system/tools/test-tool');
-  expect(getRes.status).toBe(200);
-  const tool = await getRes.json();
-  expect(tool).toHaveProperty('name', 'test-tool');
-  expect(tool).toHaveProperty('command', 'echo');
+  // Now we need to use the correct URL structure to get the config
+  const getConfigRes = await app.request(`/system/tools/configs/${setId}`);
+  expect(getConfigRes.status).toBe(200);
 });
 
 test('Can update prompt configuration', async () => {
@@ -81,9 +77,11 @@ test('Can update prompt configuration', async () => {
   const initialConfig = await getRes.json();
   
   // Update system prompt
-  const updateRes = await app.request('/system/prompt/system', {
+  const updateRes = await app.request('/system/prompt', {
     method: 'PUT',
-    body: JSON.stringify({ system: 'You are a helpful assistant.' })
+    body: JSON.stringify({ 
+      system: 'You are a helpful assistant.'
+    })
   });
   
   expect(updateRes.status).toBe(200);

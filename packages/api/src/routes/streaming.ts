@@ -3,6 +3,15 @@ import { SessionCoordinator } from '@mandrake/session';
 import { WorkspaceManager } from '@mandrake/workspace';
 import type { ManagerAccessors, Managers } from '../types';
 import { sendError } from './utils';
+import {
+  StreamRequestRequest,
+  StreamRequestResponse,
+  StreamInitEvent,
+  TurnEvent,
+  TurnCompletedEvent,
+  CompletedEvent,
+  ErrorEvent
+} from '@mandrake/utils/src/types/api';
 
 /**
  * Helper function to get or create the correct session coordinator
@@ -98,7 +107,9 @@ export function sessionStreamingRoutes(
       );
       
       // Get the request content
-      const { content } = await c.req.json();
+      const data = await c.req.json() as StreamRequestRequest;
+      const { content } = data;
+      
       if (!content) {
         return c.json({ error: 'Request content is required' }, 400);
       }
@@ -111,11 +122,12 @@ export function sessionStreamingRoutes(
         async start(controller) {
           try {
             // Send initial event
-            controller.enqueue(`data: ${JSON.stringify({
+            const initEvent: StreamInitEvent = {
               type: 'initialized',
               sessionId,
               responseId
-            })}\n\n`);
+            };
+            controller.enqueue(`data: ${JSON.stringify(initEvent)}\n\n`);
             
             // Stream each turn update as an SSE event
             for await (const turn of stream) {
@@ -130,40 +142,44 @@ export function sessionStreamingRoutes(
               }
               
               // Send turn update
-              controller.enqueue(`data: ${JSON.stringify({
+              const turnEvent: TurnEvent = {
                 type: 'turn',
                 turnId: turn.id,
                 index: turn.index,
                 content: turn.content,
                 status: turn.status,
                 toolCalls: parsedToolCalls
-              })}\n\n`);
+              };
+              controller.enqueue(`data: ${JSON.stringify(turnEvent)}\n\n`);
               
               // Send turn-completed event if applicable
               if (turn.status === 'completed' || turn.status === 'error') {
-                controller.enqueue(`data: ${JSON.stringify({
+                const completedEvent: TurnCompletedEvent = {
                   type: 'turn-completed',
                   turnId: turn.id,
                   status: turn.status
-                })}\n\n`);
+                };
+                controller.enqueue(`data: ${JSON.stringify(completedEvent)}\n\n`);
               }
             }
             
             // Send completed event when stream ends
-            controller.enqueue(`data: ${JSON.stringify({
+            const finalEvent: CompletedEvent = {
               type: 'completed',
               sessionId,
               responseId
-            })}\n\n`);
+            };
+            controller.enqueue(`data: ${JSON.stringify(finalEvent)}\n\n`);
             
             controller.close();
           } catch (error) {
             // Handle errors during streaming
             console.error('Error processing stream:', error);
-            controller.enqueue(`data: ${JSON.stringify({
+            const errorEvent: ErrorEvent = {
               type: 'error',
               message: error instanceof Error ? error.message : String(error)
-            })}\n\n`);
+            };
+            controller.enqueue(`data: ${JSON.stringify(errorEvent)}\n\n`);
             controller.close();
           }
         }

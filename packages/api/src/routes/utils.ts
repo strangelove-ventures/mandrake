@@ -1,5 +1,6 @@
 import type { Context } from 'hono';
-import type { ErrorHandler, ErrorResponse } from '../types';
+import type { ErrorResponse } from '@mandrake/utils/src/types/api';
+import type { ErrorHandler } from '../types';
 
 /**
  * Standard error handler for API routes

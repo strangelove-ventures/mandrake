@@ -2,6 +2,19 @@ import { Hono } from 'hono';
 import { SessionManager, WorkspaceManager } from '@mandrake/workspace';
 import type { ManagerAccessors, Managers } from '../types';
 import { sendError } from './utils';
+import {
+  SessionResponse,
+  SessionListResponse,
+  CreateSessionRequest,
+  UpdateSessionRequest,
+  CreateRoundRequest,
+  RoundResponse,
+  RoundListResponse,
+  TurnListResponse,
+  TurnResponse,
+  TurnWithToolCallsResponse,
+  SessionHistoryResponse
+} from '@mandrake/utils/src/types/api';
 
 /**
  * Helper function to get the correct session manager
@@ -57,7 +70,16 @@ export function sessionDatabaseRoutes(
     try {
       const sessionManager = getSessionManager(isSystem, managers, accessors, workspaceId, workspaceManager);
       const sessions = await sessionManager.listSessions();
-      return c.json(sessions);
+      
+      // Convert to SessionResponse objects by parsing metadata
+      const sessionList: SessionListResponse = sessions.map(session => ({
+        ...session,
+        metadata: typeof session.metadata === 'string' 
+          ? JSON.parse(session.metadata) 
+          : session.metadata || {}
+      }));
+      
+      return c.json(sessionList);
     } catch (error) {
       return sendError(c, error, 'Failed to list sessions');
     }
@@ -69,7 +91,16 @@ export function sessionDatabaseRoutes(
     try {
       const sessionManager = getSessionManager(isSystem, managers, accessors, workspaceId, workspaceManager);
       const session = await sessionManager.getSession(sessionId);
-      return c.json(session);
+      
+      // Convert to SessionResponse with parsed metadata
+      const response: SessionResponse = {
+        ...session,
+        metadata: typeof session.metadata === 'string' 
+          ? JSON.parse(session.metadata) 
+          : session.metadata || {}
+      };
+      
+      return c.json(response);
     } catch (error) {
       if ((error as Error).message.includes('not found')) {
         return c.json({ error: 'Session not found' }, 404);
@@ -83,21 +114,26 @@ export function sessionDatabaseRoutes(
     try {
       const sessionManager = getSessionManager(isSystem, managers, accessors, workspaceId, workspaceManager);
       
-      const { title, description, metadata } = await c.req.json();
+      const data = await c.req.json() as CreateSessionRequest;
+      const { title, description, metadata } = data;
+      
       const session = await sessionManager.createSession({ 
         title: title || 'New Session',
         description,
         metadata 
       });
       
-      return c.json({
+      // Convert to SessionResponse
+      const response: SessionResponse = {
         id: session.id,
         title: session.title,
         description: session.description,
         metadata: session.metadata ? JSON.parse(session.metadata) : {},
         createdAt: session.createdAt,
         updatedAt: session.updatedAt
-      }, 201);
+      };
+      
+      return c.json(response, 201);
     } catch (error) {
       return sendError(c, error, 'Failed to create session');
     }
@@ -109,21 +145,26 @@ export function sessionDatabaseRoutes(
     try {
       const sessionManager = getSessionManager(isSystem, managers, accessors, workspaceId, workspaceManager);
       
-      const { title, description, metadata } = await c.req.json();
+      const data = await c.req.json() as UpdateSessionRequest;
+      const { title, description, metadata } = data;
+      
       const session = await sessionManager.updateSession(sessionId, {
         title,
         description,
         metadata
       });
       
-      return c.json({
+      // Convert to SessionResponse
+      const response: SessionResponse = {
         id: session.id,
         title: session.title,
         description: session.description,
         metadata: session.metadata ? JSON.parse(session.metadata) : {},
         createdAt: session.createdAt,
         updatedAt: session.updatedAt
-      });
+      };
+      
+      return c.json(response);
     } catch (error) {
       if ((error as Error).message.includes('not found')) {
         return c.json({ error: 'Session not found' }, 404);
@@ -141,7 +182,12 @@ export function sessionDatabaseRoutes(
       // Delete the session from the database
       await sessionManager.deleteSession(sessionId);
       
-      return c.json({ success: true, id: sessionId });
+      // Return standard delete response
+      return c.json({
+        success: true,
+        id: sessionId,
+        message: "Session deleted successfully"
+      });
     } catch (error) {
       return sendError(c, error, `Failed to delete session ${sessionId}`);
     }
@@ -153,7 +199,19 @@ export function sessionDatabaseRoutes(
     try {
       const sessionManager = getSessionManager(isSystem, managers, accessors, workspaceId, workspaceManager);
       const history = await sessionManager.renderSessionHistory(sessionId);
-      return c.json(history);
+      
+      // Convert to SessionHistoryResponse
+      const response: SessionHistoryResponse = {
+        session: {
+          ...history.session,
+          metadata: typeof history.session.metadata === 'string'
+            ? JSON.parse(history.session.metadata)
+            : history.session.metadata || {}
+        },
+        rounds: history.rounds
+      };
+      
+      return c.json(response);
     } catch (error) {
       if ((error as Error).message.includes('not found')) {
         return c.json({ error: 'Session not found' }, 404);

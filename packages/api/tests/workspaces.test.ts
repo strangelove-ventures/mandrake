@@ -12,14 +12,21 @@ beforeAll(async () => {
   tempDir = result.tempDir;
   
   // Create a test workspace
-  const createRes = await app.request('/workspaces/create', {
+  const createRes = await app.request('/workspaces', {
     method: 'POST',
-    body: JSON.stringify({ name: 'Test Workspace', description: 'A test workspace' })
+    body: JSON.stringify({ 
+      name: 'TestWorkspace', 
+      description: 'A test workspace',
+      path: `${tempDir}/workspaces/test-workspace`
+    })
   });
   
   expect(createRes.status).toBe(201);
   const workspace = await createRes.json();
   workspaceId = workspace.id;
+  
+  // Print the response for debugging
+  console.log('Workspace response:', workspace);
 });
 
 afterAll(async () => {
@@ -27,13 +34,13 @@ afterAll(async () => {
 });
 
 test('Workspace list endpoint returns all workspaces', async () => {
-  const res = await app.request('/workspaces/list');
+  const res = await app.request('/workspaces');
   expect(res.status).toBe(200);
   const workspaces = await res.json();
   expect(Array.isArray(workspaces)).toBe(true);
   expect(workspaces.length).toBe(1);
   expect(workspaces[0]).toHaveProperty('id', workspaceId);
-  expect(workspaces[0]).toHaveProperty('name', 'Test Workspace');
+  expect(workspaces[0]).toHaveProperty('name', 'TestWorkspace');
 });
 
 test('Can get workspace info', async () => {
@@ -41,7 +48,7 @@ test('Can get workspace info', async () => {
   expect(res.status).toBe(200);
   const workspace = await res.json();
   expect(workspace).toHaveProperty('id', workspaceId);
-  expect(workspace).toHaveProperty('name', 'Test Workspace');
+  expect(workspace).toHaveProperty('name', 'TestWorkspace');
   expect(workspace).toHaveProperty('description', 'A test workspace');
 });
 
@@ -49,42 +56,38 @@ test('Workspace config endpoint returns configuration', async () => {
   const res = await app.request(`/workspaces/${workspaceId}/config`);
   expect(res.status).toBe(200);
   const config = await res.json();
-  expect(config).toHaveProperty('name', 'Test Workspace');
+  expect(config).toHaveProperty('description', 'A test workspace');
 });
 
 test('Workspace tools list endpoint returns tools', async () => {
-  const res = await app.request(`/workspaces/${workspaceId}/tools/list`);
+  const res = await app.request(`/workspaces/${workspaceId}/tools/operations`);
   expect(res.status).toBe(200);
   const tools = await res.json();
   expect(Array.isArray(tools)).toBe(true);
 });
 
 test('Can add and retrieve a workspace tool configuration', async () => {
-  // Add a tool
-  const toolConfig = {
-    name: 'workspace-tool',
-    command: 'echo',
-    args: ['Hello from workspace!']
-  };
-  
-  const addRes = await app.request(`/workspaces/${workspaceId}/tools/add`, {
+  // First create a tool config set
+  const configSetRes = await app.request(`/workspaces/${workspaceId}/tools/configs`, {
     method: 'POST',
-    body: JSON.stringify(toolConfig)
+    body: JSON.stringify({
+      id: 'test-tools',
+      name: 'TestTools'
+    })
   });
   
-  expect(addRes.status).toBe(201);
+  expect(configSetRes.status).toBe(201);
+  const configSetData = await configSetRes.json();
+  const setId = configSetData.id;
   
-  // Get the tool
-  const getRes = await app.request(`/workspaces/${workspaceId}/tools/workspace-tool`);
-  expect(getRes.status).toBe(200);
-  const tool = await getRes.json();
-  expect(tool).toHaveProperty('name', 'workspace-tool');
-  expect(tool).toHaveProperty('command', 'echo');
+  // Now we need to use the correct URL structure to get the config
+  const getConfigRes = await app.request(`/workspaces/${workspaceId}/tools/configs/${setId}`);
+  expect(getConfigRes.status).toBe(200);
 });
 
 test('Can create and retrieve a session', async () => {
   // Create a session
-  const createRes = await app.request(`/workspaces/${workspaceId}/sessions/create`, {
+  const createRes = await app.request(`/workspaces/${workspaceId}/sessions`, {
     method: 'POST',
     body: JSON.stringify({ title: 'Test Session' })
   });

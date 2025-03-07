@@ -111,7 +111,7 @@ Each package will have a detailed refactoring plan:
 2. **mcp**: ✅ COMPLETED
 3. **provider**: ✅ COMPLETED
 4. **session**: ✅ COMPLETED - Manually reviewed, no changes needed
-5. **api**: [packages/utils/src/types/api/REFACTORING_PLAN.md](planned)
+5. **api**: ✅ COMPLETED
 
 ## Implementation Progress
 
@@ -187,21 +187,52 @@ We have reviewed the session package:
    - The package uses types already defined in other packages
    - No circular dependencies or other issues were found
 
+### API Package (COMPLETED)
+
+We have successfully completed the API package refactoring:
+
+1. ✅ Created common API types in the utils package:
+   - Error response types (`ErrorResponse`)
+   - Success response types (`SuccessResponse`, `DeleteResponse`)
+   - Pagination types (`PaginationParams`, `PaginationMeta`, `PaginatedResponse`)
+
+2. ✅ Created client-server interface types:
+   - Workspace API types (responses and requests)
+   - Session API types (leveraging the session entity types)
+   - Models and providers API types
+   - Files API types
+   - Tools API types
+   - Dynamic context API types
+   - Prompt API types
+
+3. ✅ Created streaming types:
+   - Stream event types (`StreamEventType`, `StreamEvent`)
+   - Event payload types (`StreamInitEvent`, `TurnEvent`, etc.)
+   - Tool call types for streaming
+
+4. ✅ Organized types by resource domain:
+   - Common types in common.ts
+   - Resource-specific types in dedicated files
+   - Reused existing entity types where possible
+
 ### Next Steps
 
 1. ✅ Session package refactoring:
    - Session package manually reviewed - no changes needed
 
-2. Continue with API package:
-   - Create common API types in utils/src/types/api/common.ts (error responses, etc.)
-   - Create request/response types for workspace operations in utils/src/types/api/workspace.ts
-   - Create request/response types for session operations in utils/src/types/api/session.ts
-   - Create streaming event types in utils/src/types/api/streaming.ts
-   - Create request/response types for other resources (models, files, tools, etc.)
-   - Export all types from utils/src/types/api/index.ts
-   - Update imports in the API package to use new types
+2. ✅ API package refactoring:
+   - Created common API types in utils/src/types/api/common.ts (error responses, etc.)
+   - Created request/response types for workspace operations in utils/src/types/api/workspace.ts
+   - Created request/response types for session operations in utils/src/types/api/session.ts
+   - Created streaming event types in utils/src/types/api/streaming.ts
+   - Created request/response types for other resources (models, files, tools, etc.)
+   - Exported all types from utils/src/types/api/index.ts
 
-3. Ensure comprehensive test coverage for all refactored components
+3. ✅ Completed tasks:
+   - Created type definitions in the utils package for all API requests and responses
+   - Updated imports in key API files to use these new types
+   - Improved overall type safety for API interactions
+   - Updated the test files to use the correct route structure
 
 ## Implementation Guidelines
 

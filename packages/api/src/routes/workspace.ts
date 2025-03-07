@@ -3,6 +3,11 @@ import type { Managers, ManagerAccessors } from '../types';
 import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { sendError } from './utils';
+import { 
+  WorkspaceResponse, 
+  WorkspaceListResponse, 
+  CreateWorkspaceRequest 
+} from '@mandrake/utils/src/types/api';
 
 /**
  * Create routes for workspace management (CRUD operations on workspaces)
@@ -15,10 +20,10 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
     try {
       const workspaces = await managers.mandrakeManager.listWorkspaces();
       // Ensure we return objects with id, name, description, path
-      const workspaceList = workspaces.map(ws => ({
+      const workspaceList: WorkspaceListResponse = workspaces.map(ws => ({
         id: ws.id,
         name: ws.name, 
-        description: ws.description,
+        description: ws.description || null,
         path: ws.path
       }));
       return c.json(workspaceList);
@@ -30,7 +35,8 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
   // Create a new workspace
   app.post('/', async (c) => {
     try {
-      const { name, description, path } = await c.req.json();
+      const data = await c.req.json() as CreateWorkspaceRequest;
+      const { name, description, path } = data;
       
       if (!name || !path) {
         return c.json({ error: 'Name and path are required' }, 400);
@@ -77,12 +83,14 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
         return c.json({ error: 'Failed to find created workspace' }, 500);
       }
       
-      return c.json({
+      const response: WorkspaceResponse = {
         id: workspace.id,
         name: workspaceData.name,
-        description: des,
+        description: des || null,
         path: workspaceData.paths.root
-      }, 201);
+      };
+      
+      return c.json(response, 201);
     } catch (error) {
       return sendError(c, error, 'Failed to create workspace');
     }
@@ -97,12 +105,14 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
         const workspaceData = await managers.mandrakeManager.getWorkspace(workspaceId);
         const description = (await workspaceData.config.getConfig()).description;
         
-        return c.json({
+        const response: WorkspaceResponse = {
           id: workspaceId,
           name: workspaceData.name,
-          description: description,
+          description: description || null,
           path: workspaceData.paths.root
-        });
+        };
+        
+        return c.json(response);
       } catch (error) {
         // Specific handling for not found errors
         if ((error as Error).message.includes('not found')) {

@@ -1,7 +1,12 @@
 import { MandrakeManager, WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
+import { ErrorResponse } from '@mandrake/utils/src/types/api';
 
+// Re-export all API types from utils
+export * from '@mandrake/utils/src/types/api';
+
+// Internal types not exposed to clients
 export interface Managers {
   // System-level managers
   mandrakeManager: MandrakeManager;
@@ -29,11 +34,6 @@ export interface ApiEnv {
 
 export interface StreamingOptions {
   contentType: string;
-}
-
-export interface ErrorResponse {
-  error: string;
-  status?: number;
 }
 
 export type ErrorHandler = (error: unknown, message: string) => ErrorResponse;
