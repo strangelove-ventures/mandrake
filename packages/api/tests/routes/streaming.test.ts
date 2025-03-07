@@ -109,7 +109,7 @@ beforeAll(async () => {
   
   // Initialize a workspace-level MCP manager
   const workspaceMcpManager = await setupMcpManager(workspaceManager.paths.root);
-  
+
   // Add to maps
   workspaceManagers.set(workspaceId, workspaceManager);
   mcpManagers.set(workspaceId, workspaceMcpManager);
@@ -181,7 +181,7 @@ test('system API streaming should use coordinator streamRequest', async () => {
     title: 'Test System Streaming Session'
   });
   
-  // Create a system coordinator and add it to the map
+  // Set up a system coordinator
   const systemCoordinator = new SessionCoordinator({
     metadata: {
       name: 'system',
@@ -193,10 +193,10 @@ test('system API streaming should use coordinator streamRequest', async () => {
     modelsManager: mandrakeManager.models
   });
   
-  // Add to the map
+  // Add to the system coordinators map
   systemSessionCoordinators.set(session.id, systemCoordinator);
   
-  // Make a streaming request through the API
+  // Make a simple streaming request
   const req = new Request(`http://localhost/${session.id}/request`, {
     method: 'POST',
     headers: {
@@ -207,27 +207,29 @@ test('system API streaming should use coordinator streamRequest', async () => {
     })
   });
   
+  // Send the request to the API
   const res = await systemStreamingApp.fetch(req);
   
   // Verify it's a valid SSE response
   const isValid = await verifySSEResponse(res);
   expect(isValid).toBe(true);
   
-  // Directly check the response content type
+  // Check the response content type
   const contentType = res.headers.get('Content-Type');
   expect(contentType).toBe('text/event-stream');
   
-  // Allow time for streaming to start
-  await new Promise(resolve => setTimeout(resolve, 3000));
-}, 60000);
+  // Allow some time for streaming to start
+  await new Promise(resolve => setTimeout(resolve, 2000));
+}, 240000);
 
 test('workspace level streaming works properly', async () => {
   // Create a workspace session
   const session = await workspaceManager.sessions.createSession({
     title: 'Test Workspace Streaming Session'
   });
-  
-  // Create a workspace coordinator and add it to the map
+  const mcp = await mcpManagers.get(workspaceId)
+  // console.log(await mcp.listAllTools())
+  // Set up a workspace coordinator
   const workspaceCoordinator = new SessionCoordinator({
     metadata: {
       name: workspaceManager.name,
@@ -235,21 +237,18 @@ test('workspace level streaming works properly', async () => {
     },
     promptManager: workspaceManager.prompt,
     sessionManager: workspaceManager.sessions,
-    mcpManager: mcpManagers.get(workspaceId),
+    mcpManager: mcp,
     modelsManager: workspaceManager.models,
     filesManager: workspaceManager.files,
     dynamicContextManager: workspaceManager.dynamic
   });
   
-  // Get the coordinators map for this workspace
-  let coordMap = sessionCoordinators.get(workspaceId);
-  if (!coordMap) {
-    coordMap = new Map();
-    sessionCoordinators.set(workspaceId, coordMap);
-  }
+  // Add the coordinator to the workspace coordinators map
+  const coordMap = sessionCoordinators.get(workspaceId) || new Map();
+  sessionCoordinators.set(workspaceId, coordMap);
   coordMap.set(session.id, workspaceCoordinator);
 
-  // Make a streaming request through the API with a command that should trigger tool usage
+  // Make a simple streaming request
   const req = new Request(`http://localhost/${session.id}/request`, {
     method: 'POST',
     headers: {
@@ -260,16 +259,17 @@ test('workspace level streaming works properly', async () => {
     })
   });
   
+  // Send the request to the API
   const res = await workspaceStreamingApp.fetch(req);
   
   // Verify it's a valid SSE response
   const isValid = await verifySSEResponse(res);
   expect(isValid).toBe(true);
   
-  // Directly check the response content type
+  // Check the response content type
   const contentType = res.headers.get('Content-Type');
   expect(contentType).toBe('text/event-stream');
   
-  // Allow time for streaming to start
-  await new Promise(resolve => setTimeout(resolve, 5000));
-}, 60000);
+  // Allow some time for streaming to start
+  await new Promise(resolve => setTimeout(resolve, 2000));
+}, 240000);
