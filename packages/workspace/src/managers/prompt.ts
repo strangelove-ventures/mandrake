@@ -1,6 +1,5 @@
 import { readFile, writeFile } from 'fs/promises';
-import { createLogger } from '@mandrake/utils';
-import { type PromptConfig, promptConfigSchema } from '../types/workspace/prompt';
+import { createLogger, type PromptConfig, promptConfigSchema } from '@mandrake/utils';
 import { BaseConfigManager } from './base';
 
 export class PromptManager extends BaseConfigManager<PromptConfig> {

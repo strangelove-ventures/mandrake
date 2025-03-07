@@ -7,7 +7,7 @@ import {
   type ToolConfig,
   type ServerConfig,
   toolsConfigSchema 
-} from '../types/workspace/tools';
+} from '@mandrake/utils';
 
 export class ToolsManager extends BaseConfigManager<ToolsConfig> {
   constructor(path: string) {

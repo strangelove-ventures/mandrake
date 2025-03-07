@@ -1,5 +1,5 @@
 import { BaseConfigManager } from './base';
-import { mandrakeConfigSchema, type MandrakeConfig, type RegisteredWorkspace } from '../types';
+import { mandrakeConfigSchema, type MandrakeConfig, type RegisteredWorkspace } from '@mandrake/utils';
 
 export class MandrakeConfigManager extends BaseConfigManager<MandrakeConfig> {
     constructor(configPath: string) {

@@ -90,5 +90,4 @@ export * from './models/tokenization';
 export * from './common-types';
 
 // Export new shared types
-// Note: These will be uncommented as the types are implemented
-// export * from './types';
+export * from './types';

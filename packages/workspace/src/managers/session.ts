@@ -6,7 +6,7 @@ import { mkdir } from 'fs/promises';
 import Database from 'bun:sqlite';
 import { fileURLToPath } from 'url';
 import * as schema from '../session/db/schema';
-import { createLogger, type Logger } from '@mandrake/utils';
+import { createLogger, type Logger, type ToolCall } from '@mandrake/utils';
 
 const MIGRATIONS_PATH = process.env.NODE_ENV === 'test'
     ? '../session/db/migrations'  // Source context for workspace tests
@@ -117,7 +117,7 @@ export class SessionManager {
         rounds: (Round & {
             request: Request;
             response: Response & {
-                turns: (Turn & { parsedToolCalls: import('../session/db/schema/turns').ToolCall })[];
+                turns: (Turn & { parsedToolCalls: ToolCall })[];
             };
         })[];
     }> {
@@ -283,7 +283,7 @@ export class SessionManager {
         index?: number;
         content: string;
         rawResponse: string;
-        toolCalls?: string | import('../session/db/schema/turns').ToolCall;
+        toolCalls?: string | ToolCall;
         status?: 'streaming' | 'completed' | 'error';
         inputTokens: number;
         outputTokens: number;
@@ -325,7 +325,7 @@ export class SessionManager {
         // Content fields
         rawResponse?: string;
         content?: string;
-        toolCalls?: import('../session/db/schema/turns').ToolCall;
+        toolCalls?: ToolCall;
 
         // Streaming status fields  
         status?: 'streaming' | 'completed' | 'error';
@@ -436,7 +436,7 @@ export class SessionManager {
     /**
      * List turns for a response with parsed toolCalls
      */
-    async listTurnsWithParsedToolCalls(responseId: string): Promise<(Turn & { parsedToolCalls: import('../session/db/schema/turns').ToolCall })[]> {
+    async listTurnsWithParsedToolCalls(responseId: string): Promise<(Turn & { parsedToolCalls: ToolCall })[]> {
         const turns = await this.listTurns(responseId);
         return turns.map(turn => ({
             ...turn,
@@ -447,7 +447,7 @@ export class SessionManager {
     /**
      * Parse toolCalls JSON string into a ToolCall object
      */
-    private parseToolCalls(toolCallsJson: string): import('../session/db/schema/turns').ToolCall {
+    private parseToolCalls(toolCallsJson: string): ToolCall {
         try {
             return JSON.parse(toolCallsJson);
         } catch (error) {
@@ -459,7 +459,7 @@ export class SessionManager {
     /**
      * Get a turn with parsed toolCalls
      */
-    async getTurnWithParsedToolCalls(id: string): Promise<Turn & { parsedToolCalls: import('../session/db/schema/turns').ToolCall }> {
+    async getTurnWithParsedToolCalls(id: string): Promise<Turn & { parsedToolCalls: ToolCall }> {
         const turn = await this.getTurn(id);
         return {
             ...turn,

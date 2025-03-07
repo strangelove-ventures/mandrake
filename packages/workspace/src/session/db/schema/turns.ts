@@ -1,20 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core';
 import { responses } from './responses';
-import { z } from 'zod';
-
-// Define the schema for tool calls
-// The schema matches the format used in the session coordinator
-export const toolCallSchema = z.object({
-  call: z.object({
-    serverName: z.string(),
-    methodName: z.string(),
-    arguments: z.record(z.any())
-  }).nullable(),
-  response: z.any().nullable()
-});
-
-export type ToolCall = z.infer<typeof toolCallSchema>;
+import { toolCallSchema, type ToolCall } from '@mandrake/utils';
 
 export const turns = sqliteTable('turns', {
   id: text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),

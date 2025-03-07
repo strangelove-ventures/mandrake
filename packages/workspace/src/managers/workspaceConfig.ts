@@ -1,5 +1,5 @@
 import { BaseConfigManager } from './base';
-import { workspaceSchema, type Workspace } from '../types';
+import { workspaceSchema, type Workspace } from '@mandrake/utils';
 
 export class WorkspaceConfigManager extends BaseConfigManager<Workspace> {
     private workspaceId: string;

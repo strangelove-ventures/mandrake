@@ -1,7 +1,6 @@
-import { createLogger } from '@mandrake/utils';
+import { createLogger, type FileInfo } from '@mandrake/utils';
 import { join } from 'path';
 import { mkdir, readFile, writeFile, readdir, rm } from 'fs/promises';
-import { type FileInfo } from '../types/workspace/files';
 
 export class FilesManager {
   private logger;
