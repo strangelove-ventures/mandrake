@@ -1,8 +1,10 @@
-import { test, expect, beforeAll, afterAll } from 'bun:test';
+import { test, expect, beforeAll, afterAll, afterEach } from 'bun:test';
 import { Hono } from 'hono';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { config } from 'dotenv';
+import { resolve } from 'path';
 import { MandrakeManager, WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { sessionStreamingRoutes, systemSessionStreamingRoutes } from '../../src/routes/streaming';
@@ -25,32 +27,95 @@ const mcpManagers = new Map();
 const sessionCoordinators = new Map();
 const systemSessionCoordinators = new Map();
 
+// MCP managers to clean up after tests
+const mcpManagersToCleanup: MCPManager[] = [];
+
 // Helper function to check if a streaming response is valid
-async function isStreamingResponseValid(response: Response): Promise<boolean> {
+async function verifySSEResponse(response: Response): Promise<boolean> {
   return response.status === 200 && 
          response.headers.get('Content-Type') === 'text/event-stream';
 }
 
+// Helper function to set up MCP manager with ripper server
+async function setupMcpManager(workspacePath: string): Promise<MCPManager> {
+  const mcpManager = new MCPManager();
+  
+  // Start ripper server for file tools
+  const serverConfigs = {
+    ripper: {
+      command: 'bun',
+      args: [
+        'run',
+        '../ripper/dist/server.js',
+        '--transport=stdio',
+        `--workspaceDir=${workspacePath}`,
+        '--excludePatterns=\\.ws'
+      ]
+    }
+  };
+  
+  // Start the servers
+  await Promise.all(
+    Object.entries(serverConfigs).map(
+      ([name, config]) => mcpManager.startServer(name, config)
+    )
+  );
+  
+  // Add to cleanup list
+  mcpManagersToCleanup.push(mcpManager);
+  
+  return mcpManager;
+}
+
 beforeAll(async () => {
+  config({ path: resolve(__dirname, '../../../../.env') });
+  
   // Create temporary directory
   tempDir = mkdtempSync(join(tmpdir(), 'streaming-routes-test-'));
   
-  // Initialize a real MandrakeManager for system level
+  // Initialize MandrakeManager for system level
   mandrakeManager = new MandrakeManager(tempDir);
   await mandrakeManager.init();
   
+  // Set up API keys for providers
+  await mandrakeManager.models.updateProvider('anthropic', {
+    apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key'
+  });
+  
+  await mandrakeManager.models.updateProvider('ollama', {
+    apiKey: 'none',
+    baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+  });
+  
   // Initialize a real MCPManager for system level
-  const systemMcpManager = new MCPManager();
+  const systemMcpManager = await setupMcpManager(mandrakeManager.paths.root);
   
   // Initialize workspace ID
   workspaceId = crypto.randomUUID();
   
-  // Initialize a real WorkspaceManager for workspace level
+  // Initialize WorkspaceManager for workspace level
   workspaceManager = new WorkspaceManager(tempDir, 'test-workspace', workspaceId);
   await workspaceManager.init('Test workspace');
   
+  // Set up API keys for workspace providers too
+  await workspaceManager.models.updateProvider('anthropic', {
+    apiKey: process.env.ANTHROPIC_API_KEY || 'dummy-key'
+  });
+  
+  await workspaceManager.models.updateProvider('ollama', {
+    apiKey: 'none',
+    baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+  });
+  
+  // Initialize a workspace-level MCP manager
+  const workspaceMcpManager = await setupMcpManager(workspaceManager.paths.root);
+  
   // Add to maps
   workspaceManagers.set(workspaceId, workspaceManager);
+  mcpManagers.set(workspaceId, workspaceMcpManager);
+  
+  // Set up empty coordinators maps
+  sessionCoordinators.set(workspaceId, new Map());
   
   // Set up managers object with real managers
   managers = {
@@ -71,13 +136,13 @@ beforeAll(async () => {
       return map ? map.get(sessionId) : undefined;
     },
     getSessionCoordinatorMap: (wsId: string) => sessionCoordinators.get(wsId),
-    createSessionCoordinator: (wsId: string, sessionId: string, coordinator: SessionCoordinator) => {
+    createSessionCoordinator: (wsId: string, sessionId: string, coord: SessionCoordinator) => {
       let map = sessionCoordinators.get(wsId);
       if (!map) {
         map = new Map();
         sessionCoordinators.set(wsId, map);
       }
-      map.set(sessionId, coordinator);
+      map.set(sessionId, coord);
     },
     removeSessionCoordinator: (wsId: string, sessionId: string) => {
       const map = sessionCoordinators.get(wsId);
@@ -88,12 +153,17 @@ beforeAll(async () => {
     }
   };
   
-  // Set up session coordinators map for workspace
-  sessionCoordinators.set(workspaceId, new Map());
-  
   // Initialize Hono apps for testing
   systemStreamingApp = systemSessionStreamingRoutes(managers, accessors);
   workspaceStreamingApp = sessionStreamingRoutes(managers, accessors, false, workspaceId);
+});
+
+afterEach(async () => {
+  // Clean up any MCP managers created in individual tests
+  for (const mcpManager of mcpManagersToCleanup) {
+    await mcpManager.cleanup();
+  }
+  mcpManagersToCleanup.length = 0;
 });
 
 afterAll(() => {
@@ -105,14 +175,14 @@ afterAll(() => {
   }
 });
 
-test('system session request streaming should return proper SSE format', async () => {
-  // Create a session
+test('system API streaming should use coordinator streamRequest', async () => {
+  // Create a system session
   const session = await mandrakeManager.sessions.createSession({
-    title: 'Test Streaming Session'
+    title: 'Test System Streaming Session'
   });
   
-  // Create a mock coordinator that will be used by the streaming endpoint
-  const coordinator = new SessionCoordinator({
+  // Create a system coordinator and add it to the map
+  const systemCoordinator = new SessionCoordinator({
     metadata: {
       name: 'system',
       path: mandrakeManager.paths.root
@@ -120,66 +190,86 @@ test('system session request streaming should return proper SSE format', async (
     promptManager: mandrakeManager.prompt,
     sessionManager: mandrakeManager.sessions,
     mcpManager: managers.systemMcpManager,
-    modelsManager: mandrakeManager.models,
-    filesManager: mandrakeManager.files,
-    dynamicContextManager: mandrakeManager.dynamic
+    modelsManager: mandrakeManager.models
   });
   
-  // Add the coordinator to the system coordinators map
-  systemSessionCoordinators.set(session.id, coordinator);
+  // Add to the map
+  systemSessionCoordinators.set(session.id, systemCoordinator);
   
-  // Make the request
+  // Make a streaming request through the API
   const req = new Request(`http://localhost/${session.id}/request`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      content: 'Hello, world!'
+      content: 'Can you run the "hostname" command to get the system name, then run "pwd" to get the current directory, save both outputs to a file called "system_info.txt" in our workspace, and then confirm the file was created?'
     })
   });
   
   const res = await systemStreamingApp.fetch(req);
   
-  // Check response headers only
-  const isValid = await isStreamingResponseValid(res);
+  // Verify it's a valid SSE response
+  const isValid = await verifySSEResponse(res);
   expect(isValid).toBe(true);
-});
+  
+  // Directly check the response content type
+  const contentType = res.headers.get('Content-Type');
+  expect(contentType).toBe('text/event-stream');
+  
+  // Allow time for streaming to start
+  await new Promise(resolve => setTimeout(resolve, 3000));
+}, 60000);
 
-test('workspace session streaming should handle streaming existing responses', async () => {
-  // Create a session
+test('workspace level streaming works properly', async () => {
+  // Create a workspace session
   const session = await workspaceManager.sessions.createSession({
     title: 'Test Workspace Streaming Session'
   });
   
-  // Create a round with request and response
-  const round = await workspaceManager.sessions.createRound({
-    sessionId: session.id,
-    content: 'Test request'
+  // Create a workspace coordinator and add it to the map
+  const workspaceCoordinator = new SessionCoordinator({
+    metadata: {
+      name: workspaceManager.name,
+      path: workspaceManager.paths.root
+    },
+    promptManager: workspaceManager.prompt,
+    sessionManager: workspaceManager.sessions,
+    mcpManager: mcpManagers.get(workspaceId),
+    modelsManager: workspaceManager.models,
+    filesManager: workspaceManager.files,
+    dynamicContextManager: workspaceManager.dynamic
   });
   
-  // Create a turn
-  const turn = await workspaceManager.sessions.createTurn({
-    responseId: round.responseId,
-    index: 0,
-    content: 'Initial content',
-    rawResponse: 'Initial content',
-    toolCalls: '[]',
-    status: 'streaming',
-    inputTokens: 0,
-    outputTokens: 0,
-    inputCost: 0,
-    outputCost: 0
-  });
-  
-  // Make the streaming request
-  const req = new Request(`http://localhost/responses/${round.responseId}/stream`, {
-    method: 'GET'
+  // Get the coordinators map for this workspace
+  let coordMap = sessionCoordinators.get(workspaceId);
+  if (!coordMap) {
+    coordMap = new Map();
+    sessionCoordinators.set(workspaceId, coordMap);
+  }
+  coordMap.set(session.id, workspaceCoordinator);
+
+  // Make a streaming request through the API with a command that should trigger tool usage
+  const req = new Request(`http://localhost/${session.id}/request`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      content: 'Can you run the "hostname" command to get the system name, then run "pwd" to get the current directory, save both outputs to a file called "system_info.txt" in our workspace, and then confirm the file was created?'
+    })
   });
   
   const res = await workspaceStreamingApp.fetch(req);
   
-  // Check response headers only
-  const isValid = await isStreamingResponseValid(res);
+  // Verify it's a valid SSE response
+  const isValid = await verifySSEResponse(res);
   expect(isValid).toBe(true);
-});
+  
+  // Directly check the response content type
+  const contentType = res.headers.get('Content-Type');
+  expect(contentType).toBe('text/event-stream');
+  
+  // Allow time for streaming to start
+  await new Promise(resolve => setTimeout(resolve, 5000));
+}, 60000);

@@ -99,7 +99,7 @@ export class SessionCoordinator {
     return {
       [Symbol.asyncIterator]() {
         let buffer: any[] = [];
-        let resolveNext: ((value: IteratorResult<any>) => void) | null = null;
+        let resolveNext: ((value: IteratorResult<any, any>) => void) | null = null;
         let done = false;
         let removeListener: (() => void) | null = null;
         
@@ -113,7 +113,7 @@ export class SessionCoordinator {
             if (resolveNext) {
               const next = resolveNext;
               resolveNext = null;
-              next({ done: false, value: buffer.shift() });
+              next({ done: false, value: buffer.shift() } as IteratorResult<any, any>);
             }
             
             // Mark done when the last turn is completed
@@ -141,7 +141,7 @@ export class SessionCoordinator {
                 if (resolveNext && buffer.length === 0) {
                   const next = resolveNext;
                   resolveNext = null;
-                  next({ done: true, value: undefined });
+                  (next as any)({ done: true, value: undefined });
                   
                   // Remove the listener since we're done
                   if (removeListener) {
@@ -158,7 +158,7 @@ export class SessionCoordinator {
         setupListener();
         
         return {
-          next(): Promise<IteratorResult<any>> {
+          next(): Promise<IteratorResult<any, any>> {
             return new Promise((resolve) => {
               // If we have items in the buffer, return the next one
               if (buffer.length > 0) {
@@ -181,7 +181,7 @@ export class SessionCoordinator {
             });
           },
           
-          return(): Promise<IteratorResult<any>> {
+          return(): Promise<IteratorResult<any, any>> {
             // Clean up when the iterator is closed early
             if (removeListener) {
               removeListener();
