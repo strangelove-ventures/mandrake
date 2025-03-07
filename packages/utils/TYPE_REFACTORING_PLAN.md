@@ -114,7 +114,7 @@ To ensure that type changes in the utils package properly propagate through the 
 Each package will have a detailed refactoring plan:
 
 1. **workspace**: ✅ COMPLETED
-2. **mcp**: [packages/utils/src/types/mcp/REFACTORING_PLAN.md](planned)
+2. **mcp**: ✅ COMPLETED
 3. **provider**: [packages/utils/src/types/provider/REFACTORING_PLAN.md](planned)
 4. **session**: [packages/utils/src/types/session/REFACTORING_PLAN.md](planned)
 5. **api**: [packages/utils/src/types/api/REFACTORING_PLAN.md](planned)
@@ -146,14 +146,32 @@ We have successfully completed the workspace package refactoring:
 
 4. ✅ Updated the SessionManager to use entity types in its public API
 
+### MCP Package (COMPLETED)
+
+We have successfully completed the MCP package refactoring:
+
+1. ✅ Moved all MCP types to the utils package:
+   - Server types (`MCPServerConfig`, `ServerState`, `MCPServer`)
+   - Transport types (`MCPConnection`, `TransportType`, `TransportOptions`)
+   - Tool types (`MCPToolWithServer`, `ToolWithServerIdentifier`, `ToolInvocationResponse`, `ToolArguments`)
+
+2. ✅ Resolved naming conflicts with workspace types:
+   - Renamed `ServerConfig` to `MCPServerConfig`
+   - Renamed `ToolWithServer` to `MCPToolWithServer`
+
+3. ✅ Updated the MCP package to use the new types:
+   - Created re-export types for backward compatibility
+   - Updated imports in server.ts, manager.ts, and transport/index.ts
+   - Fixed all tests to work with the new type structure
+
 ### Next Steps
 
-1. Proceed with MCP package refactoring:
-   - Move MCP server types to utils
-   - Move transport types to utils
-   - Move MCP tools types to utils
+1. Proceed with Provider package refactoring:
+   - Move provider base types to utils
+   - Move provider-specific types to utils
+   - Move model types to utils
 
-2. Continue with Provider, Session, and API packages in order
+2. Continue with Session and API packages in order
 
 3. Ensure comprehensive test coverage for all refactored components
 

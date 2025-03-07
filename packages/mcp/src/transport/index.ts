@@ -1,4 +1,5 @@
 import type { ServerConfig } from '../types'
+import { TransportType } from '@mandrake/utils/src/types/mcp'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import { createLogger } from '@mandrake/utils';

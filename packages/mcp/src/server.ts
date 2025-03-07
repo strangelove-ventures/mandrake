@@ -5,6 +5,7 @@ import type { Stream } from 'node:stream'
 import { TransportFactory } from './transport'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type { ServerConfig, ServerState } from './types'
+import type { MCPServer as IMCPServer } from '@mandrake/utils/src/types/mcp'
 
 // Default client config 
 const CLIENT_CONFIG = {
@@ -17,15 +18,9 @@ const CLIENT_CONFIG = {
   },
 }
 
-export interface MCPServer {
-  getId(): string
-  start(): Promise<void>
-  stop(): Promise<void>
-  listTools(): Promise<Tool[]>
-  invokeTool(name: string, params: any): Promise<any>
-}
+// Using the interface from utils
 
-export class MCPServerImpl implements MCPServer {
+export class MCPServerImpl implements IMCPServer {
   private client?: Client
   private transport?: ReturnType<typeof TransportFactory.create>
   private logBuffer: LogBuffer

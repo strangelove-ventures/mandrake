@@ -10,7 +10,6 @@ const WORKSPACE_DIR = join(TEST_DIR, 'ws')
 const SERVER_CONFIG: ServerConfig = {
     command: 'bun',
     args: [
-        'run',
         join(process.cwd(), '../ripper/dist/server.js'),
         '--transport=stdio',
         `--workspaceDir=${WORKSPACE_DIR}`,

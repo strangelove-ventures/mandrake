@@ -2,6 +2,7 @@ import { MCPServerImpl } from './server'
 import { createLogger } from '@mandrake/utils'
 import type { ServerConfig, ServerState } from './types'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
+import type { ToolWithServerIdentifier } from '@mandrake/utils/src/types/mcp'
 
 export class MCPManager {
   private servers: Map<string, MCPServerImpl>
@@ -53,8 +54,8 @@ export class MCPManager {
     await this.startServer(id, config)
   }
 
-  async listAllTools(): Promise<Array<Tool & { server: string }>> {
-    const allTools: Array<Tool & { server: string }> = []
+  async listAllTools(): Promise<ToolWithServerIdentifier[]> {
+    const allTools: ToolWithServerIdentifier[] = []
     
     for (const [id, server] of this.servers) {
       if (!server.getConfig().disabled) {
