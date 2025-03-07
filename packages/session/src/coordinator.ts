@@ -1,7 +1,6 @@
 import { type Logger, createLogger, getTokenCounter, getModelInfo, type Message } from '@mandrake/utils';
 import type { SessionCoordinatorOptions, Context } from './types';
-import { ContextBuildError, MessageProcessError, ToolCallError } from './errors';
-import { XmlTags } from './prompt/types';
+import { MessageProcessError } from './errors';
 import { setupProviderFromManager } from './utils/provider';
 import { convertSessionToMessages } from './utils/messages';
 import { type SystemPromptBuilderConfig, SystemPromptBuilder } from './prompt/builder';
@@ -124,7 +123,7 @@ export class SessionCoordinator {
               // Need to parse the toolCalls string to check
               let hasToolCalls = false;
               try {
-                const toolCallsObj = JSON.parse(turn.toolCalls);
+                const toolCallsObj = typeof turn.toolCalls === 'string' ? JSON.parse(turn.toolCalls) : turn.toolCalls;
                 hasToolCalls = !!(toolCallsObj && toolCallsObj.call && 
                                  Object.keys(toolCallsObj.call).length > 0);
               } catch (e) {

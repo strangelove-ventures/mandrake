@@ -51,12 +51,6 @@ packages/
 │           │   ├── anthropic.ts
 │           │   ├── ollama.ts
 │           │   └── xai.ts
-│           ├── session/                   # Session types
-│           │   ├── index.ts
-│           │   ├── session.ts
-│           │   ├── messages.ts
-│           │   ├── prompt.ts
-│           │   └── streaming.ts
 │           └── api/                       # API types
 │               ├── index.ts
 │               ├── routes.ts
@@ -116,7 +110,7 @@ Each package will have a detailed refactoring plan:
 1. **workspace**: ✅ COMPLETED
 2. **mcp**: ✅ COMPLETED
 3. **provider**: ✅ COMPLETED
-4. **session**: [packages/utils/src/types/session/REFACTORING_PLAN.md](planned)
+4. **session**: ✅ COMPLETED - Manually reviewed, no changes needed
 5. **api**: [packages/utils/src/types/api/REFACTORING_PLAN.md](planned)
 
 ## Implementation Progress
@@ -184,14 +178,28 @@ We have successfully completed the provider package refactoring:
    - Created proper re-exports for backward compatibility
    - Fixed tests to work with the new type structure
 
+### Session Package (COMPLETED)
+
+We have reviewed the session package:
+
+1. ✅ Determined that no type refactoring is needed:
+   - The package does not have types that need to be extracted
+   - The package uses types already defined in other packages
+   - No circular dependencies or other issues were found
+
 ### Next Steps
 
-1. Proceed with Session package refactoring:
-   - Move session types to utils
-   - Move message types to utils
-   - Move prompt types to utils
+1. ✅ Session package refactoring:
+   - Session package manually reviewed - no changes needed
 
-2. Continue with API package
+2. Continue with API package:
+   - Create common API types in utils/src/types/api/common.ts (error responses, etc.)
+   - Create request/response types for workspace operations in utils/src/types/api/workspace.ts
+   - Create request/response types for session operations in utils/src/types/api/session.ts
+   - Create streaming event types in utils/src/types/api/streaming.ts
+   - Create request/response types for other resources (models, files, tools, etc.)
+   - Export all types from utils/src/types/api/index.ts
+   - Update imports in the API package to use new types
 
 3. Ensure comprehensive test coverage for all refactored components
 

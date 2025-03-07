@@ -1,7 +1,5 @@
-import type { ToolCall } from '../workspace/tools-internal';
-
 /**
- * Session entity representing a conversation session
+ * Session entity interface
  */
 export interface SessionEntity {
   id: string;
@@ -13,7 +11,7 @@ export interface SessionEntity {
 }
 
 /**
- * Request entity representing a user message
+ * Request entity interface
  */
 export interface RequestEntity {
   id: string;
@@ -23,16 +21,17 @@ export interface RequestEntity {
 }
 
 /**
- * Response entity representing an assistant response container
+ * Response entity interface
  */
 export interface ResponseEntity {
   id: string;
+  turns?: TurnEntity[];
   createdAt: Date;
   updatedAt: Date;
 }
 
 /**
- * Round entity representing a user-assistant exchange
+ * Round entity interface
  */
 export interface RoundEntity {
   id: string;
@@ -45,46 +44,7 @@ export interface RoundEntity {
 }
 
 /**
- * Turn entity representing a chunk of assistant response
- */
-export interface TurnEntity {
-  id: string;
-  responseId: string;
-  index: number;
-  
-  // Content fields
-  rawResponse: string;
-  content: string;
-  toolCalls: string | ToolCall;
-  
-  // Streaming status fields
-  status: 'streaming' | 'completed' | 'error';
-  streamStartTime: number;
-  streamEndTime?: number;
-  currentTokens: number;
-  expectedTokens?: number;
-  
-  // Token metrics
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens?: number;
-  cacheWriteTokens?: number;
-  inputCost: number;
-  outputCost: number;
-  
-  createdAt: Date;
-  updatedAt: Date;
-}
-
-/**
- * Turn entity with parsed tool calls
- */
-export interface TurnWithToolCallsEntity extends TurnEntity {
-  parsedToolCalls: ToolCall;
-}
-
-/**
- * Round entity with request and response data
+ * Round with related data entity interface
  */
 export interface RoundWithDataEntity extends RoundEntity {
   request: RequestEntity;
@@ -94,7 +54,47 @@ export interface RoundWithDataEntity extends RoundEntity {
 }
 
 /**
- * Session history entity with rounds data
+ * Session tool call interface
+ */
+export interface SessionToolCall {
+  call: any | null;
+  response?: any | null;
+}
+
+/**
+ * Turn entity interface
+ */
+export interface TurnEntity {
+  id: string;
+  responseId: string;
+  index: number;
+  rawResponse: string;
+  content: string;
+  toolCalls: string;
+  status: 'streaming' | 'completed' | 'error';
+  streamStartTime: number;
+  streamEndTime?: number;
+  currentTokens: number;
+  expectedTokens?: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
+  inputCost: number;
+  outputCost: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/**
+ * Turn with parsed tool calls entity interface
+ */
+export interface TurnWithToolCallsEntity extends TurnEntity {
+  parsedToolCalls: SessionToolCall;
+}
+
+/**
+ * Session history entity interface
  */
 export interface SessionHistoryEntity {
   session: SessionEntity;

@@ -9,6 +9,7 @@
  * - Prompt
  * - Models
  * - Configuration
+ * - Session entities
  */
 
 export * from './workspace';
@@ -18,3 +19,4 @@ export * from './tools-internal';
 export * from './dynamic';
 export * from './prompt';
 export * from './config';
+export * from './entities';

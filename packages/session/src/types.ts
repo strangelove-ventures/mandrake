@@ -1,4 +1,3 @@
-import type { Tool, CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { 
   Logger 
 } from '@mandrake/utils';
@@ -14,8 +13,6 @@ import {
   DynamicContextManager, 
   SessionManager,
   ModelsManager,
-  type PromptConfig, 
-  type FileInfo,
 } from "@mandrake/workspace"
 
 export interface Context {

@@ -1,17 +1,7 @@
-import type { TokenCounter, Message } from '@mandrake/utils';
-import type { Session, Round, Request, Response, Turn } from '@mandrake/workspace';
+import type { TokenCounter, Message, SessionHistoryEntity} from '@mandrake/utils';
+import type { } from '@mandrake/workspace';
 import type { TrimStrategy } from './trim';
 import { StandardTrimStrategy } from './trim';
-
-interface SessionHistory {
-  session: Session;
-  rounds: (Round & {
-    request: Request;
-    response: Response & {
-      turns: Turn[];
-    };
-  })[];
-}
 
 /**
  * Format a tool call into XML
@@ -56,7 +46,7 @@ ${JSON.stringify(error, null, 2)}
  * @returns Array of messages for the provider
  */
 export function convertSessionToMessages(
-  history: SessionHistory,
+  history: SessionHistoryEntity,
   options?: {
     maxTokens?: number,
     tokenCounter?: TokenCounter,
@@ -106,7 +96,7 @@ export function convertSessionToMessages(
         // Add tool calls and results if present
         if (turn.toolCalls) {
           try {
-            const toolCallsData = JSON.parse(turn.toolCalls);
+            const toolCallsData = typeof turn.toolCalls === 'string' ? JSON.parse(turn.toolCalls) : turn.toolCalls;
             
             // Handle the case where we have a call and response
             if (toolCallsData.call && toolCallsData.call.serverName && toolCallsData.call.methodName) {

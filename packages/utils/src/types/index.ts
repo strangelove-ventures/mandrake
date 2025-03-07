@@ -9,5 +9,4 @@ export * from './base';
 export * from './workspace';
 export * from './mcp';
 export * from './provider';
-export * from './session';
 export * from './api';
