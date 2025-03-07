@@ -4,7 +4,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "apps/*"
+    "apps/*",
+    "web"
   ],
   "scripts": {
     "build": "bun run build:packages && bun run build:web",
@@ -16,7 +17,7 @@
     "build:provider": "bun run --cwd packages/provider build",
     "build:session": "bun run --cwd packages/session build",
     "build:api": "bun run --cwd packages/api build",
-    "build:web": "bun run --cwd apps/web build",
+    "build:web": "bun run --cwd web build",
     "test": "bun run test:packages && bun run test:web",
     "test:packages": "bun run build:packages && bun run test:utils && bun run test:workspace && bun run test:mcp && bun run test:provider && bun run test:session && bun run test:api",
     "test:utils": "bun run --cwd packages/utils test",
@@ -25,14 +26,15 @@
     "test:provider": "bun run --cwd packages/utils build && bun run --cwd packages/provider test",
     "test:session": "bun run build:session-deps && bun run --cwd packages/session test",
     "test:api": "bun run --cwd packages/api test",
-    "test:web": "bun run --cwd apps/web test",
+    "test:web": "bun run --cwd web test",
     "dev": "bun run dev:all",
-    "dev:all": "bun run dev:api & bun run dev:web",
-    "dev:api": "PORT=4000 bun run --cwd packages/api dev",
-    "dev:web": "PORT=3000 bun run --cwd apps/web dev",
+    "dev:all": "bash -c 'trap \"kill 0\" EXIT; bun run dev:api & bun run dev:web & wait'",
+    "dev:api": "MANDRAKE_HOME=/Users/johnzampolin/.mandrake PORT=4000 bun run --cwd packages/api dev",
+    "dev:web": "PORT=3000 bun run --cwd web dev",
+    "dev:web-only": "PORT=3000 OFFLINE_MODE=true bun run --cwd web dev",
     "lint": "bun run lint:packages && bun run lint:web",
     "lint:packages": "bun run --cwd packages/* lint",
-    "lint:web": "bun run --cwd apps/web lint",
+    "lint:web": "bun run --cwd web lint",
     "clean": "bun run clean:packages && bun run clean:web",
     "clean:mcp": "bun run --cwd packages/mcp clean",
     "clean:provider": "bun run --cwd packages/provider clean",
@@ -41,7 +43,7 @@
     "clean:workspace": "bun run --cwd packages/workspace clean",
     "clean:packages": "bun run clean:utils && bun run clean:workspace && bun run clean:mcp && bun run clean:provider && bun run clean:session && bun run clean:api",
     "clean:api": "bun run --cwd packages/api clean",
-    "clean:web": "bun run --cwd apps/web clean"
+    "clean:web": "bun run --cwd web clean"
   },
   "devDependencies": {
     "@types/node": "latest",

@@ -10,7 +10,7 @@ import { createLogger, type Logger } from '@mandrake/utils';
 
 const MIGRATIONS_PATH = process.env.NODE_ENV === 'test'
     ? '../session/db/migrations'  // Source context for workspace tests
-    : join(__dirname, '../migrations');  // Built context for dependents
+    : '../session/db/migrations';  // Built context for dependents
 type Session = typeof schema.sessions.$inferSelect;
 type Request = typeof schema.requests.$inferSelect;
 type Response = typeof schema.responses.$inferSelect;
