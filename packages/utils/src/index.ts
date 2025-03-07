@@ -83,7 +83,12 @@ export function createLogger(packageName: string, options: LoggerOptions = {}): 
   });
 }
 
+// Export existing model-related types
 export * from './models/schemas';
 export * from './models/models';
 export * from './models/tokenization';
 export * from './common-types';
+
+// Export new shared types
+// Note: These will be uncommented as the types are implemented
+// export * from './types';
