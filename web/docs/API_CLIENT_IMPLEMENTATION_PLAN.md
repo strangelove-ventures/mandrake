@@ -1,38 +1,33 @@
-# API Client Implementation Plan
+# API Client Implementation Plan (Updated)
 
 ## Overview
 
-The API client will provide a clean, typed interface to interact with the Mandrake backend API. It will handle requests, response parsing, error handling, and provide proper TypeScript types for all operations.
+The API client will provide a clean, typed interface to interact with the Mandrake backend API. It will handle requests, response parsing, error handling, and provide proper TypeScript types for all operations. The client will leverage the shared types that have been refactored to the `@mandrake/utils` package, providing consistent typing across the entire application.
 
 ## Key Requirements
 
-1. Type-safe API calls with proper return types
+1. Type-safe API calls with proper return types using the shared types from `@mandrake/utils`
 2. Consistent error handling
 3. Support for both system-level and workspace-level resources
 4. Support for streaming responses (for session messages)
 5. Integration with React Query for data fetching and caching
 6. Automatic request cancellation when components unmount
 
-## Location Options
+## Implementation Location
 
-We have two potential locations for the API client:
-
-1. **packages/api/src/client**: This would make the client available to all packages
-2. **web/src/lib/api-client**: This would keep the client focused on web app needs
-
-**Recommendation**: Place the client in **web/src/lib/api-client** as it's primarily for the web app and can be tailored to the web app's needs. If other packages need API access later, we can refactor.
+We will implement the API client in **web/src/lib/api** as it's primarily for the web application's needs. This separation allows us to focus on frontend-specific concerns while still utilizing the shared types.
 
 ## API Client Structure
 
 ```sh
-web/src/lib/api-client/
+web/src/lib/api/
 ├── index.ts              # Main exports
-├── types.ts              # Shared types
-├── utils/
+├── core/
 │   ├── fetcher.ts        # Base fetch utility
 │   ├── errors.ts         # Error handling
-│   └── parsing.ts        # Response parsing
-└── endpoints/
+│   ├── streaming.ts      # Streaming support
+│   └── types.ts          # Client-specific types
+└── resources/
     ├── workspaces.ts     # Workspace management
     ├── sessions.ts       # Session management
     ├── files.ts          # File operations
@@ -45,12 +40,45 @@ web/src/lib/api-client/
 
 ## Implementation Approach
 
-### 1. Base Fetcher Utility
+### 1. Types Integration
+
+The first step is to integrate types from the utils package:
+
+```typescript
+// web/src/lib/api/core/types.ts
+import {
+  WorkspaceResponse,
+  WorkspaceListResponse,
+  CreateWorkspaceRequest,
+  UpdateWorkspaceRequest,
+  SessionResponse,
+  // ... other API types
+} from '@mandrake/utils/dist/types/api';
+
+// Re-export the types
+export {
+  WorkspaceResponse,
+  WorkspaceListResponse,
+  CreateWorkspaceRequest,
+  UpdateWorkspaceRequest,
+  SessionResponse,
+  // ... other API types
+}
+
+// Client-specific types
+export type ApiClientOptions = {
+  baseUrl?: string;
+  defaultHeaders?: Record<string, string>;
+}
+```
+
+### 2. Base Fetcher Utility
 
 Create a base fetcher utility that handles common concerns:
 
 ```typescript
-// web/src/lib/api-client/utils/fetcher.ts
+// web/src/lib/api/core/fetcher.ts
+import { ErrorResponse } from '@mandrake/utils/dist/types/api';
 import { ApiError } from './errors';
 
 export type FetchOptions = {
@@ -60,55 +88,76 @@ export type FetchOptions = {
   signal?: AbortSignal;
 };
 
-export async function fetchJson<T>(url: string, options: FetchOptions = {}): Promise<T> {
-  const { method = 'GET', body, headers = {}, signal } = options;
-  
-  const response = await fetch(url, {
-    method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...headers,
-    },
-    body: body ? JSON.stringify(body) : undefined,
-    signal,
-  });
+export class ApiClient {
+  private baseUrl: string;
+  private defaultHeaders: Record<string, string>;
 
-  const contentType = response.headers.get('Content-Type') || '';
-  
-  if (!response.ok) {
-    const errorData = contentType.includes('application/json') 
-      ? await response.json() 
-      : await response.text();
-      
-    throw new ApiError(response.status, errorData);
+  constructor(options: {
+    baseUrl?: string;
+    defaultHeaders?: Record<string, string>;
+  } = {}) {
+    this.baseUrl = options.baseUrl || '/api';
+    this.defaultHeaders = options.defaultHeaders || {};
   }
-  
-  if (contentType.includes('application/json')) {
-    return await response.json() as T;
+
+  async fetchJson<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
+    const { method = 'GET', body, headers = {}, signal } = options;
+    const url = `${this.baseUrl}${endpoint}`;
+    
+    const response = await fetch(url, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.defaultHeaders,
+        ...headers,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+      signal,
+    });
+
+    const contentType = response.headers.get('Content-Type') || '';
+    
+    if (!response.ok) {
+      const errorData = contentType.includes('application/json') 
+        ? await response.json() as ErrorResponse
+        : { error: await response.text() };
+        
+      throw new ApiError(response.status, errorData);
+    }
+    
+    if (contentType.includes('application/json')) {
+      return await response.json() as T;
+    }
+    
+    throw new Error(`Unexpected content type: ${contentType}`);
   }
-  
-  throw new Error(`Unexpected content type: ${contentType}`);
+
+  createUrl(path: string, workspaceId?: string): string {
+    return workspaceId 
+      ? `/workspaces/${workspaceId}${path}` 
+      : path;
+  }
 }
 
-export function createApiUrl(path: string, workspaceId?: string): string {
-  return workspaceId 
-    ? `/api/workspaces/${workspaceId}${path}` 
-    : `/api${path}`;
-}
+// Create default instance
+export const apiClient = new ApiClient();
 ```
 
-### 2. Error Handling
+### 3. Error Handling
 
 Create a standardized API error class:
 
 ```typescript
-// web/src/lib/api-client/utils/errors.ts
+// web/src/lib/api/core/errors.ts
+import { ErrorResponse } from '@mandrake/utils/dist/types/api';
+
 export class ApiError extends Error {
   status: number;
-  data: any;
+  data: ErrorResponse;
   
-  constructor(status: number, data: any) {
-    super(`API Error: ${status}`);
+  constructor(status: number, data: ErrorResponse) {
+    super(`API Error: ${status} - ${data.error}`);
+    this.name = 'ApiError';
     this.status = status;
     this.data = data;
   }
@@ -119,125 +168,169 @@ export function isApiError(error: any): error is ApiError {
 }
 ```
 
-### 3. Resource-specific Clients
+### 4. Resource Clients
 
 Create clients for each resource type:
 
 ```typescript
-// web/src/lib/api-client/endpoints/workspaces.ts
-import { fetchJson, createApiUrl } from '../utils/fetcher';
-import { Workspace, WorkspaceCreateParams, WorkspaceUpdateParams } from '../types';
+// web/src/lib/api/resources/workspaces.ts
+import { apiClient } from '../core/fetcher';
+import {
+  WorkspaceResponse,
+  WorkspaceListResponse,
+  CreateWorkspaceRequest,
+  UpdateWorkspaceRequest,
+  DeleteResponse
+} from '@mandrake/utils/dist/types/api';
 
-export async function listWorkspaces(): Promise<Workspace[]> {
-  return fetchJson<Workspace[]>(createApiUrl('/workspaces'));
-}
-
-export async function getWorkspace(id: string): Promise<Workspace> {
-  return fetchJson<Workspace>(createApiUrl(`/workspaces/${id}`));
-}
-
-export async function createWorkspace(params: WorkspaceCreateParams): Promise<Workspace> {
-  return fetchJson<Workspace>(createApiUrl('/workspaces'), { 
-    method: 'POST', 
-    body: params 
-  });
-}
-
-export async function updateWorkspace(id: string, params: WorkspaceUpdateParams): Promise<Workspace> {
-  return fetchJson<Workspace>(createApiUrl(`/workspaces/${id}`), { 
-    method: 'PUT', 
-    body: params 
-  });
-}
-
-export async function deleteWorkspace(id: string): Promise<void> {
-  return fetchJson<void>(createApiUrl(`/workspaces/${id}`), { 
-    method: 'DELETE' 
-  });
-}
+export const workspaces = {
+  list: async (): Promise<WorkspaceListResponse> => {
+    return apiClient.fetchJson<WorkspaceListResponse>('/workspaces');
+  },
+  
+  get: async (id: string): Promise<WorkspaceResponse> => {
+    return apiClient.fetchJson<WorkspaceResponse>(`/workspaces/${id}`);
+  },
+  
+  create: async (params: CreateWorkspaceRequest): Promise<WorkspaceResponse> => {
+    return apiClient.fetchJson<WorkspaceResponse>('/workspaces', { 
+      method: 'POST', 
+      body: params 
+    });
+  },
+  
+  update: async (id: string, params: UpdateWorkspaceRequest): Promise<WorkspaceResponse> => {
+    return apiClient.fetchJson<WorkspaceResponse>(`/workspaces/${id}`, { 
+      method: 'PUT', 
+      body: params 
+    });
+  },
+  
+  delete: async (id: string): Promise<DeleteResponse> => {
+    return apiClient.fetchJson<DeleteResponse>(`/workspaces/${id}`, { 
+      method: 'DELETE' 
+    });
+  },
+  
+  // Workspace config operations
+  config: {
+    get: async (workspaceId: string) => {
+      return apiClient.fetchJson(
+        apiClient.createUrl('/config', workspaceId)
+      );
+    },
+    
+    update: async (workspaceId: string, config: any) => {
+      return apiClient.fetchJson(
+        apiClient.createUrl('/config', workspaceId),
+        { method: 'PUT', body: config }
+      );
+    }
+  },
+  
+  // Add other workspace-specific resource endpoints
+};
 ```
 
-### 4. React Query Integration
+### 5. React Query Integration
 
 Create React Query hooks for data fetching:
 
 ```typescript
-// web/src/lib/api-client/hooks/useWorkspaces.ts
+// web/src/hooks/api/useWorkspaces.ts
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { listWorkspaces, getWorkspace, createWorkspace, updateWorkspace, deleteWorkspace } from '../endpoints/workspaces';
-import { WorkspaceCreateParams, WorkspaceUpdateParams } from '../types';
+import { workspaces } from '@/lib/api/resources/workspaces';
+import { 
+  CreateWorkspaceRequest, 
+  UpdateWorkspaceRequest 
+} from '@mandrake/utils/dist/types/api';
 
 // Query keys
 export const workspaceKeys = {
   all: ['workspaces'] as const,
   lists: () => [...workspaceKeys.all, 'list'] as const,
   detail: (id: string) => [...workspaceKeys.all, 'detail', id] as const,
+  config: (id: string) => [...workspaceKeys.all, 'config', id] as const,
 };
 
 // Hooks
 export function useWorkspaces() {
-  return useQuery(workspaceKeys.lists(), listWorkspaces);
+  return useQuery({
+    queryKey: workspaceKeys.lists(),
+    queryFn: () => workspaces.list()
+  });
 }
 
 export function useWorkspace(id: string) {
-  return useQuery(workspaceKeys.detail(id), () => getWorkspace(id));
+  return useQuery({
+    queryKey: workspaceKeys.detail(id),
+    queryFn: () => workspaces.get(id),
+    enabled: !!id
+  });
+}
+
+export function useWorkspaceConfig(id: string) {
+  return useQuery({
+    queryKey: workspaceKeys.config(id),
+    queryFn: () => workspaces.config.get(id),
+    enabled: !!id
+  });
 }
 
 export function useCreateWorkspace() {
   const queryClient = useQueryClient();
   
-  return useMutation(
-    (params: WorkspaceCreateParams) => createWorkspace(params),
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(workspaceKeys.lists());
-      },
+  return useMutation({
+    mutationFn: (params: CreateWorkspaceRequest) => workspaces.create(params),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.lists() });
     }
-  );
+  });
 }
 
 export function useUpdateWorkspace() {
   const queryClient = useQueryClient();
   
-  return useMutation(
-    ({ id, params }: { id: string; params: WorkspaceUpdateParams }) => 
-      updateWorkspace(id, params),
-    {
-      onSuccess: (data) => {
-        queryClient.invalidateQueries(workspaceKeys.detail(data.id));
-        queryClient.invalidateQueries(workspaceKeys.lists());
-      },
+  return useMutation({
+    mutationFn: ({ id, params }: { id: string; params: UpdateWorkspaceRequest }) => 
+      workspaces.update(id, params),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.detail(data.id) });
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.lists() });
     }
-  );
+  });
 }
 
 export function useDeleteWorkspace() {
   const queryClient = useQueryClient();
   
-  return useMutation(
-    (id: string) => deleteWorkspace(id),
-    {
-      onSuccess: (_data, id) => {
-        queryClient.removeQueries(workspaceKeys.detail(id));
-        queryClient.invalidateQueries(workspaceKeys.lists());
-      },
+  return useMutation({
+    mutationFn: (id: string) => workspaces.delete(id),
+    onSuccess: (_data, id) => {
+      queryClient.removeQueries({ queryKey: workspaceKeys.detail(id) });
+      queryClient.invalidateQueries({ queryKey: workspaceKeys.lists() });
     }
-  );
+  });
 }
 ```
 
-### 5. Support for Streaming Responses
+### 6. Support for Streaming Responses
 
 Create a streaming utility for session messages:
 
 ```typescript
-// web/src/lib/api-client/utils/streaming.ts
-import { SessionMessage } from '../types';
+// web/src/lib/api/core/streaming.ts
+import {
+  StreamingEvent,
+  StreamMessageEvent,
+  StreamErrorEvent,
+  StreamCompleteEvent
+} from '@mandrake/utils/dist/types/api';
 
 export type MessageStreamHandler = {
-  onMessage: (message: SessionMessage) => void;
-  onError: (error: any) => void;
-  onComplete: () => void;
+  onMessage: (message: StreamMessageEvent) => void;
+  onError: (error: StreamErrorEvent) => void;
+  onComplete: (data: StreamCompleteEvent) => void;
 };
 
 export function streamSessionMessages(
@@ -246,20 +339,42 @@ export function streamSessionMessages(
   handler: MessageStreamHandler
 ): () => void {
   const eventSource = new EventSource(
-    `/api/workspaces/${workspaceId}/sessions/${sessionId}/stream`
+    `/api/workspaces/${workspaceId}/streaming/sessions/${sessionId}`
   );
   
   eventSource.onmessage = (event) => {
     try {
-      const data = JSON.parse(event.data);
-      handler.onMessage(data);
+      const data = JSON.parse(event.data) as StreamingEvent;
+      
+      switch (data.type) {
+        case 'message':
+          handler.onMessage(data);
+          break;
+        case 'error':
+          handler.onError(data);
+          break;
+        case 'complete':
+          handler.onComplete(data);
+          eventSource.close();
+          break;
+        default:
+          console.warn('Unknown streaming event type:', data);
+      }
     } catch (error) {
-      handler.onError(error);
+      handler.onError({
+        type: 'error',
+        error: 'Failed to parse event data',
+        details: String(error)
+      });
     }
   };
   
   eventSource.onerror = (error) => {
-    handler.onError(error);
+    handler.onError({
+      type: 'error',
+      error: 'EventSource error',
+      details: String(error)
+    });
     eventSource.close();
   };
   
@@ -267,55 +382,117 @@ export function streamSessionMessages(
     eventSource.close();
   };
 }
+
+// React hook for session streaming
+export function useSessionStream(sessionId: string, workspaceId: string) {
+  const [messages, setMessages] = React.useState<StreamMessageEvent[]>([]);
+  const [error, setError] = React.useState<StreamErrorEvent | null>(null);
+  const [isComplete, setIsComplete] = React.useState(false);
+  const [isConnected, setIsConnected] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!sessionId || !workspaceId) return;
+    
+    setIsConnected(true);
+    const cleanup = streamSessionMessages(sessionId, workspaceId, {
+      onMessage: (message) => {
+        setMessages((prev) => [...prev, message]);
+      },
+      onError: (err) => {
+        setError(err);
+        setIsConnected(false);
+      },
+      onComplete: () => {
+        setIsComplete(true);
+        setIsConnected(false);
+      }
+    });
+    
+    return cleanup;
+  }, [sessionId, workspaceId]);
+
+  return {
+    messages,
+    error,
+    isComplete,
+    isConnected,
+  };
+}
 ```
 
-### 6. Main Export
+### 7. Main Export
 
 Create a clean export interface:
 
 ```typescript
-// web/src/lib/api-client/index.ts
-// Export all endpoint functions
-export * from './endpoints/workspaces';
-export * from './endpoints/sessions';
-export * from './endpoints/files';
-export * from './endpoints/tools';
-export * from './endpoints/models';
-export * from './endpoints/prompt';
-export * from './endpoints/dynamic';
-export * from './endpoints/system';
+// web/src/lib/api/index.ts
+// Export the client and types
+export * from './core/fetcher';
+export * from './core/errors';
+export * from './core/streaming';
+export * from './core/types';
 
-// Export React Query hooks
-export * from './hooks/useWorkspaces';
-export * from './hooks/useSessions';
-export * from './hooks/useFiles';
-export * from './hooks/useTools';
-export * from './hooks/useModels';
-export * from './hooks/usePrompt';
-export * from './hooks/useDynamic';
-export * from './hooks/useSystem';
+// Export resource-specific clients
+import { workspaces } from './resources/workspaces';
+import { sessions } from './resources/sessions';
+import { files } from './resources/files';
+import { tools } from './resources/tools';
+import { models } from './resources/models';
+import { prompt } from './resources/prompt';
+import { dynamic } from './resources/dynamic';
+import { system } from './resources/system';
 
-// Export types
-export * from './types';
-
-// Export utilities
-export * from './utils/errors';
-export * from './utils/streaming';
+// Create a unified API client object
+export const api = {
+  workspaces,
+  sessions,
+  files,
+  tools,
+  models,
+  prompt,
+  dynamic,
+  system,
+};
 ```
 
-## Next Steps
+## Next Steps and Implementation Plan
 
-1. Define all API types in `types.ts`
-2. Implement the base utilities (`fetcher.ts`, `errors.ts`)
-3. Create endpoint-specific clients one by one
-4. Implement React Query hooks for each endpoint
-5. Add support for streaming responses
-6. Test with example components
+### Phase 1: Core Infrastructure (Day 1)
+1. Set up the core API client structure
+2. Import and organize types from `@mandrake/utils`
+3. Implement base utilities (fetcher, error handling)
+4. Create test harness for API client
 
-## Timeline
+### Phase 2: Resource Clients (Days 2-3)
+1. Implement workspace resource client
+2. Implement session resource client
+3. Implement tools and models clients
+4. Implement remaining resource clients
 
-- Day 1: Setup base utilities and types
-- Day 2-3: Implement all endpoint clients
-- Day 4: Add React Query hooks
-- Day 5: Implement streaming support
-- Day 6: Testing and refinement
+### Phase 3: React Integration (Day 4)
+1. Set up React Query provider
+2. Implement basic data fetching hooks
+3. Implement mutation hooks
+4. Add optimistic updates for better UX
+
+### Phase 4: Streaming Support (Day 5)
+1. Implement SSE streaming utilities
+2. Create React hooks for streaming session data
+3. Add error handling and reconnection logic
+
+### Phase 5: Testing and Documentation (Day 6)
+1. Create unit tests for core functionality
+2. Create integration tests with mock API
+3. Add documentation for all client methods
+4. Create example components demonstrating usage
+
+## Key Improvements Over Previous Plan
+
+1. **Leverages Shared Types**: Uses the refactored types from `@mandrake/utils` for consistency
+2. **More Modular Structure**: Separates core functionality from resource-specific implementations
+3. **Unified API Object**: Provides a clean, organized API surface through a single object
+4. **Enhanced Error Handling**: Improved error typing and handling based on API error responses
+5. **Streaming Improvements**: Better integration with the streaming API format
+6. **React Query v5 Support**: Updated for the latest React Query syntax and features
+
+This implementation plan provides a solid foundation for building a robust, type-safe API client that will seamlessly integrate with the Mandrake backend while providing a great developer experience.
