@@ -19,14 +19,14 @@ export const system = {
    * Get system configuration
    */
   getConfig: async () => {
-    return apiClient.fetchJson('/config');
+    return apiClient.fetchJson('/system/config');
   },
   
   /**
    * Update system configuration
    */
   updateConfig: async (config: any) => {
-    return apiClient.fetchJson('/config', {
+    return apiClient.fetchJson('/system/config', {
       method: 'PUT',
       body: config
     });

@@ -38,6 +38,8 @@ export class ApiClient {
       ? `${this.baseUrl}${endpoint}` 
       : `${this.baseUrl}/${endpoint}`;
     
+    console.log(`API Request: ${method} ${url}`);
+    
     // Prepare request options
     const requestOptions: RequestInit = {
       method,
@@ -47,8 +49,6 @@ export class ApiClient {
         ...headers,
       },
       signal,
-      credentials: 'include',
-      mode: 'cors',
     };
     
     // Add body if provided
@@ -80,12 +80,15 @@ export class ApiClient {
         errorData = { error: response.statusText, status: response.status };
       }
       
+      console.error(`API Error: ${method} ${url}`, errorData);
       throw new ApiError(response.status, errorData);
     }
     
     // Handle successful responses
     if (contentType.includes('application/json')) {
-      return await response.json() as T;
+      const data = await response.json();
+      console.log(`API Response: ${method} ${url}`, data);
+      return data as T;
     }
     
     // No content or unexpected content type
