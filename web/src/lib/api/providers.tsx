@@ -1,3 +1,4 @@
+'use client';
 /**
  * React Query providers for API integration
  */

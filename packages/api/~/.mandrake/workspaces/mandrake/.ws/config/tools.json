@@ -1,0 +1,27 @@
+{
+  "active": "default",
+  "configs": {
+    "default": {
+      "ripper": {
+        "command": "bun",
+        "args": [
+          "/Users/johnzampolin/go/src/github.com/strangelove-ventures/mandrake/packages/ripper/dist/server.js",
+          "--transport=stdio",
+          "--workspaceDir=~/.mandrake/workspaces/mandrake",
+          "--excludePatterns=\\.ws"
+        ]
+      }
+    },
+    "system": {
+      "workspace": {
+        "command": "bun",
+        "args": [
+          "run",
+          "../workspace-tools/dist/server.js",
+          "--transport=stdio",
+          "--workspaceDir=~/.mandrake/workspaces/mandrake"
+        ]
+      }
+    }
+  }
+}

@@ -47,29 +47,36 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   
   loadWorkspaces: async () => {
     try {
+      console.log('Loading workspaces...');
       set({ isLoading: true, error: null });
       
       // Load workspaces from API
       const workspaces = await api.workspaces.list();
+      console.log('Workspaces loaded:', workspaces);
       set({ workspaces, isLoading: false });
       
       // If we have a stored workspace ID, verify it exists
       const { currentWorkspaceId } = get();
+      console.log('Current workspace ID:', currentWorkspaceId);
       if (currentWorkspaceId) {
         const exists = workspaces.some(w => w.id === currentWorkspaceId);
         if (!exists && workspaces.length > 0) {
           // If not found but we have workspaces, set the first one
+          console.log('Setting to first workspace:', workspaces[0].id);
           get().setCurrentWorkspaceId(workspaces[0].id);
         } else if (!exists) {
           // If not found and no workspaces, clear the ID
+          console.log('Clearing workspace ID');
           get().setCurrentWorkspaceId(null);
         }
       } else if (workspaces.length > 0) {
         // No current workspace but we have workspaces, set the first one
+        console.log('No current workspace, setting to first:', workspaces[0].id);
         get().setCurrentWorkspaceId(workspaces[0].id);
       }
     } catch (err) {
       // Handle error
+      console.error('Error loading workspaces:', err);
       set({ 
         isLoading: false, 
         error: err instanceof Error ? err.message : 'Failed to load workspaces' 

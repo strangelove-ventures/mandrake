@@ -33,8 +33,10 @@ export class ApiClient {
   async fetchJson<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
     const { method = 'GET', body, headers = {}, signal } = options;
     
-    // Create the full URL
-    const url = `${this.baseUrl}${endpoint}`;
+    // Create the full URL - ensure we don't have double slashes if endpoint starts with slash
+    const url = endpoint.startsWith('/') 
+      ? `${this.baseUrl}${endpoint}` 
+      : `${this.baseUrl}/${endpoint}`;
     
     // Prepare request options
     const requestOptions: RequestInit = {
@@ -45,6 +47,8 @@ export class ApiClient {
         ...headers,
       },
       signal,
+      credentials: 'include',
+      mode: 'cors',
     };
     
     // Add body if provided

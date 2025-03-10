@@ -163,10 +163,21 @@ export async function loadWorkspace(
   try {
     let workspaceName = id;
     if (mandrakeManager) {
-      const workspaceData = await mandrakeManager.getWorkspace(id);
-      if (workspaceData) {
-        workspaceName = workspaceData.name;
+      try {
+        const workspaceData = await mandrakeManager.getWorkspace(id);
+        if (workspaceData) {
+          workspaceName = workspaceData.name;
+        }
+      } catch (error) {
+        console.warn(`Error loading workspace ${id} from Mandrake manager:`, error);
+        // Continue with the workspace ID as the name if we can't get the workspace data
       }
+    }
+    
+    // Verify path exists before trying to create workspace manager
+    if (!path) {
+      console.error(`Error loading workspace ${id}: Invalid path`);
+      return;
     }
     
     const ws = new WorkspaceManager(path, workspaceName, id);
@@ -197,6 +208,6 @@ export async function loadWorkspace(
     
   } catch (error) {
     console.error(`Error loading workspace ${id}:`, error);
-    throw error;
+    // Don't rethrow the error to prevent the entire workspace loading process from failing
   }
 }

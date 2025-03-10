@@ -52,7 +52,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       }
       
       // Create a new session
-      const session = await api.createSession({
+      const session = await api.sessions.create({
         name: `Session ${new Date().toLocaleString()}`,
         ...params
       }, workspaceId);

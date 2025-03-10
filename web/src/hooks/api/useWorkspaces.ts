@@ -7,9 +7,7 @@ import {
   useQueryClient,
   QueryClient
 } from '@tanstack/react-query';
-import { 
-  api 
-} from '@/lib/api';
+import { api } from '@/lib/api';
 import { 
   CreateWorkspaceRequest, 
   UpdateWorkspaceRequest,

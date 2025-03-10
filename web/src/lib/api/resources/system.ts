@@ -12,7 +12,7 @@ export const system = {
    * Get system status
    */
   getStatus: async () => {
-    return apiClient.fetchJson('/');
+    return apiClient.fetchJson('/system');
   },
   
   /**

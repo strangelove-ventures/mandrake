@@ -1,0 +1,45 @@
+{
+  "active": "claude-3-5-sonnet-20241022",
+  "providers": {
+    "anthropic": {
+      "type": "anthropic",
+      "apiKey": "your-api-key-here"
+    },
+    "ollama": {
+      "type": "ollama"
+    },
+    "xai": {
+      "type": "xai",
+      "apiKey": "your-api-key-here"
+    }
+  },
+  "models": {
+    "claude-3-5-sonnet-20241022": {
+      "enabled": true,
+      "providerId": "anthropic",
+      "modelId": "claude-3-5-sonnet-20241022",
+      "config": {
+        "temperature": 0.7,
+        "maxTokens": 8400
+      }
+    },
+    "qwq:32b": {
+      "enabled": true,
+      "providerId": "ollama",
+      "modelId": "qwq:32b",
+      "config": {
+        "temperature": 0.7,
+        "maxTokens": 2048
+      }
+    },
+    "grok-beta": {
+      "enabled": true,
+      "providerId": "xai",
+      "modelId": "grok-beta",
+      "config": {
+        "temperature": 0.7,
+        "maxTokens": 4096
+      }
+    }
+  }
+}

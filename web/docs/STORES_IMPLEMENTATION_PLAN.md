@@ -17,7 +17,7 @@ Zustand will be used for state management throughout the Mandrake frontend. We'l
 
 We'll organize our stores into the following categories:
 
-```
+```sh
 web/src/lib/stores/
 ├── index.ts              # Main exports
 ├── ui/

@@ -5,7 +5,7 @@
 
 import { useWorkspaces, useCreateWorkspace } from '@/hooks/api';
 import { useWorkspaceStore } from '@/stores';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function WorkspaceList() {
   // State for new workspace form
@@ -14,6 +14,12 @@ export default function WorkspaceList() {
   
   // Get workspaces using React Query
   const { data: workspaces, isLoading, error } = useWorkspaces();
+  
+  // Load workspaces 
+  useEffect(() => {
+    console.log('WorkspaceList component mounted - triggering workspace load');
+    // You could call a function here to load workspaces if needed
+  }, []);
   
   // Mutation for creating a workspace
   const createWorkspace = useCreateWorkspace();
@@ -33,7 +39,7 @@ export default function WorkspaceList() {
       name: newWorkspaceName,
       path: newWorkspacePath
     }, {
-      onSuccess: (workspace) => {
+      onSuccess: (workspace: { id: string }) => {
         setNewWorkspaceName('');
         setNewWorkspacePath('');
         setCurrentWorkspaceId(workspace.id);

@@ -12,71 +12,80 @@ import { loadWorkspace } from './routes/workspace';
  * @returns Initialized managers and accessor functions
  */
 export async function initializeManagers(mandrakeHome?: string): Promise<{ managers: Managers, accessors: ManagerAccessors }> {
-  // Set the Mandrake home directory
-  const home = mandrakeHome || join(process.env.HOME || '~', '.mandrake');
-  
-  // Initialize system-level managers
-  const mandrakeManager = new MandrakeManager(home);
-  await mandrakeManager.init();
-  
-  // Initialize system MCP manager
-  const systemMcpManager = new MCPManager();
-  
-  // Get system tool configs and initialize MCP servers
-  // For now, no need to initialize system tools during testing
-  // This will be handled when actual tools are added
-  
-  const systemSessionCoordinators = new Map<string, SessionCoordinator>();
-  
-  // Initialize workspace-level maps
-  const workspaceManagers = new Map<string, WorkspaceManager>();
-  const mcpManagers = new Map<string, MCPManager>();
-  const sessionCoordinators = new Map<string, Map<string, SessionCoordinator>>();
-  
-  // Load existing workspaces
-  await loadWorkspaces(mandrakeManager, workspaceManagers, mcpManagers, sessionCoordinators);
-  
-  const managers: Managers = {
-    mandrakeManager,
-    systemMcpManager,
-    systemSessionCoordinators,
-    workspaceManagers,
-    mcpManagers,
-    sessionCoordinators
-  };
-  
-  const accessors: ManagerAccessors = {
-    getWorkspaceManager: (workspaceId: string) => workspaceManagers.get(workspaceId),
+  try {
+    // Set the Mandrake home directory
+    const home = mandrakeHome || join(process.env.HOME || '~', '.mandrake');
     
-    getMcpManager: (workspaceId: string) => mcpManagers.get(workspaceId),
+    // Initialize system-level managers
+    const mandrakeManager = new MandrakeManager(home);
+    await mandrakeManager.init();
     
-    getSessionCoordinator: (workspaceId: string, sessionId: string) => {
-      const workspaceSessions = sessionCoordinators.get(workspaceId);
-      if (!workspaceSessions) return undefined;
-      return workspaceSessions.get(sessionId);
-    },
+    // Initialize system MCP manager
+    const systemMcpManager = new MCPManager();
     
-    getSessionCoordinatorMap: (workspaceId: string) => {
-      return sessionCoordinators.get(workspaceId);
-    },
+    // Get system tool configs and initialize MCP servers
+    // For now, no need to initialize system tools during testing
+    // This will be handled when actual tools are added
     
-    createSessionCoordinator: (workspaceId: string, sessionId: string, coordinator: SessionCoordinator) => {
-      let workspaceSessions = sessionCoordinators.get(workspaceId);
-      if (!workspaceSessions) {
-        workspaceSessions = new Map<string, SessionCoordinator>();
-        sessionCoordinators.set(workspaceId, workspaceSessions);
-      }
-      workspaceSessions.set(sessionId, coordinator);
-    },
+    const systemSessionCoordinators = new Map<string, SessionCoordinator>();
     
-    removeSessionCoordinator: (workspaceId: string, sessionId: string) => {
-      const workspaceSessions = sessionCoordinators.get(workspaceId);
-      if (!workspaceSessions) return false;
-      return workspaceSessions.delete(sessionId);
+    // Initialize workspace-level maps
+    const workspaceManagers = new Map<string, WorkspaceManager>();
+    const mcpManagers = new Map<string, MCPManager>();
+    const sessionCoordinators = new Map<string, Map<string, SessionCoordinator>>();
+    
+    // Load existing workspaces - errors are handled internally
+    try {
+      await loadWorkspaces(mandrakeManager, workspaceManagers, mcpManagers, sessionCoordinators);
+    } catch (error) {
+      console.error('Failed to load workspaces, but continuing with startup:', error);
     }
-  };
-  
-  return { managers, accessors };
+    
+    const managers: Managers = {
+      mandrakeManager,
+      systemMcpManager,
+      systemSessionCoordinators,
+      workspaceManagers,
+      mcpManagers,
+      sessionCoordinators
+    };
+    
+    const accessors: ManagerAccessors = {
+      getWorkspaceManager: (workspaceId: string) => workspaceManagers.get(workspaceId),
+      
+      getMcpManager: (workspaceId: string) => mcpManagers.get(workspaceId),
+      
+      getSessionCoordinator: (workspaceId: string, sessionId: string) => {
+        const workspaceSessions = sessionCoordinators.get(workspaceId);
+        if (!workspaceSessions) return undefined;
+        return workspaceSessions.get(sessionId);
+      },
+      
+      getSessionCoordinatorMap: (workspaceId: string) => {
+        return sessionCoordinators.get(workspaceId);
+      },
+      
+      createSessionCoordinator: (workspaceId: string, sessionId: string, coordinator: SessionCoordinator) => {
+        let workspaceSessions = sessionCoordinators.get(workspaceId);
+        if (!workspaceSessions) {
+          workspaceSessions = new Map<string, SessionCoordinator>();
+          sessionCoordinators.set(workspaceId, workspaceSessions);
+        }
+        workspaceSessions.set(sessionId, coordinator);
+      },
+      
+      removeSessionCoordinator: (workspaceId: string, sessionId: string) => {
+        const workspaceSessions = sessionCoordinators.get(workspaceId);
+        if (!workspaceSessions) return false;
+        return workspaceSessions.delete(sessionId);
+      }
+    };
+    
+    return { managers, accessors };
+  } catch (error) {
+    console.error('Critical error initializing managers:', error);
+    throw error;
+  }
 }
 
 /**
@@ -94,8 +103,8 @@ async function loadWorkspaces(
     
     // Load each workspace in parallel
     await Promise.all(
-      Object.entries(workspaces).map(([id, config]) => 
-        loadWorkspace(id, config.path, workspaceManagers, mcpManagers, sessionCoordinators, mandrakeManager)
+      workspaces.map(workspace => 
+        loadWorkspace(workspace.id, workspace.path, workspaceManagers, mcpManagers, sessionCoordinators, mandrakeManager)
       )
     );
   } catch (error) {
