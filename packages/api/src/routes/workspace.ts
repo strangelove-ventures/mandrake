@@ -3,7 +3,7 @@ import type { Managers, ManagerAccessors } from '../types';
 import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { sendError } from './utils';
-import { 
+import type { 
   WorkspaceResponse, 
   WorkspaceListResponse, 
   CreateWorkspaceRequest 
@@ -12,7 +12,7 @@ import {
 /**
  * Create routes for workspace management (CRUD operations on workspaces)
  */
-export function workspaceManagementRoutes(managers: Managers, accessors: ManagerAccessors) {
+export function workspaceManagementRoutes(managers: Managers, accessors: ManagerAccessors)  {
   const app = new Hono();
   
   // List all workspaces
@@ -124,7 +124,6 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
       return sendError(c, error, 'Failed to get workspace');
     }
   });
-  
   return app;
 }
 

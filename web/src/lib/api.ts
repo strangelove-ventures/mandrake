@@ -46,20 +46,20 @@ export const api = {
   getStatus: () => fetchAPI<{ status: string }>('/'),
 
   // Config management
-  getConfig: () => fetchAPI<any>('/config'),
-  updateConfig: (config: any) => fetchAPI<any>('/config', {
+  getConfig: () => fetchAPI<any>('/system/config'),
+  updateConfig: (config: any) => fetchAPI<any>('/system/config', {
     method: 'PUT',
     body: JSON.stringify(config),
   }),
 
   // Workspace management
-  listWorkspaces: () => fetchAPI<any[]>('/config/workspaces'),
-  getWorkspace: (id: string) => fetchAPI<any>(`/config/workspaces/${id}`),
-  registerWorkspace: (workspace: any) => fetchAPI<any>('/config/workspaces', {
+  listWorkspaces: () => fetchAPI<any[]>('/workspaces'),
+  getWorkspace: (id: string) => fetchAPI<any>(`/workspaces/${id}`),
+  registerWorkspace: (workspace: any) => fetchAPI<any>('/workspaces', {
     method: 'POST',
     body: JSON.stringify(workspace),
   }),
-  unregisterWorkspace: (id: string) => fetchAPI<void>(`/config/workspaces/${id}`, {
+  unregisterWorkspace: (id: string) => fetchAPI<void>(`/workspaces/${id}`, {
     method: 'DELETE',
   }),
 
@@ -73,10 +73,10 @@ export const api = {
   }),
   
   // Models management
-  listModels: () => fetchAPI<any[]>('/models'),
-  getModel: (id: string) => fetchAPI<any>(`/models/${id}`),
-  getActiveModel: () => fetchAPI<any>('/models/active'),
-  setActiveModel: (id: string) => fetchAPI<any>('/models/active', {
+  listModels: () => fetchAPI<any[]>('/system/models'),
+  getModel: (id: string) => fetchAPI<any>(`/system/models/${id}`),
+  getActiveModel: () => fetchAPI<any>('/system/models/active'),
+  setActiveModel: (id: string) => fetchAPI<any>('/system/models/active', {
     method: 'PUT',
     body: JSON.stringify({ id }),
   }),

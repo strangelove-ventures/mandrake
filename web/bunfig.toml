@@ -1,0 +1,10 @@
+[test]
+# Use happy-dom for browser environment testing
+environment = "happy-dom"
+# Default timeout for tests
+timeout = 10000
+
+# Setup module paths for @ imports
+[resolve]
+paths = { "@": "./src", "@/tests": "./tests" }
+extensions = [".tsx", ".ts", ".jsx", ".js"]

@@ -145,10 +145,10 @@ export function providersRoutes(modelsManager: ModelsManager) {
       
       // Convert object to array with IDs
       const providersArray = Object.entries(providersObj).map(([id, provider]) => ({
+        ...provider,
         id,
         name: provider.type,
         type: provider.type,
-        ...provider
       }));
       
       return c.json(providersArray);

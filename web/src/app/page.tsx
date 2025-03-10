@@ -1,62 +1,29 @@
-import Image from "next/image";
-import { api } from "../lib/api";
+/**
+ * Home page component
+ */
+import WorkspaceList from "@/components/WorkspaceList";
+import ApiStatus from "@/components/ApiStatus";
+import SessionDemo from "@/components/SessionDemo";
 
-export default async function Home() {
-  // Fetch data from API on server with error handling
-  let status = "Unknown";
-  let workspaces = [];
-  let apiError = false;
-  
-  try {
-    const response = await api.getStatus();
-    status = response.status;
-  } catch (error) {
-    console.error("Failed to connect to API:", error);
-    status = "Offline";
-    apiError = true;
-  }
-  
-  try {
-    if (!apiError) {
-      workspaces = await api.listWorkspaces();
-    }
-  } catch (error) {
-    console.error("Failed to fetch workspaces:", error);
-  }
-
+export default function Home() {
   return (
     <div className="grid grid-rows-[auto_1fr_auto] min-h-screen p-8">
       <header className="mb-8">
         <h1 className="text-3xl font-bold">Mandrake</h1>
-        <div className={`text-sm ${status === "Offline" ? "text-red-500" : "text-gray-500"}`}>
-          API Status: {status}
-        </div>
-        {status === "Offline" && (
-          <div className="mt-2 p-3 bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200 rounded text-sm">
-            The API is currently offline. Make sure to run both the API and frontend with <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">bun run dev</code> from the project root.
-          </div>
-        )}
+        <p className="text-gray-500">AI Assistant with advanced context management</p>
+        <ApiStatus />
       </header>
       
       <main className="flex flex-col gap-8">
-        <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
-          <h2 className="text-xl font-semibold mb-4">Workspaces</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
+            <WorkspaceList />
+          </section>
           
-          {apiError ? (
-            <div className="text-yellow-600 dark:text-yellow-400">Unable to load workspaces - API is unavailable</div>
-          ) : workspaces.length === 0 ? (
-            <div className="text-gray-500">No workspaces found</div>
-          ) : (
-            <ul className="space-y-2">
-              {workspaces.map((workspace) => (
-                <li key={workspace.id} className="p-3 bg-gray-100 dark:bg-gray-700 rounded">
-                  <h3 className="font-medium">{workspace.name}</h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-300">{workspace.path}</p>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
+          <section>
+            <SessionDemo />
+          </section>
+        </div>
         
         <section className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm">
           <h2 className="text-xl font-semibold mb-4">Quick Links</h2>
