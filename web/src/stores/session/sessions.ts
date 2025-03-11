@@ -4,9 +4,26 @@
 import { create } from 'zustand';
 import { api } from '@/lib/api';
 
+// Session interfaces
+export interface Session {
+  id: string;
+  title: string;
+  description?: string;
+  metadata?: Record<string, any>;
+  createdAt: string;
+  updatedAt?: string;
+  messageCount?: number;
+}
+
+export interface CreateSessionParams {
+  title: string;
+  description?: string;
+  metadata?: Record<string, any>;
+}
+
 export interface SessionState {
   // State
-  systemSessions: any[];
+  systemSessions: Session[];
   currentSessionId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -14,7 +31,7 @@ export interface SessionState {
   // Actions
   loadSystemSessions: () => Promise<void>;
   setCurrentSession: (id: string | null) => void;
-  createNewSession: (params?: any) => Promise<string | null>;
+  createNewSession: (params: CreateSessionParams) => Promise<string | null>;
   clearError: () => void;
 }
 
@@ -58,15 +75,12 @@ export const useSessionStore = create<SessionState>((set) => ({
     }
   },
   
-  createNewSession: async (params = {}) => {
+  createNewSession: async (params: CreateSessionParams) => {
     try {
       set({ isLoading: true, error: null });
       
       // Create a new session
-      const session = await api.sessions.create({
-        name: `Session ${new Date().toLocaleString()}`,
-        ...params
-      });
+      const session = await api.sessions.create(params);
       
       // Add to local state
       set((state) => ({ 

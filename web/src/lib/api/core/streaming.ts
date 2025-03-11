@@ -38,7 +38,13 @@ export function createSessionStream(
     ? window.location.origin + '/api' 
     : 'http://localhost:4000';
     
-  const url = `${baseUrl}/workspaces/${workspaceId}/streaming/sessions/${sessionId}`;
+  // Build the URL based on workspace ID
+  let url;
+  if (workspaceId) {
+    url = `${baseUrl}/workspaces/${workspaceId}/streaming/${sessionId}`;
+  } else {
+    url = `${baseUrl}/system/streaming/${sessionId}`;
+  }
   
   // Create the EventSource
   const eventSource = new EventSource(url);

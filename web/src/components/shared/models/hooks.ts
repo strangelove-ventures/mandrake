@@ -61,78 +61,57 @@ export function useModelsConfig(workspaceId?: string) {
         
         console.log('Raw models data:', rawData); // Debug log
         
-        if (rawData && typeof rawData.active === 'string' && rawData.providers && rawData.models) {
-          console.log('Setting models data', rawData);
-          setModelsData(rawData as ModelsConfig);
+        if (rawData && typeof rawData.active === 'string') {
+          // Ensure providers is an object
+          const providers = rawData.providers || {};
+          // Ensure models is an object
+          const models = rawData.models || {};
+          
+          console.log('Setting models data', {
+            active: rawData.active,
+            providers,
+            models
+          });
+          
+          setModelsData({
+            active: rawData.active,
+            providers,
+            models
+          } as ModelsConfig);
           
           // Set selected provider to first provider if not already set
-          if (!selectedProviderId && Object.keys(rawData.providers).length > 0) {
-            setSelectedProviderId(Object.keys(rawData.providers)[0]);
+          const providerKeys = Object.keys(providers);
+          if (!selectedProviderId && providerKeys.length > 0) {
+            setSelectedProviderId(providerKeys[0]);
+            console.log('Setting selected provider to:', providerKeys[0]);
           }
           
           // Set selected model to active model if available
-          if (rawData.active && rawData.models[rawData.active]) {
+          const modelKeys = Object.keys(models);
+          if (rawData.active && models[rawData.active]) {
             setSelectedModelId(rawData.active);
-          } else if (Object.keys(rawData.models).length > 0) {
-            setSelectedModelId(Object.keys(rawData.models)[0]);
-          }
-        } else if (Array.isArray(rawData)) {
-          // If rawData is an array, we need to convert it
-          console.log('Converting array data to expected format');
-          
-          // Try to handle different possible array formats
-          const providers = {};
-          const models = {};
-          let active = '';
-          
-          // Process items in the array
-          rawData.forEach(item => {
-            if (item.type === 'provider') {
-              providers[item.id] = {
-                type: item.name,
-                apiKey: item.apiKey,
-                baseUrl: item.baseUrl,
-              };
-            } else if (item.providerId) {
-              // This looks like a model
-              models[item.id] = {
-                enabled: item.enabled !== false,
-                providerId: item.providerId,
-                modelId: item.name || item.id,
-                config: item.config || {}
-              };
-              
-              // If this is marked as active, note it
-              if (item.active) {
-                active = item.id;
-              }
-            }
-          });
-          
-          // Create a properly formatted config object
-          const formattedData = {
-            active,
-            providers,
-            models
-          };
-          
-          console.log('Formatted data:', formattedData);
-          setModelsData(formattedData as ModelsConfig);
-          
-          if (Object.keys(providers).length > 0) {
-            setSelectedProviderId(Object.keys(providers)[0]);
-          }
-          
-          if (active && models[active]) {
-            setSelectedModelId(active);
-          } else if (Object.keys(models).length > 0) {
-            setSelectedModelId(Object.keys(models)[0]);
+            console.log('Setting selected model to active:', rawData.active);
+          } else if (modelKeys.length > 0) {
+            setSelectedModelId(modelKeys[0]);
+            console.log('Setting selected model to first available:', modelKeys[0]);
           }
         } else {
           console.error('Unexpected data format for models configuration:', rawData);
+          // Create empty config as fallback
+          setModelsData({
+            active: '',
+            providers: {},
+            models: {}
+          });
         }
       } catch (err) {
         console.error('Error processing models data:', err);
+        // Create empty config as fallback
+        setModelsData({
+          active: '',
+          providers: {},
+          models: {}
+        });
       }
     }
   }, [models, selectedProviderId]);
@@ -229,6 +208,51 @@ export function useModelsConfig(workspaceId?: string) {
       console.error('Error toggling provider enabled state:', err);
     }
   }, [loadModels, modelsData, updateProvider]);
+
+  /**
+   * Handle adding a new provider
+   */
+  const handleAddProvider = useCallback(async () => {
+    if (!newProviderId || !newProviderType || !modelsData) {
+      console.error('Missing required fields for new provider');
+      return;
+    }
+
+    try {
+      // Create a default provider configuration
+      const providerConfig: ProviderConfig = {
+        type: newProviderType as ProviderType,
+        apiKey: '',
+        baseUrl: newProviderType === 'ollama' ? 'http://localhost:11434' : undefined
+      };
+
+      // Call API to add the provider
+      try {
+        await api.models.createProvider(newProviderId, providerConfig, workspaceId);
+      } catch (error) {
+        console.error('API call failed, but continuing with local state update', error);
+      }
+      
+      // Update local state immediately for better UX
+      const newModelsData = {...modelsData};
+      newModelsData.providers[newProviderId] = providerConfig;
+      setModelsData(newModelsData);
+      
+      // Select the new provider
+      setSelectedProviderId(newProviderId);
+      
+      // Close dialog and reset form
+      setIsCreatingProvider(false);
+      setNewProviderId('');
+      setNewProviderType('anthropic');
+      
+      // Refresh data
+      await loadModels();
+    } catch (err) {
+      console.error('Error adding provider:', err);
+      setProviderConfigError(err instanceof Error ? err.message : 'Failed to add provider');
+    }
+  }, [loadModels, modelsData, newProviderId, newProviderType, workspaceId, setSelectedProviderId, setIsCreatingProvider, setNewProviderId, setNewProviderType]);
   
   // Model operations
   
@@ -319,21 +343,30 @@ export function useModelsConfig(workspaceId?: string) {
     }
 
     try {
-      // Call API to set active model
-      await setActiveModel(modelId);
+      console.log(`Setting active model to: ${modelId}`);
       
       // Update local state immediately for better UX
       const newModelsData = {...modelsData};
       newModelsData.active = modelId;
       setModelsData(newModelsData);
       
-      // Refresh data
+      // Call API to set active model
+      await setActiveModel(modelId);
+      
+      // Select the newly activated model
+      setSelectedModelId(modelId);
+      
+      // Refresh data to confirm changes
       await loadModels();
       await loadActiveModel();
     } catch (err) {
       console.error('Error setting active model:', err);
+      // Revert local state on error
+      if (modelsData) {
+        setModelsData({...modelsData});
+      }
     }
-  }, [loadActiveModel, loadModels, modelsData, setActiveModel]);
+  }, [loadActiveModel, loadModels, modelsData, setActiveModel, setSelectedModelId]);
 
   /**
    * Handle adding a new model
@@ -422,6 +455,7 @@ export function useModelsConfig(workspaceId?: string) {
     handleEditProvider,
     handleSaveProviderEdits,
     handleToggleProviderEnabled,
+    handleAddProvider,
     
     // Model handlers
     handleEditModel,

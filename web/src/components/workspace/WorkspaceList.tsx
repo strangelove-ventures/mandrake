@@ -76,15 +76,6 @@ export default function WorkspaceList() {
                 <td className="py-3 px-4 text-gray-500 dark:text-gray-400">
                   {workspace.path}
                 </td>
-                <td className="py-3 px-4">
-                  {workspace.sessionCount || 0}
-                </td>
-                <td className="py-3 px-4">
-                  {workspace.toolCount || 0}
-                </td>
-                <td className="py-3 px-4 text-gray-500 dark:text-gray-400">
-                  {new Date(workspace.updatedAt || workspace.createdAt).toLocaleString()}
-                </td>
               </tr>
             ))}
             

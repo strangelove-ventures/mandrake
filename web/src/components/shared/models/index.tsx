@@ -10,9 +10,9 @@ import { useModelsConfig } from './hooks';
 import { useModelsStore } from '@/stores/system/models';
 import ProviderList from './ProviderList';
 import ProviderEditor from './ProviderEditor';
+import ProviderDialog from './ProviderDialog';
 import ModelList from './ModelList';
 import ModelEditor from './ModelEditor';
-import ModelDialog from './ModelDialog';
 import ModelDialog from './ModelDialog';
 
 /**
@@ -54,12 +54,12 @@ export default function ModelsConfig({ isWorkspace = false, workspaceId }: Model
     handleEditProvider,
     handleSaveProviderEdits,
     handleToggleProviderEnabled,
-    
+    handleAddProvider,
     handleEditModel,
     handleSaveModelEdits,
     handleToggleModelEnabled,
     handleSetActiveModel,
-    
+    handleAddModel,
     loadModels,
     loadActiveModel
   } = useModelsConfig(isWorkspace ? workspaceId : undefined);
@@ -109,9 +109,9 @@ export default function ModelsConfig({ isWorkspace = false, workspaceId }: Model
         </div>
         
         {error && (
-          <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">
-            Error: {error}
-          </div>
+        <div className="mt-4 p-3 bg-red-100 text-red-700 rounded">
+        Error: {error}
+        </div>
         )}
       </div>
     );
@@ -199,6 +199,17 @@ export default function ModelsConfig({ isWorkspace = false, workspaceId }: Model
         onSave={handleSaveProviderEdits}
       />
       
+      {/* Provider create dialog */}
+      <ProviderDialog
+        isOpen={isCreatingProvider}
+        onClose={() => setIsCreatingProvider(false)}
+        providerId={newProviderId}
+        providerType={newProviderType}
+        onAddProvider={handleAddProvider}
+        setProviderId={setNewProviderId}
+        setProviderType={setNewProviderType}
+      />
+      
       {/* Model edit dialog */}
       <ModelEditor
         isOpen={isEditingModel}
@@ -206,6 +217,18 @@ export default function ModelsConfig({ isWorkspace = false, workspaceId }: Model
         editingModel={editingModel}
         providers={modelsData?.providers || {}}
         onSave={handleSaveModelEdits}
+      />
+      
+      {/* Model create dialog */}
+      <ModelDialog
+        isOpen={isCreatingModel}
+        onClose={() => setIsCreatingModel(false)}
+        modelId={newModelId}
+        providerId={newModelProviderId}
+        providers={modelsData?.providers || {}}
+        onAddModel={handleAddModel}
+        setModelId={setNewModelId}
+        setProviderId={setNewModelProviderId}
       />
       
       {error && (
@@ -220,6 +243,8 @@ export default function ModelsConfig({ isWorkspace = false, workspaceId }: Model
 // Named exports for individual components
 export { default as ProviderList } from './ProviderList';
 export { default as ProviderEditor } from './ProviderEditor';
+export { default as ProviderDialog } from './ProviderDialog';
 export { default as ModelList } from './ModelList';
 export { default as ModelEditor } from './ModelEditor';
+export { default as ModelDialog } from './ModelDialog';
 export { useModelsConfig } from './hooks';

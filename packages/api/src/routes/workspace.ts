@@ -2,6 +2,8 @@ import { Hono } from 'hono';
 import type { Managers, ManagerAccessors } from '../types';
 import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
+import { join, dirname } from 'path';
+import os from 'os';
 import { sendError } from './utils';
 import type { 
   WorkspaceResponse, 
@@ -38,9 +40,11 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
       const data = await c.req.json() as CreateWorkspaceRequest;
       const { name, description, path } = data;
       
-      if (!name || !path) {
-        return c.json({ error: 'Name and path are required' }, 400);
+      if (!name) {
+        return c.json({ error: 'Name is required' }, 400);
       }
+      
+      // Path is optional - createWorkspace will use default if not provided
       
       // This returns a WorkspaceManager instance that's already initialized
       const workspace = await managers.mandrakeManager.createWorkspace(name, description, path);
@@ -180,7 +184,27 @@ export async function loadWorkspace(
       return;
     }
     
-    const ws = new WorkspaceManager(path, workspaceName, id);
+    // Resolve tilde in path if present
+    let resolvedPath = path;
+    if (path.startsWith('~')) {
+      resolvedPath = join(process.env.HOME || os.homedir(), path.substring(1));
+    }
+    
+    // Determine if we need to get the parent directory
+    const isFullWorkspacePath = resolvedPath.endsWith(`/${workspaceName}`);
+    const workspaceParentDir = isFullWorkspacePath 
+      ? dirname(resolvedPath)
+      : resolvedPath;
+    
+    console.log(`Loading workspace: ${workspaceName}`, {
+      id,
+      originalPath: path,
+      resolvedPath,
+      workspaceParentDir,
+      isFullWorkspacePath
+    });
+    
+    const ws = new WorkspaceManager(workspaceParentDir, workspaceName, id);
     await ws.init();
     workspaceManagers.set(ws.id, ws);
     

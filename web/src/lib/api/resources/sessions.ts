@@ -1,10 +1,12 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Sessions resource client
  */
 import { apiClient } from '../core/fetcher';
 import {
-  // Import relevant session types as needed
+  SessionResponse,
+  SessionListResponse,
+  CreateSessionRequest,
+  UpdateSessionRequest,
   DeleteResponse
 } from '@mandrake/utils/dist/types/api';
 
@@ -15,10 +17,10 @@ export const sessions = {
   /**
    * List sessions, optionally filtered by workspace
    */
-  list: async (workspaceId?: string) => {
+  list: async (workspaceId?: string): Promise<SessionListResponse> => {
     const path = workspaceId 
       ? apiClient.createUrl('/sessions', workspaceId)
-      : '/sessions';
+      : '/system/sessions';
       
     return apiClient.fetchJson(path);
   },
@@ -26,10 +28,10 @@ export const sessions = {
   /**
    * Get session by ID
    */
-  get: async (id: string, workspaceId?: string) => {
+  get: async (id: string, workspaceId?: string): Promise<SessionResponse> => {
     const path = workspaceId
       ? apiClient.createUrl(`/sessions/${id}`, workspaceId)
-      : `/sessions/${id}`;
+      : `/system/sessions/${id}`;
       
     return apiClient.fetchJson(path);
   },
@@ -37,10 +39,10 @@ export const sessions = {
   /**
    * Create a new session
    */
-  create: async (params: any, workspaceId?: string) => {
+  create: async (params: CreateSessionRequest, workspaceId?: string): Promise<SessionResponse> => {
     const path = workspaceId
       ? apiClient.createUrl('/sessions', workspaceId)
-      : '/sessions';
+      : '/system/sessions';
       
     return apiClient.fetchJson(path, {
       method: 'POST',
@@ -51,10 +53,10 @@ export const sessions = {
   /**
    * Update an existing session
    */
-  update: async (id: string, params: any, workspaceId?: string) => {
+  update: async (id: string, params: UpdateSessionRequest, workspaceId?: string): Promise<SessionResponse> => {
     const path = workspaceId
       ? apiClient.createUrl(`/sessions/${id}`, workspaceId)
-      : `/sessions/${id}`;
+      : `/system/sessions/${id}`;
       
     return apiClient.fetchJson(path, {
       method: 'PUT',
@@ -68,7 +70,7 @@ export const sessions = {
   delete: async (id: string, workspaceId?: string): Promise<DeleteResponse> => {
     const path = workspaceId
       ? apiClient.createUrl(`/sessions/${id}`, workspaceId)
-      : `/sessions/${id}`;
+      : `/system/sessions/${id}`;
       
     return apiClient.fetchJson<DeleteResponse>(path, {
       method: 'DELETE'
@@ -76,12 +78,12 @@ export const sessions = {
   },
   
   /**
-   * Send a message to a session
+   * Send a message to a session through the streaming API
    */
   sendMessage: async (sessionId: string, message: string, workspaceId?: string) => {
     const path = workspaceId
-      ? apiClient.createUrl(`/sessions/${sessionId}/messages`, workspaceId)
-      : `/sessions/${sessionId}/messages`;
+      ? apiClient.createUrl(`/streaming/${sessionId}/request`, workspaceId)
+      : `/system/streaming/${sessionId}/request`;
       
     return apiClient.fetchJson(path, {
       method: 'POST',
@@ -90,13 +92,13 @@ export const sessions = {
   },
   
   /**
-   * Get message history for a session
+   * Get messages for a session
    */
   getMessages: async (sessionId: string, workspaceId?: string) => {
     const path = workspaceId
       ? apiClient.createUrl(`/sessions/${sessionId}/messages`, workspaceId)
-      : `/sessions/${sessionId}/messages`;
+      : `/system/sessions/${sessionId}/history`;
       
     return apiClient.fetchJson(path);
-  }
+  },
 };

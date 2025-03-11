@@ -4,9 +4,10 @@
 import { create } from 'zustand';
 import { useWorkspaceStore } from './workspaceStore';
 import { api } from '@/lib/api';
+import { CreateSessionParams } from './session/sessions';
 
 // Store state interface
-interface SessionState {
+export interface SessionState {
   // State
   currentSessionId: string | null;
   isLoading: boolean;
@@ -14,7 +15,7 @@ interface SessionState {
   
   // Actions
   setCurrentSessionId: (id: string | null) => void;
-  createNewSession: (params?: any) => Promise<string | null>;
+  createNewSession: (params: CreateSessionParams) => Promise<string | null>;
   clearError: () => void;
 }
 
@@ -41,7 +42,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
     }
   },
   
-  createNewSession: async (params = {}) => {
+  createNewSession: async (params: CreateSessionParams) => {
     try {
       set({ isLoading: true, error: null });
       
@@ -51,11 +52,8 @@ export const useSessionStore = create<SessionState>((set, get) => ({
         throw new Error('No workspace selected');
       }
       
-      // Create a new session
-      const session = await api.sessions.create({
-        name: `Session ${new Date().toLocaleString()}`,
-        ...params
-      }, workspaceId);
+      // Create a new session with title and description
+      const session = await api.sessions.create(params, workspaceId);
       
       // Set as current session
       set({ currentSessionId: session.id, isLoading: false });

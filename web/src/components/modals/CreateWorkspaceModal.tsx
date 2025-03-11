@@ -38,12 +38,14 @@ export default function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspac
   // Handle form submission
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name || !path) return;
+    if (!name) return;
     
-    createWorkspace.mutate({
-      name,
-      path
-    }, {
+    // Create payload with required fields
+    const payload: { name: string; path: string } = { name, path: path || '' };
+    
+    console.log(`Creating workspace with name: ${name}, path: ${path || defaultPath}`);
+    
+    createWorkspace.mutate(payload, {
       onSuccess: (workspace: { id: string }) => {
         setCurrentWorkspaceId(workspace.id);
         onClose();

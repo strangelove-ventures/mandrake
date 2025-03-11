@@ -5,7 +5,7 @@ import os from 'os';
 import { ToolsManager } from './tools';
 import { ModelsManager } from './models';
 import { PromptManager } from './prompt';
-import { getMandrakePaths, type MandrakePaths } from '../utils/paths';
+import { getMandrakePaths, type MandrakePaths, getMandrakeDir } from '../utils/paths';
 import { SessionManager } from './session';
 import { validateWorkspaceName } from '../utils/validation';
 import { WorkspaceManager } from './workspace';
@@ -71,30 +71,43 @@ export class MandrakeManager {
     const workspaceId = crypto.randomUUID();
 
     // Determine workspace path
-    let workspacePath;
+    let resolvedPath;
     if (path) {
       // Handle tilde in custom path if present
       if (path.startsWith('~')) {
-        workspacePath = join(process.env.HOME || os.homedir(), path.substring(1));
+        resolvedPath = join(process.env.HOME || os.homedir(), path.substring(1));
       } else {
-        workspacePath = path;
+        resolvedPath = path;
       }
     } else {
-      workspacePath = join(this.paths.root, 'workspaces', name);
+      // Default to ~/.mandrake/workspaces/{name}
+      resolvedPath = join(getMandrakeDir(), 'workspaces', name);
     }
     
-    this.logger.info('Creating workspace with resolved path', { workspacePath });
-    const workspaceParentDir = dirname(workspacePath);
+    // Get parent directory for WorkspaceManager
+    // If the path ends with the workspace name, use its parent
+    // Otherwise, assume it's already the parent dir
+    const isFullWorkspacePath = resolvedPath.endsWith(`/${name}`);
+    const workspaceParentDir = isFullWorkspacePath 
+      ? dirname(resolvedPath)
+      : resolvedPath;
+    
+    this.logger.info('Creating workspace', { 
+      name,
+      fullPath: isFullWorkspacePath ? resolvedPath : join(workspaceParentDir, name),
+      parentDir: workspaceParentDir
+    });
 
     // Create workspace with the ID
     const workspace = new WorkspaceManager(workspaceParentDir, name, workspaceId);
     await workspace.init(description);
 
-    // Register the workspace
+    // Register the workspace with the correct full path
+    const fullWorkspacePath = join(workspaceParentDir, name);
     await this.config.registerWorkspace({
       id: workspaceId,
       name,
-      path: workspacePath,
+      path: fullWorkspacePath,
       description,
       lastOpened: new Date().toISOString()
     });
@@ -113,8 +126,27 @@ export class MandrakeManager {
     // Update last opened timestamp
     await this.config.updateWorkspaceTimestamp(id);
 
-    // Get workspace directory from the path
-    const workspaceParentDir = dirname(workspaceInfo.path);
+    // Resolve the workspace path
+    let resolvedPath = workspaceInfo.path;
+    if (resolvedPath.startsWith('~')) {
+      resolvedPath = join(process.env.HOME || os.homedir(), resolvedPath.substring(1));
+    }
+    
+    // The workspace path should end with the workspace name
+    // We need the parent directory for the WorkspaceManager
+    const isFullWorkspacePath = resolvedPath.endsWith(`/${workspaceInfo.name}`);
+    const workspaceParentDir = isFullWorkspacePath
+      ? dirname(resolvedPath)
+      : resolvedPath;
+
+    this.logger.info('Getting workspace', {
+      id,
+      name: workspaceInfo.name,
+      originalPath: workspaceInfo.path,
+      resolvedPath,
+      workspaceParentDir,
+      isFullWorkspacePath
+    });
 
     const workspace = new WorkspaceManager(workspaceParentDir, workspaceInfo.name, workspaceInfo.id);
 
@@ -170,7 +202,17 @@ export class MandrakeManager {
       throw new Error(`Workspace "${name}" already exists`);
     }
 
-    const workspaceParentDir = dirname(workspacePath);
+    // Resolve tilde in path if present
+    let resolvedPath = workspacePath;
+    if (workspacePath.startsWith('~')) {
+      resolvedPath = join(process.env.HOME || os.homedir(), workspacePath.substring(1));
+    }
+    
+    // Determine proper parent directory
+    const isFullWorkspacePath = resolvedPath.endsWith(`/${name}`);
+    const workspaceParentDir = isFullWorkspacePath
+      ? dirname(resolvedPath)
+      : resolvedPath;
 
     try {
       // Get the existing workspace config to extract the ID

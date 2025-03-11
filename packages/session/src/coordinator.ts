@@ -646,7 +646,7 @@ export class SessionCoordinator {
     };
   }
 
-  private async buildSystemPrompt(): Promise<string> {
+  async buildSystemPrompt(): Promise<string> {
     const promptConfig = await this.opts.promptManager.getConfig();
 
     const instructions = promptConfig.instructions || 'You are mandrake an ai assistant';

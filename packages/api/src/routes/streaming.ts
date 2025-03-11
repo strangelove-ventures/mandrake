@@ -3,7 +3,7 @@ import { SessionCoordinator } from '@mandrake/session';
 import { WorkspaceManager } from '@mandrake/workspace';
 import type { ManagerAccessors, Managers } from '../types';
 import { sendError } from './utils';
-import {
+import type {
   StreamRequestRequest,
   StreamRequestResponse,
   StreamInitEvent,

@@ -245,11 +245,11 @@ export class WorkspaceInMemoryServer implements MCPServer {
         case 'readFile':
           return { 
             isError: false,
-            content: [{ type: 'text', text: await this.workspaceManager.files.read(params.path) }]
+            content: [{ type: 'text', text: await this.workspaceManager.files.get(params.path) }]
           };
           
         case 'writeFile':
-          await this.workspaceManager.files.write(params.path, params.content);
+          await this.workspaceManager.files.create(params.path, params.content);
           return { 
             isError: false,
             content: [{ type: 'text', text: 'File written successfully' }]
@@ -262,63 +262,53 @@ export class WorkspaceInMemoryServer implements MCPServer {
             content: [{ type: 'text', text: JSON.stringify(files) }]
           };
           
-        case 'searchFiles':
-          const foundFiles = await this.workspaceManager.files.search({
-            pattern: params.pattern,
-            path: params.path || '.'
-          });
-          return {
-            isError: false,
-            content: [{ type: 'text', text: JSON.stringify(foundFiles) }]
-          };
-          
         case 'getModelsConfig':
-          const modelsConfig = await this.workspaceManager.models.read();
+          const modelsConfig = await this.workspaceManager.models.listModels();
           return {
             isError: false,
             content: [{ type: 'text', text: JSON.stringify(modelsConfig) }]
           };
           
         case 'updateModelsConfig':
-          await this.workspaceManager.models.write(params.config);
+          await this.workspaceManager.models.updateModel(params.id, params.config);
           return {
             isError: false,
             content: [{ type: 'text', text: 'Models configuration updated successfully' }]
           };
           
         case 'getPromptConfig':
-          const promptConfig = await this.workspaceManager.prompt.read();
+          const promptConfig = await this.workspaceManager.prompt.getConfig();
           return {
             isError: false,
             content: [{ type: 'text', text: JSON.stringify(promptConfig) }]
           };
           
         case 'updatePromptConfig':
-          await this.workspaceManager.prompt.write(params.config);
+          await this.workspaceManager.prompt.updateConfig(params.config);
           return {
             isError: false,
             content: [{ type: 'text', text: 'Prompt configuration updated successfully' }]
           };
           
         case 'getToolsConfig':
-          const toolsConfig = await this.workspaceManager.tools.read();
+          const toolsConfig = await this.workspaceManager.tools.getConfigSet(await this.workspaceManager.tools.getActive());
           return {
             isError: false,
             content: [{ type: 'text', text: JSON.stringify(toolsConfig) }]
           };
           
         case 'updateToolsConfig':
-          await this.workspaceManager.tools.write(params.config);
+          await this.workspaceManager.tools.updateServerConfig(params.setId, params.serverId, params.config);
           return {
             isError: false,
             content: [{ type: 'text', text: 'Tools configuration updated successfully' }]
           };
           
         case 'listSessions':
-          const sessions = await this.workspaceManager.sessions.listSessions(
-            params.limit,
-            params.offset
-          );
+          const sessions = await this.workspaceManager.sessions.listSessions({
+            limit: params.limit,
+            offset: params.offset
+          });
           return {
             isError: false,
             content: [{ type: 'text', text: JSON.stringify(sessions) }]

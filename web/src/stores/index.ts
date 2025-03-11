@@ -5,6 +5,7 @@
 export * from './system/global';
 export * from './system/tools';
 export * from './system/models';
+export * from './system/prompt';
 
 // UI
 export * from './ui/layout';
