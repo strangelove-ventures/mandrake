@@ -342,6 +342,69 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
     return c.json({ error: 'Invalid streaming path' }, 404);
   });
   
+  // Server status routes - these need to be explicit since the nested routing doesn't always work
+  workspaceRouter.get('/tools/servers/status', async (c) => {
+    const workspace = c.get('workspace') as WorkspaceManager;
+    const mcpManager = c.get('mcpManager') as MCPManager;
+
+    try {
+      const serverStatuses = {};
+
+      // Get active tool configuration
+      const active = await workspace.tools.getActive();
+      const activeConfig = await workspace.tools.getConfigSet(active);
+
+      // Check status for each server in the active config
+      for (const [serverId, config] of Object.entries(activeConfig)) {
+        if (config.disabled) {
+          serverStatuses[serverId] = { status: 'disabled' };
+          continue;
+        }
+
+        try {
+          const serverState = mcpManager.getServerState(serverId);
+          serverStatuses[serverId] = {
+            status: serverState ? 'running' : 'stopped',
+            state: serverState || null,
+          };
+        } catch (error) {
+          serverStatuses[serverId] = {
+            status: 'error',
+            error: error instanceof Error ? error.message : String(error)
+          };
+        }
+      }
+
+      return c.json(serverStatuses);
+    } catch (error) {
+      console.error('Error getting server status:', error);
+      return c.json({ error: 'Failed to get server status' }, 500);
+    }
+  });
+
+  workspaceRouter.get('/tools/servers/status/:serverId', async (c) => {
+    const serverId = c.req.param('serverId');
+    const mcpManager = c.get('mcpManager') as MCPManager;
+
+    try {
+      const serverState = mcpManager.getServerState(serverId);
+      if (!serverState) {
+        return c.json({ status: 'stopped' });
+      }
+      return c.json({
+        status: 'running',
+        state: serverState
+      });
+    } catch (error) {
+      console.error(`Error getting status for server ${serverId}:`, error);
+      return c.json({
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      }, 500);
+    }
+  });
+
+  
   // Mount the workspace router
   app.route('/:workspaceId', workspaceRouter);
   

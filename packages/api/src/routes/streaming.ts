@@ -92,6 +92,33 @@ export function sessionStreamingRoutes(
 ) {
   const app = new Hono();
   
+  // Get session prompt for a session
+  app.get('/:sessionId/prompt', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    
+    try {
+      // Get or create a session coordinator
+      const coordinator = getOrCreateSessionCoordinator(
+        isSystem, 
+        sessionId, 
+        managers, 
+        accessors, 
+        workspaceId
+      );
+      
+      // Build the context which includes the system prompt
+      const context = await coordinator.buildContext(sessionId);
+      
+      // Return the system prompt
+      return c.json({
+        sessionId,
+        systemPrompt: context.systemPrompt
+      });
+    } catch (error) {
+      return sendError(c, error, `Failed to get prompt for session ${sessionId}`);
+    }
+  });
+  
   // Stream a new request and response
   app.post('/:sessionId/request', async (c) => {
     const sessionId = c.req.param('sessionId');

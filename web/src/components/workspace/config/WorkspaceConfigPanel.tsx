@@ -7,33 +7,47 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import ToolsConfig from './ToolsConfig';
-import ModelsConfig from './ModelsConfig';
+import FilesConfig from './FilesConfig';
+import DynamicContextConfig from './DynamicContextConfig';
 import PromptConfig from './PromptConfig';
-import SystemConfig from './SystemConfig';
+import WorkspaceConfig from './WorkspaceConfig';
+import ModelsConfig from './ModelsConfig';
 
-export default function SystemConfigPanel() {
+interface WorkspaceConfigPanelProps {
+  workspaceId: string;
+}
+
+export default function WorkspaceConfigPanel({ workspaceId }: WorkspaceConfigPanelProps) {
   return (
     <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm">
       <div className="p-4 border-b dark:border-gray-700">
-        <h2 className="text-xl font-semibold">System Configuration</h2>
+        <h2 className="text-xl font-semibold">Workspace Configuration</h2>
       </div>
       
       <div className="p-4">
         <Accordion type="multiple" className="w-full">
-          <ConfigSection value="system" title="System Settings" icon="⚙️">
-            <SystemConfig />
+          <ConfigSection value="workspace" title="Workspace" icon="🏢">
+            <WorkspaceConfig workspaceId={workspaceId} />
           </ConfigSection>
           
           <ConfigSection value="tools" title="Tools" icon="🛠️">
-            <ToolsConfig />
+            <ToolsConfig workspaceId={workspaceId} />
           </ConfigSection>
           
           <ConfigSection value="models" title="Models" icon="🤖">
-            <ModelsConfig />
+            <ModelsConfig workspaceId={workspaceId} />
+          </ConfigSection>
+          
+          <ConfigSection value="files" title="Files" icon="📁">
+            <FilesConfig workspaceId={workspaceId} />
+          </ConfigSection>
+          
+          <ConfigSection value="dynamic" title="Dynamic Context" icon="🔄">
+            <DynamicContextConfig workspaceId={workspaceId} />
           </ConfigSection>
           
           <ConfigSection value="prompt" title="Prompt" icon="💬">
-            <PromptConfig />
+            <PromptConfig workspaceId={workspaceId} />
           </ConfigSection>
         </Accordion>
       </div>

@@ -58,7 +58,10 @@ export function useCreateSession(workspaceId?: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (params: any) => api.sessions.create(params, workspaceId),
+    mutationFn: (params: any) => {
+      const { workspaceId: paramWorkspaceId, ...rest } = params;
+      return api.sessions.create(rest, paramWorkspaceId || workspaceId);
+    },
     onSuccess: (data) => {
       // Update lists
       queryClient.invalidateQueries({ 

@@ -102,4 +102,15 @@ export const sessions = {
       
     return apiClient.fetchJson(path);
   },
+  
+  /**
+   * Get system prompt for a session
+   */
+  getSessionPrompt: async (sessionId: string, workspaceId?: string) => {
+    const path = workspaceId
+      ? apiClient.createUrl(`/streaming/${sessionId}/prompt`, workspaceId)
+      : `/system/streaming/${sessionId}/prompt`;
+      
+    return apiClient.fetchJson<{ sessionId: string; systemPrompt: string }>(path);
+  },
 };

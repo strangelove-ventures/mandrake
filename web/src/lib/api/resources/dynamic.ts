@@ -4,73 +4,72 @@
  */
 import { apiClient } from '../core/fetcher';
 
-/**
- * Dynamic context API client
- * Manages dynamic context for AI sessions
- */
 export const dynamic = {
   /**
-   * Get current dynamic context configuration
+   * List all dynamic context items
    */
-  get: async (workspaceId?: string) => {
+  list: async (workspaceId?: string) => {
+    const basePath = '/workspace/dynamic';
     const path = workspaceId
-      ? apiClient.createUrl('/dynamic', workspaceId)
-      : '/dynamic';
+      ? apiClient.createUrl(basePath, workspaceId)
+      : basePath;
       
     return apiClient.fetchJson(path);
   },
   
   /**
-   * Update dynamic context configuration
+   * Get a specific dynamic context item
    */
-  update: async (config: any, workspaceId?: string) => {
+  get: async (id: string, workspaceId?: string) => {
+    const basePath = `/workspace/dynamic/${id}`;
     const path = workspaceId
-      ? apiClient.createUrl('/dynamic', workspaceId)
-      : '/dynamic';
+      ? apiClient.createUrl(basePath, workspaceId)
+      : basePath;
       
-    return apiClient.fetchJson(path, {
-      method: 'PUT',
-      body: config
-    });
+    return apiClient.fetchJson(path);
   },
   
   /**
-   * Add a specific item to the dynamic context
+   * Create a new dynamic context item
    */
-  addItem: async (item: any, workspaceId?: string) => {
+  create: async (context: any, workspaceId?: string) => {
+    const basePath = '/workspace/dynamic';
     const path = workspaceId
-      ? apiClient.createUrl('/dynamic/items', workspaceId)
-      : '/dynamic/items';
+      ? apiClient.createUrl(basePath, workspaceId)
+      : basePath;
       
     return apiClient.fetchJson(path, {
       method: 'POST',
-      body: item
+      body: context
     });
   },
   
   /**
-   * Remove an item from the dynamic context
+   * Update an existing dynamic context item
    */
-  removeItem: async (id: string, workspaceId?: string) => {
+  update: async (id: string, context: any, workspaceId?: string) => {
+    const basePath = `/workspace/dynamic/${id}`;
     const path = workspaceId
-      ? apiClient.createUrl(`/dynamic/items/${id}`, workspaceId)
-      : `/dynamic/items/${id}`;
+      ? apiClient.createUrl(basePath, workspaceId)
+      : basePath;
+      
+    return apiClient.fetchJson(path, {
+      method: 'PUT',
+      body: context
+    });
+  },
+  
+  /**
+   * Delete a dynamic context item
+   */
+  delete: async (id: string, workspaceId?: string) => {
+    const basePath = `/workspace/dynamic/${id}`;
+    const path = workspaceId
+      ? apiClient.createUrl(basePath, workspaceId)
+      : basePath;
       
     return apiClient.fetchJson(path, {
       method: 'DELETE'
-    });
-  },
-  
-  /**
-   * Clear all dynamic context items
-   */
-  clear: async (workspaceId?: string) => {
-    const path = workspaceId
-      ? apiClient.createUrl('/dynamic/clear', workspaceId)
-      : '/dynamic/clear';
-      
-    return apiClient.fetchJson(path, {
-      method: 'POST'
     });
   }
 };

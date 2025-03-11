@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { SessionManager, WorkspaceManager } from '@mandrake/workspace';
 import type { ManagerAccessors, Managers } from '../types';
 import { sendError } from './utils';
-import {
+import type {
   SessionResponse,
   SessionListResponse,
   CreateSessionRequest,
@@ -159,7 +159,7 @@ export function sessionDatabaseRoutes(
         id: session.id,
         title: session.title,
         description: session.description,
-        metadata: session.metadata ? JSON.parse(session.metadata) : {},
+        metadata: session.metadata ? JSON.parse(session.metadata as string) : {},
         createdAt: session.createdAt,
         updatedAt: session.updatedAt
       };

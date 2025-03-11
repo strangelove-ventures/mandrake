@@ -38,8 +38,24 @@ export async function initializeManagers(mandrakeHome?: string): Promise<{ manag
     const systemMcpManager = new MCPManager();
     
     // Get system tool configs and initialize MCP servers
-    // For now, no need to initialize system tools during testing
-    // This will be handled when actual tools are added
+    try {
+      // Get system tool configurations and set up servers
+      const active = await mandrakeManager.tools.getActive();
+      const toolConfigs = await mandrakeManager.tools.getConfigSet(active);
+      
+      // For each tool config, potentially start an MCP server
+      for (const [toolName, config] of Object.entries(toolConfigs)) {
+        if (!config) continue;
+        try {
+          console.log(`Starting system tool server: ${toolName}`);
+          await systemMcpManager.startServer(toolName, config);
+        } catch (serverError) {
+          console.warn(`Failed to start server for system tool ${toolName}:`, serverError);
+        }
+      }
+    } catch (toolsError) {
+      console.warn('Error loading system tools:', toolsError);
+    }
     
     const systemSessionCoordinators = new Map<string, SessionCoordinator>();
     

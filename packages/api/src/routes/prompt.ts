@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { PromptManager } from '@mandrake/workspace';
-import { type PromptConfig } from '@mandrake/workspace/src/types/workspace/prompt';
+import { type PromptConfig } from '@mandrake/workspace';
 
 // Interface matching the test expectations for the prompt config
 interface ApiPromptConfig {

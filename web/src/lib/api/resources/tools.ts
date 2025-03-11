@@ -134,5 +134,70 @@ export const tools = {
       method: 'PUT',
       body: { id }
     });
+  },
+  
+  /**
+   * Get status for all servers
+   */
+  getServersStatus: async (workspaceId?: string) => {
+    const basePath = workspaceId
+      ? `/workspaces/${workspaceId}/tools/servers/status`
+      : '/system/tools/servers/status';
+      
+    return apiClient.fetchJson(basePath);
+  },
+
+  /**
+   * Get status for a specific server
+   */
+  getServerStatus: async (id: string, workspaceId?: string) => {
+    const basePath = workspaceId
+      ? `/workspaces/${workspaceId}/tools/servers/status/${id}`
+      : `/system/tools/servers/status/${id}`;
+      
+    return apiClient.fetchJson(basePath);
+  },
+
+  /**
+   * Get methods available on a specific server
+   */
+  getServerMethods: async (id: string, workspaceId?: string) => {
+    const basePath = `/system/tools/operations/server/${id}`;
+    const path = workspaceId
+      ? apiClient.createUrl(basePath, workspaceId)
+      : basePath;
+      
+    return apiClient.fetchJson(path);
+  },
+
+  /**
+   * Get details for a specific method
+   */
+  getMethodDetails: async (serverId: string, methodName: string, workspaceId?: string) => {
+    const basePath = `/system/tools/operations/server/${serverId}/method/${methodName}`;
+    const path = workspaceId
+      ? apiClient.createUrl(basePath, workspaceId)
+      : basePath;
+      
+    return apiClient.fetchJson(path);
+  },
+
+  /**
+   * Invoke a method on a server
+   */
+  invokeMethod: async (serverId: string, methodName: string, params: any, workspaceId?: string) => {
+    const basePath = '/system/tools/operations/invoke';
+    const path = workspaceId
+      ? apiClient.createUrl(basePath, workspaceId)
+      : basePath;
+      
+    return apiClient.fetchJson(path, {
+      method: 'POST',
+      body: {
+        serverId,
+        toolName: methodName,
+        params
+      }
+    });
   }
 };

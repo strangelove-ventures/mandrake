@@ -114,6 +114,75 @@ export function toolsConfigRoutes(toolsManager: ToolsManager) {
 export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager) {
   const app = new Hono();
   
+  // Get status for all servers
+  app.get('/status', async (c) => {
+    try {
+      const serverStatuses = {};
+      
+      // If we have a ToolsManager, use it to get active configuration
+      if (toolsManager) {
+        try {
+          const active = await toolsManager.getActive();
+          const activeConfig = await toolsManager.getConfigSet(active);
+          
+          // Check status for each server in the active config
+          for (const [serverId, config] of Object.entries(activeConfig)) {
+            if (config.disabled) {
+              serverStatuses[serverId] = { status: 'disabled' };
+              continue;
+            }
+            
+            try {
+              const serverState = mcpManager.getServerState(serverId);
+              serverStatuses[serverId] = {
+                status: serverState ? 'running' : 'stopped',
+                state: serverState || null,
+              };
+            } catch (error) {
+              serverStatuses[serverId] = { 
+                status: 'error',
+                error: error instanceof Error ? error.message : String(error) 
+              };
+            }
+          }
+        } catch (error) {
+          console.error('Error getting active tool configuration:', error);
+          return c.json({ error: 'Failed to get server status' }, 500);
+        }
+      } else {
+        // Without ToolsManager, just list running servers from MCPManager directly
+        // This is less complete but still provides some information
+        // In a real implementation, you might want to iterate through all known servers
+      }
+      
+      return c.json(serverStatuses);
+    } catch (error) {
+      console.error('Error getting server status:', error);
+      return c.json({ error: 'Failed to get server status' }, 500);
+    }
+  });
+  
+  // Get status for a specific server
+  app.get('/status/:serverId', async (c) => {
+    const serverId = c.req.param('serverId');
+    try {
+      const serverState = mcpManager.getServerState(serverId);
+      if (!serverState) {
+        return c.json({ status: 'stopped' });
+      }
+      return c.json({ 
+        status: 'running',
+        state: serverState
+      });
+    } catch (error) {
+      console.error(`Error getting status for server ${serverId}:`, error);
+      return c.json({ 
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error) 
+      }, 500);
+    }
+  });
+  
   // List all servers (configurations and running status)
   app.get('/', async (c) => {
     try {
@@ -184,6 +253,30 @@ export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager
  */
 export function toolsOperationRoutes(mcpManager: MCPManager) {
   const app = new Hono();
+  
+  // Get details for a specific method from a server
+  app.get('/server/:serverId/method/:methodName', async (c) => {
+    const serverId = c.req.param('serverId');
+    const methodName = c.req.param('methodName');
+    try {
+      const server = mcpManager.getServer(serverId);
+      if (!server) {
+        return c.json({ error: `Server ${serverId} not found` }, 404);
+      }
+      
+      const tools = await server.listTools();
+      const method = tools.find(tool => tool.name === methodName);
+      
+      if (!method) {
+        return c.json({ error: `Method ${methodName} not found on server ${serverId}` }, 404);
+      }
+      
+      return c.json(method);
+    } catch (error) {
+      console.error(`Error getting method ${methodName} from server ${serverId}:`, error);
+      return c.json({ error: `Failed to get method details` }, 500);
+    }
+  });
   
   // List all available tools from all servers
   app.get('/', async (c) => {

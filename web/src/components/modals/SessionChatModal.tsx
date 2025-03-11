@@ -1,8 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession, useSessionMessages, useSendMessage, useSessionStream } from '@/hooks/api';
-import { useSessionStore } from '@/stores';
+import { useSession, useSessionMessages, useSendMessage, useSessionStream, usePollingUpdates, useSessionPrompt } from '@/hooks/api';
+// import { useSessionStore } from '@/stores';
 import { 
   MessageList, 
   ChatInput, 
@@ -16,17 +17,18 @@ interface SessionChatModalProps {
   isOpen: boolean;
   onClose: () => void;
   sessionId: string;
+  workspaceId?: string;
 }
 
-export default function SessionChatModal({ isOpen, onClose, sessionId }: SessionChatModalProps) {
+export default function SessionChatModal({ isOpen, onClose, sessionId, workspaceId }: SessionChatModalProps) {
   // Get session details
-  const { data: session, isLoading: isLoadingSession } = useSession(sessionId);
+  const { data: session, isLoading: isLoadingSession } = useSession(sessionId, workspaceId);
   
   // Get messages for this session
-  const { data: messagesData, isLoading: isLoadingMessages, refetch: refetchMessages } = useSessionMessages(sessionId);
+  const { data: messagesData, isLoading: isLoadingMessages, refetch: refetchMessages } = useSessionMessages(sessionId, workspaceId);
   
   // Send message mutation
-  const sendMessage = useSendMessage();
+  const sendMessage = useSendMessage(workspaceId);
   
   // Local state
   const [isSending, setIsSending] = useState(false);
@@ -35,6 +37,15 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
   // State for error handling and retries
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  
+  // State for system prompt modal
+  const [showSystemPrompt, setShowSystemPrompt] = useState(false);
+  
+  // Get system prompt - lazy loaded when needed
+  const { data: promptData, isLoading: isLoadingPrompt, refetch: refetchPrompt } = useSessionPrompt(
+    sessionId,
+    workspaceId || ''
+  );
   
   // For streaming updates
   const {
@@ -46,8 +57,21 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
     disconnect: disconnectStream
   } = useSessionStream({
     sessionId,
-    workspaceId: '',  // Empty for system sessions
+    workspaceId: workspaceId || '',
     autoConnect: false
+  });
+  
+  // For polling updates (fallback for streaming)
+  const {
+    data: pollingData,
+    isPolling,
+    startPolling,
+    stopPolling
+  } = usePollingUpdates({
+    sessionId,
+    workspaceId: workspaceId || '',
+    enabled: false,   // Only enable when streaming fails
+    interval: 1000    // Poll every second
   });
 
   // Reset user message and error state when switching sessions
@@ -110,6 +134,10 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
       console.error('Streaming error:', streamingError);
       setError(`Streaming error: ${getFormattedErrorMessage(streamingError)}`);
       
+      // Switch to polling mode if streaming fails
+      console.log('Streaming failed, falling back to polling mode');
+      startPolling();
+      
       // Automatically refetch messages after a streaming error
       const timer = setTimeout(() => {
         fetchHistoryFallback();
@@ -130,8 +158,8 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
     }
   }, [isConnected, isComplete, streamingTurns]);
   
-  // Process messages from history
-  const messages = messagesFromHistory(messagesData);
+  // Process messages from history - use polling data if available
+  const messages = messagesFromHistory(pollingData || messagesData);
   
   // Handle closing chat modal - cleanup resources
   useEffect(() => {
@@ -140,11 +168,17 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
       disconnect();
     }
     
+    if (!isOpen && isPolling) {
+      // Stop polling when modal closes
+      stopPolling();
+    }
+    
     // Cleanup on unmount
     return () => {
       disconnect();
+      stopPolling();
     };
-  }, [isOpen, isConnected]);
+  }, [isOpen, isConnected, isPolling]);
   
   // Reset streaming state when complete
   useEffect(() => {
@@ -152,6 +186,11 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
       // When stream completes, refetch messages to get the final state
       fetchHistoryFallback();
       setUserMessage(null);
+      
+      // Stop polling when streaming completes successfully
+      if (isPolling) {
+        stopPolling();
+      }
     }
   }, [isComplete]);
   
@@ -234,13 +273,13 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
   if (!isOpen) return null;
   
   // Show streaming indicators
-  const isStreaming = isConnected && !isComplete;
-  
+  const isStreaming = (isConnected && !isComplete) || isPolling;
+    
   // All messages including pending user message and streaming responses
-  let messagesWithoutUserMessage = [...messages];
+  const messagesWithoutUserMessage = [...messages];
   
   // Add streaming responses
-  let messagesWithStreaming = addStreamingData(messagesWithoutUserMessage, streamingTurns, isStreaming);
+  const messagesWithStreaming = addStreamingData(messagesWithoutUserMessage, streamingTurns, isStreaming);
   
   // Add pending user message if it exists - do this last to avoid duplicating in history
   const allMessages = addUserMessage(messagesWithStreaming, userMessage);
@@ -253,14 +292,29 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
           <h2 className="text-xl font-bold truncate">
             {isLoadingSession ? 'Loading...' : session?.title}
           </h2>
-          <button 
-            onClick={onClose}
-            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => {
+                setShowSystemPrompt(true);
+                refetchPrompt();
+              }}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded text-sm flex items-center gap-1"
+              title="View System Prompt"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>System Prompt</span>
+            </button>
+            <button 
+              onClick={onClose}
+              className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
         </div>
         
         {/* Error message */}
@@ -313,6 +367,50 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
           placeholder="Type your message..."
         />
       </div>
+      
+      {/* System Prompt Modal */}
+      {showSystemPrompt && (
+        <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] flex flex-col m-4 overflow-hidden">
+            <div className="flex justify-between items-center p-4 border-b dark:border-gray-700">
+              <h3 className="text-xl font-bold">System Prompt</h3>
+              <button 
+                onClick={() => setShowSystemPrompt(false)}
+                className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            
+            <div className="flex-1 p-4 overflow-auto">
+              {isLoadingPrompt ? (
+                <div className="flex justify-center items-center h-full">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900 dark:border-white"></div>
+                </div>
+              ) : promptData ? (
+                <pre className="whitespace-pre-wrap font-mono text-sm bg-gray-100 dark:bg-gray-900 p-4 rounded overflow-auto">
+                  {promptData.systemPrompt}
+                </pre>
+              ) : (
+                <div className="text-center text-gray-500 dark:text-gray-400">
+                  Error loading system prompt. Please try again.
+                </div>
+              )}
+            </div>
+            
+            <div className="flex justify-end p-4 border-t dark:border-gray-700">
+              <button 
+                onClick={() => setShowSystemPrompt(false)}
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

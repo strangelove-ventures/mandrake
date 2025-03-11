@@ -32,6 +32,8 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
     serverConfigError,
     isLoading,
     error,
+    serverStatus,
+    loadServerStatus,
     
     setIsEditingServer,
     setIsCreatingConfig,
@@ -210,6 +212,8 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
                       setNewServerCommand={setNewServerCommand}
                       serverConfigJson={serverConfigJson}
                       setServerConfigJson={setServerConfigJson}
+                      isWorkspace={isWorkspace}
+                      workspaceId={workspaceId}
                     />
                   )}
                   

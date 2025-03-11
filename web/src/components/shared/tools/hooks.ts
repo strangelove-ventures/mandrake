@@ -3,6 +3,7 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { useToolsStore } from '@/stores/system/tools';
+import { useServerStatus } from '@/hooks/useServerStatus';
 import { ServerConfig, ToolConfig, ToolsConfig, ServerEditState } from './types';
 
 /**
@@ -17,9 +18,27 @@ export function useToolsConfig(workspaceId?: string) {
     loadActiveTools, 
     setActiveTools,
     updateToolConfig,
-    isLoading, 
-    error 
+    isLoading: storeIsLoading, 
+    error: storeError,
+    loadServerMethods,
+    loadMethodDetails,
+    invokeMethod,
+    serverMethods,
+    selectedMethod,
+    methodExecutionHistory
   } = useToolsStore();
+  
+  // Server status from our custom hook
+  const { 
+    serverStatus, 
+    loadServerStatus, 
+    isLoading: statusIsLoading, 
+    error: statusError 
+  } = useServerStatus(workspaceId);
+  
+  // Combine loading and error states
+  const isLoading = storeIsLoading || statusIsLoading;
+  const error = storeError || statusError;
   
   // Local state
   const [toolsData, setToolsData] = useState<ToolsConfig | null>(null);
@@ -334,6 +353,18 @@ export function useToolsConfig(workspaceId?: string) {
     serverConfigError,
     isLoading,
     error,
+    
+    // Server status management
+    serverStatus,
+    loadServerStatus,
+    
+    // Method management
+    serverMethods,
+    selectedMethod,
+    methodExecutionHistory,
+    loadServerMethods,
+    loadMethodDetails,
+    invokeMethod,
     
     // Actions
     setSelectedConfigId,
