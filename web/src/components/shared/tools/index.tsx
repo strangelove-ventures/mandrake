@@ -45,6 +45,7 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
     handleSelectServer,
     handleActivateConfig,
     handleEditServer,
+    handleToggleServerDisabled,
     handleSaveServerEdits,
     handleAddConfig,
     handleAddServer,
@@ -102,51 +103,32 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
               onValueChange={handleSelectConfig}
             >
               <SelectTrigger className="w-[180px]">
-                <div className="flex items-center justify-between w-full">
-                  <SelectValue placeholder="Select a configuration" />
-                  {selectedConfigId === toolsData.active && (
-                    <Badge variant="outline" className="ml-2 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
-                      Active
-                    </Badge>
-                  )}
-                </div>
+                <SelectValue placeholder="Select a configuration" />
               </SelectTrigger>
               <SelectContent>
                 {Object.keys(toolsData.configs).map(configId => (
-                  <SelectItem key={configId} value={configId} className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {configId}
-                      {configId === toolsData.active && (
-                        <Badge variant="outline" className="ml-2 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-200">
-                          Active
-                        </Badge>
-                      )}
-                    </div>
+                  <SelectItem key={configId} value={configId}>
+                    {configId} {configId === toolsData.active ? "(Active)" : ""}
                   </SelectItem>
                 ))}
-                {/* Add config button as last item */}
-                <button
+                {/* Add config option as last item */}
+                <div 
                   onClick={(e) => {
                     e.preventDefault();
+                    e.stopPropagation();
                     setIsCreatingConfig(true);
                   }}
                   className="w-full flex items-center px-2 py-1.5 text-sm rounded-sm hover:bg-gray-100 dark:hover:bg-gray-800 cursor-pointer"
                 >
                   <PlusCircle className="mr-2 h-4 w-4" />
                   Add New Config
-                </button>
+                </div>
               </SelectContent>
             </Select>
           )}
         </div>
         
         <Dialog open={isCreatingConfig} onOpenChange={setIsCreatingConfig}>
-          <DialogTrigger className="hidden">  {/* Hide the original trigger */}
-            <Button variant="outline">
-              <PlusCircle className="mr-2 h-4 w-4" />
-              Add Config
-            </Button>
-          </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Tool Configuration</DialogTitle>
@@ -218,6 +200,7 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
                       selectedServerId={selectedServerId}
                       onSelectServer={handleSelectServer}
                       onEditServer={(serverId) => handleEditServer(selectedConfigId, serverId)}
+                      onToggleServerDisabled={(serverId) => handleToggleServerDisabled(selectedConfigId, serverId)}
                       onAddServer={handleAddServer}
                       isCreatingServer={isCreatingServer}
                       setIsCreatingServer={setIsCreatingServer}

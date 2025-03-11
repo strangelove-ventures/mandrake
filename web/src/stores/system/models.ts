@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 
 export interface ModelsState {
   // State
-  availableModels: any[];
+  models: any[];
   activeModelId: string | null;
   isLoading: boolean;
   error: string | null;
@@ -15,12 +15,14 @@ export interface ModelsState {
   loadModels: () => Promise<void>;
   loadActiveModel: () => Promise<void>;
   setActiveModel: (id: string) => Promise<void>;
+  updateModel: (id: string, config: any) => Promise<void>;
+  updateProvider: (id: string, config: any) => Promise<void>;
   clearError: () => void;
 }
 
 export const useModelsStore = create<ModelsState>((set) => ({
   // Initial state
-  availableModels: [],
+  models: [],
   activeModelId: null,
   isLoading: false,
   error: null,
@@ -30,10 +32,11 @@ export const useModelsStore = create<ModelsState>((set) => ({
     try {
       set({ isLoading: true, error: null });
       
-      // Load models from API
+      // Load models configurations from API
       const models = await api.models.list();
+      console.log('Store - Models API response:', models);
       set({ 
-        availableModels: models,
+        models,
         isLoading: false 
       });
     } catch (err) {
@@ -49,7 +52,7 @@ export const useModelsStore = create<ModelsState>((set) => ({
     try {
       set({ isLoading: true, error: null });
       
-      // Load active model from API
+      // Load active model ID from API
       const response = await api.models.getActive();
       set({ 
         activeModelId: response.id,
@@ -82,6 +85,56 @@ export const useModelsStore = create<ModelsState>((set) => ({
         isLoading: false, 
         error: err instanceof Error ? err.message : 'Failed to set active model' 
       });
+    }
+  },
+  
+  updateModel: async (id, config) => {
+    try {
+      set({ isLoading: true, error: null });
+      
+      // Update model via API
+      await api.models.update(id, config);
+      
+      // Refresh models list to get updated data
+      const models = await api.models.list();
+      
+      // Update local state
+      set({ 
+        models,
+        isLoading: false 
+      });
+    } catch (err) {
+      console.error('Failed to update model:', err);
+      set({ 
+        isLoading: false, 
+        error: err instanceof Error ? err.message : 'Failed to update model' 
+      });
+      throw err; // Re-throw to allow caller to handle error
+    }
+  },
+  
+  updateProvider: async (id, config) => {
+    try {
+      set({ isLoading: true, error: null });
+      
+      // Update provider via API
+      await api.models.updateProvider(id, config);
+      
+      // Refresh models list to get updated data
+      const models = await api.models.list();
+      
+      // Update local state
+      set({ 
+        models,
+        isLoading: false 
+      });
+    } catch (err) {
+      console.error('Failed to update provider:', err);
+      set({ 
+        isLoading: false, 
+        error: err instanceof Error ? err.message : 'Failed to update provider' 
+      });
+      throw err; // Re-throw to allow caller to handle error
     }
   },
   

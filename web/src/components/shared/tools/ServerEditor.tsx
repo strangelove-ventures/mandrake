@@ -27,21 +27,15 @@ interface ServerEditorProps {
  */
 export default function ServerEditor({ isOpen, onClose, editingServer, onSave }: ServerEditorProps) {
   const [localEditState, setLocalEditState] = useState<ServerEditState | null>(null);
+  const [jsonError, setJsonError] = useState<string | null>(null);
+  const [configJson, setConfigJson] = useState<string>('');
   
   // Update local state when the editingServer changes
   useEffect(() => {
     setLocalEditState(editingServer);
   }, [editingServer]);
   
-  // Can't edit if no server is selected
-  if (!localEditState) {
-    return null;
-  }
-  
-  // Parse JSON from editor
-  const [jsonError, setJsonError] = useState<string | null>(null);
-  const [configJson, setConfigJson] = useState<string>('');
-  
+  // Update JSON when localEditState changes
   useEffect(() => {
     if (localEditState) {
       setConfigJson(JSON.stringify({
@@ -50,6 +44,11 @@ export default function ServerEditor({ isOpen, onClose, editingServer, onSave }:
       }, null, 2));
     }
   }, [localEditState]);
+  
+  // Can't edit if no server is selected
+  if (!localEditState) {
+    return null;
+  }
   
   const parseServerConfig = (json: string): Record<string, any> => {
     try {
@@ -86,7 +85,7 @@ export default function ServerEditor({ isOpen, onClose, editingServer, onSave }:
   
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="sm:max-w-[550px] p-6 gap-4">
         <DialogHeader>
           <DialogTitle>Edit Server Configuration</DialogTitle>
           <DialogDescription>
@@ -95,14 +94,14 @@ export default function ServerEditor({ isOpen, onClose, editingServer, onSave }:
         </DialogHeader>
         
         <div className="grid gap-4 py-4">
-          <div className="grid grid-cols-4 items-start gap-4">
-            <label htmlFor="edit-server-config" className="text-right pt-2">Configuration</label>
-            <div className="col-span-3">
+          <div className="flex flex-col gap-3">
+            <label htmlFor="edit-server-config" className="text-sm font-medium">Server Configuration</label>
+            <div>
               <textarea
                 id="edit-server-config"
                 value={configJson}
                 onChange={(e) => setConfigJson(e.target.value)}
-                className="w-full p-3 border rounded-md h-64 font-mono text-sm"
+                className="w-full p-3 border rounded-md h-48 font-mono text-sm resize-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                 placeholder='{"command": "ripper-server", "args": ["--transport=stdio"]}'
               />
               {jsonError && (
@@ -113,9 +112,8 @@ export default function ServerEditor({ isOpen, onClose, editingServer, onSave }:
             </div>
           </div>
           
-          <div className="grid grid-cols-4 items-center gap-4">
-            <div className="text-right">Disabled</div>
-            <div className="col-span-3 flex items-center">
+          <div className="flex items-center space-x-2 mt-2">
+            <div className="flex items-center">
               <Checkbox 
                 id="edit-disabled"
                 checked={localEditState.config.disabled || false}
@@ -135,13 +133,21 @@ export default function ServerEditor({ isOpen, onClose, editingServer, onSave }:
         </div>
         
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>
-            <Save className="h-4 w-4 mr-1" />
-            Save Changes
-          </Button>
+          <div className="flex gap-3">
+            <div
+              className="px-4 py-2 border rounded-md hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
+              onClick={onClose}
+            >
+              Cancel
+            </div>
+            <div
+              className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 cursor-pointer flex items-center"
+              onClick={handleSave}
+            >
+              <Save className="h-4 w-4 mr-1" />
+              Save Changes
+            </div>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>

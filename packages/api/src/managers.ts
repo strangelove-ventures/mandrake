@@ -3,6 +3,7 @@ import { MCPManager } from '@mandrake/mcp';
 import type { SessionCoordinator } from '@mandrake/session';
 import { join } from 'path';
 import { readdir } from 'fs/promises';
+import os from 'os';
 import type { Managers, ManagerAccessors } from './types';
 import { loadWorkspace } from './routes/workspace';
 
@@ -14,7 +15,20 @@ import { loadWorkspace } from './routes/workspace';
 export async function initializeManagers(mandrakeHome?: string): Promise<{ managers: Managers, accessors: ManagerAccessors }> {
   try {
     // Set the Mandrake home directory
-    const home = mandrakeHome || join(process.env.HOME || '~', '.mandrake');
+    let home;
+    if (mandrakeHome) {
+      // Resolve tilde if present
+      if (mandrakeHome.startsWith('~')) {
+        home = join(process.env.HOME || os.homedir(), mandrakeHome.substring(1));
+      } else {
+        home = mandrakeHome;
+      }
+    } else {
+      // Default to ~/.mandrake
+      home = join(process.env.HOME || os.homedir(), '.mandrake');
+    }
+    
+    console.log(`Initializing Mandrake with home directory: ${home}`);
     
     // Initialize system-level managers
     const mandrakeManager = new MandrakeManager(home);

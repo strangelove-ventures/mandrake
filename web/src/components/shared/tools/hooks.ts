@@ -80,8 +80,8 @@ export function useToolsConfig(workspaceId?: string) {
   useEffect(() => {
     if (isCreatingServer) {
       setServerConfigJson(JSON.stringify({
-        command: "ripper-server",
-        args: ["--transport=stdio", "--excludePatterns=\\.ws"]
+        command: "foo",
+        args: ["bar", "--baz"]
       }, null, 2));
       setServerConfigError(null);
     }
@@ -142,6 +142,44 @@ export function useToolsConfig(workspaceId?: string) {
       setIsEditingServer(true);
     }
   }, [toolsData]);
+  
+  // Handle toggling server disabled state
+  const handleToggleServerDisabled = useCallback(async (configId: string, serverId: string) => {
+    if (!toolsData || !toolsData.configs[configId] || !toolsData.configs[configId][serverId]) {
+      console.error('Server not found:', configId, serverId);
+      return;
+    }
+
+    try {
+      // Get the current server config
+      const serverConfig = toolsData.configs[configId][serverId];
+      
+      // Create updated config with toggled disabled state
+      const updatedServerConfig = {
+        ...serverConfig,
+        disabled: !serverConfig.disabled
+      };
+      
+      // Create updated config for the whole set
+      const updatedConfig = {
+        ...toolsData.configs[configId],
+        [serverId]: updatedServerConfig
+      };
+
+      // Call API to update config
+      await updateToolConfig(configId, updatedConfig);
+      
+      // Update local state immediately for better UX
+      const newToolsData = {...toolsData};
+      newToolsData.configs[configId][serverId].disabled = !serverConfig.disabled;
+      setToolsData(newToolsData);
+      
+      // Refresh data
+      await loadTools();
+    } catch (err) {
+      console.error('Error toggling server disabled state:', err);
+    }
+  }, [loadTools, toolsData, updateToolConfig]);
   
   // Handle saving server edits
   const handleSaveServerEdits = useCallback(async (serverEdit: ServerEditState) => {
@@ -314,6 +352,7 @@ export function useToolsConfig(workspaceId?: string) {
     handleSelectServer,
     handleActivateConfig,
     handleEditServer,
+    handleToggleServerDisabled,
     handleSaveServerEdits,
     handleAddConfig,
     handleAddServer,

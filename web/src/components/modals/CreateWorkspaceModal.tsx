@@ -16,6 +16,7 @@ export default function CreateWorkspaceModal({ isOpen, onClose }: CreateWorkspac
   const [customPath, setCustomPath] = useState('');
   
   // Derived state for the path
+  // Use standardized path format that will be properly resolved on the server
   const defaultPath = name ? `~/.mandrake/workspaces/${name.toLowerCase().replace(/\s+/g, '-')}` : '';
   const path = useCustomPath ? customPath : defaultPath;
   

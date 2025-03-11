@@ -29,7 +29,7 @@
     "test:web": "bun run --cwd web test",
     "dev": "bun run dev:all",
     "dev:all": "bash -c 'trap \"kill 0\" EXIT; bun run dev:api & bun run dev:web & wait'",
-    "dev:api": "MANDRAKE_HOME=/Users/johnzampolin/.mandrake PORT=4000 bun run --cwd packages/api dev",
+    "dev:api": "PORT=4000 bun run --cwd packages/api dev",
     "dev:web": "PORT=3000 bun run --cwd web dev",
     "dev:web-only": "PORT=3000 OFFLINE_MODE=true bun run --cwd web dev",
     "lint": "bun run lint:packages && bun run lint:web",

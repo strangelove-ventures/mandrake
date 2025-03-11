@@ -1,6 +1,7 @@
 import { createLogger, type Logger } from '@mandrake/utils';
 import { mkdir, rm } from 'fs/promises';
 import { join, dirname } from 'path';
+import os from 'os';
 import { ToolsManager } from './tools';
 import { ModelsManager } from './models';
 import { PromptManager } from './prompt';
@@ -70,7 +71,19 @@ export class MandrakeManager {
     const workspaceId = crypto.randomUUID();
 
     // Determine workspace path
-    const workspacePath = path || join(this.paths.root, 'workspaces', name);
+    let workspacePath;
+    if (path) {
+      // Handle tilde in custom path if present
+      if (path.startsWith('~')) {
+        workspacePath = join(process.env.HOME || os.homedir(), path.substring(1));
+      } else {
+        workspacePath = path;
+      }
+    } else {
+      workspacePath = join(this.paths.root, 'workspaces', name);
+    }
+    
+    this.logger.info('Creating workspace with resolved path', { workspacePath });
     const workspaceParentDir = dirname(workspacePath);
 
     // Create workspace with the ID

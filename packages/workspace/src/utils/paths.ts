@@ -2,7 +2,13 @@ import { join } from 'path';
 import os from 'os';
 
 export function getMandrakeDir(): string {
-  return join(process.env.MANDRAKE_DIR || os.homedir(), '.mandrake');
+  // First check for explicit environment variable
+  if (process.env.MANDRAKE_DIR) {
+    return process.env.MANDRAKE_DIR;
+  }
+  
+  // Default to ~/.mandrake
+  return join(os.homedir(), '.mandrake');
 }
 
 export function getWorkspacesDir(): string {
