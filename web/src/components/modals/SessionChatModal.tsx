@@ -1,44 +1,15 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSession, useSessionMessages, useSendMessage, useSessionStream } from '@/hooks/api';
 import { useSessionStore } from '@/stores';
-
-// Message format from history endpoint
-interface Message {
-  id?: string;
-  role: 'user' | 'assistant' | string;
-  content: string;
-  timestamp?: string;
-  createdAt: string;
-}
-
-interface SessionHistoryResponse {
-  session: {
-    id: string;
-    title: string;
-    description?: string;
-    metadata?: Record<string, any>;
-    createdAt: string;
-    updatedAt?: string;
-  };
-  rounds: Array<{
-    id: string;
-    request: {
-      id: string;
-      content: string;
-      createdAt: string;
-    };
-    response: {
-      id: string;
-      turns: Array<{
-        id: string;
-        content: string;
-        createdAt: string;
-      }>;
-    };
-  }>;
-}
+import { 
+  MessageList, 
+  ChatInput, 
+  messagesFromHistory, 
+  addStreamingData,
+  Message
+} from '@/components/shared/chat';
 
 interface SessionChatModalProps {
   isOpen: boolean;
@@ -56,12 +27,13 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
   // Send message mutation
   const sendMessage = useSendMessage();
   
-  // Local state for message input
-  const [newMessage, setNewMessage] = useState('');
+  // Local state
   const [isSending, setIsSending] = useState(false);
+  const [userMessage, setUserMessage] = useState<Message | null>(null);
   
-  // Ref for message container to auto-scroll
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  // State for error handling and retries
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
   
   // For streaming updates
   const {
@@ -70,45 +42,50 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
     turns: streamingTurns,
     error: streamingError,
     connect: connectStream,
-    disconnect: disconnectStream,
-    reset: resetStream
+    disconnect: disconnectStream
   } = useSessionStream({
     sessionId,
     workspaceId: '',  // Empty for system sessions
     autoConnect: false
   });
   
-  // Transform history data into a flat list of messages
-  const messagesFromHistory = (historyData: SessionHistoryResponse | undefined) => {
-    if (!historyData) return [];
-    
-    const messages: Message[] = [];
-    
-    historyData.rounds.forEach(round => {
-      // Add user message from request
-      messages.push({
-        id: round.request.id,
-        role: 'user',
-        content: round.request.content,
-        createdAt: round.request.createdAt
-      });
-      
-      // Add assistant responses from turns
-      round.response.turns.forEach(turn => {
-        messages.push({
-          id: turn.id,
-          role: 'assistant',
-          content: turn.content,
-          createdAt: turn.createdAt
-        });
-      });
-    });
-    
-    // Sort by timestamp
-    return messages.sort((a, b) => 
-      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
+  // Fallback history fetching when streaming fails
+  const fetchHistoryFallback = async () => {
+    try {
+      console.log('Fetching message history as fallback');
+      await refetchMessages();
+      console.log('Fallback history fetch complete');
+    } catch (err) {
+      console.error('Error fetching fallback history:', err);
+      setError(`Could not load messages: ${err instanceof Error ? err.message : String(err)}`);
+    }
   };
+  
+  // Handle errors in streaming
+  useEffect(() => {
+    if (streamingError) {
+      console.error('Streaming error:', streamingError);
+      setError(`Streaming error: ${streamingError.message}`);
+      
+      // Automatically refetch messages after a streaming error
+      const timer = setTimeout(() => {
+        fetchHistoryFallback();
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [streamingError]);
+  
+  // Add a useEffect to log streaming events for debugging
+  useEffect(() => {
+    if (isConnected) {
+      console.log('Streaming connected, isComplete:', isComplete);
+      console.log('Number of streaming turns:', streamingTurns.length);
+      if (streamingTurns.length > 0) {
+        console.log('Latest turn:', streamingTurns[streamingTurns.length - 1]);
+      }
+    }
+  }, [isConnected, isComplete, streamingTurns]);
   
   // Process messages from history
   const messages = messagesFromHistory(messagesData);
@@ -117,71 +94,96 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
   useEffect(() => {
     if (!isOpen && isConnected) {
       // Disconnect streaming when modal closes
-      disconnectStream();
+      disconnect();
     }
     
     // Cleanup on unmount
     return () => {
-      disconnectStream();
+      disconnect();
     };
-  }, [isOpen, isConnected, disconnectStream]);
+  }, [isOpen, isConnected]);
   
   // Reset streaming state when complete
   useEffect(() => {
     if (isComplete) {
       // When stream completes, refetch messages to get the final state
-      refetchMessages();
+      fetchHistoryFallback();
+      setUserMessage(null);
     }
-  }, [isComplete, refetchMessages]);
+  }, [isComplete]);
   
-  // Auto-scroll to bottom when messages change
-  useEffect(() => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messagesData, streamingTurns]);
-  
-  // Send message and handle streaming
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim() || isSending || isStreaming) return;
+  // Send message and connect to streaming
+  const handleSendMessage = async (message: string) => {
+    if (!message.trim() || isSending || isStreaming) return;
     
     setIsSending(true);
+    console.log('Sending message:', message);
     
     try {
-      // Connect to stream first to catch the response
-      connectStream();
+      // Store the message text
+      const messageText = message.trim();
       
-      // Send message through streaming API
-      await sendMessage.mutateAsync({
-        sessionId,
-        message: newMessage
+      // Add user message locally for immediate feedback
+      setUserMessage({
+        id: 'temp-user-' + Date.now(),
+        role: 'user',
+        content: messageText,
+        createdAt: new Date().toISOString()
       });
       
-      // Clear input
-      setNewMessage('');
+      // Set up a fallback timer to fetch messages if streaming fails
+      const fallbackTimer = setTimeout(() => {
+        console.log('Fallback timer triggered');
+        if (isStreaming && streamingTurns.length === 0) {
+          console.log('No streaming turns received, falling back to history');
+          fetchHistoryFallback();
+        }
+      }, 5000); // 5 second fallback
+      
+      // Connect to stream first to catch the response
+      console.log('Connecting to stream for', sessionId);
+      connectStream();
+      
+      // Clear any previous error
+      setError(null);
+      
+      // Send message through streaming API
+      console.log('Sending API request to', sessionId);
+      await sendMessage.mutateAsync({
+        sessionId,
+        message: messageText
+      });
+      console.log('Message sent, waiting for response');
+      
+      // Clear the fallback timer if the request completes successfully
+      clearTimeout(fallbackTimer);
       
       // Wait for streaming to complete then refresh message history
       setTimeout(() => {
         if (!isComplete) {
-          refetchMessages();
+          console.log('Stream not complete, refreshing messages');
+          fetchHistoryFallback();
         }
       }, 1000);
     } catch (error) {
       console.error('Failed to send message:', error);
-      disconnectStream();
-      refetchMessages();
+      setError(`Error sending message: ${error instanceof Error ? error.message : String(error)}`);
+      disconnect();
+      
+      // Use the fallback method to get updated messages
+      fetchHistoryFallback();
+      setUserMessage(null);
+      
+      // Increment retry count to avoid infinite loops
+      setRetryCount(count => count + 1);
     } finally {
       setIsSending(false);
     }
   };
   
-  // Format timestamp
-  const formatTime = (timestamp: string) => {
-    return new Date(timestamp).toLocaleTimeString([], { 
-      hour: '2-digit', 
-      minute: '2-digit'
-    });
+  // Shorthand for disconnecting stream
+  const disconnect = () => {
+    disconnectStream();
   };
   
   if (!isOpen) return null;
@@ -189,29 +191,23 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
   // Show streaming indicators
   const isStreaming = isConnected && !isComplete;
   
-  // Message list including both history and streaming
+  // All messages including pending user message and streaming responses
   const allMessages = [...messages];
   
-  // Add latest streaming content if it exists
-  if (streamingTurns.length > 0 && isStreaming) {
-    const lastStreamingTurn = streamingTurns[streamingTurns.length - 1];
-    
-    // Add streaming message if it's not already in the history
-    const existingMsgIndex = allMessages.findIndex(
-      msg => msg.id === lastStreamingTurn.turnId
-    );
-    
-    if (existingMsgIndex === -1) {
-      allMessages.push({
-        id: lastStreamingTurn.turnId,
-        role: 'assistant',
-        content: lastStreamingTurn.content,
-        createdAt: new Date().toISOString()
-      });
-    } else {
-      // Update existing message with new content
-      allMessages[existingMsgIndex].content = lastStreamingTurn.content;
-    }
+  // Add pending user message if it exists
+  if (userMessage) {
+    allMessages.push(userMessage);
+  }
+  
+  // Add streaming responses
+  const messagesWithStreaming = addStreamingData(allMessages, streamingTurns, isStreaming);
+  
+  // Log any differences between allMessages and messagesWithStreaming
+  const streamingAdded = messagesWithStreaming.length > allMessages.length;
+  if (streamingAdded) {
+    console.log('Streaming data added to messages:', 
+      messagesWithStreaming.length - allMessages.length, 
+      'message(s)');
   }
   
   return (
@@ -232,79 +228,40 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
           </button>
         </div>
         
+        {/* Error message */}
+        {error && (
+          <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded mx-4 mt-4">
+            {error}
+            <button 
+              className="ml-2 underline"
+              onClick={() => {
+                setError(null);
+                if (retryCount < 3) {
+                  fetchHistoryFallback();
+                }
+              }}
+            >
+              Refresh
+            </button>
+          </div>
+        )}
+        
         {/* Messages area */}
         <div className="flex-1 p-4 overflow-y-auto">
-          {isLoadingMessages ? (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-gray-500">Loading messages...</p>
-            </div>
-          ) : allMessages.length > 0 ? (
-            <div className="space-y-4">
-              {allMessages.map((message, index) => (
-                <div 
-                  key={message.id || index}
-                  className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div 
-                    className={`max-w-[80%] rounded-lg p-3 ${
-                      message.role === 'user' 
-                        ? 'bg-blue-500 text-white' 
-                        : 'bg-gray-100 dark:bg-gray-700'
-                    }`}
-                  >
-                    <div className="flex justify-between items-baseline mb-1">
-                      <span className="font-bold">{message.role === 'user' ? 'You' : 'Assistant'}</span>
-                      <span className="text-xs opacity-70 ml-2">
-                        {formatTime(message.timestamp || message.createdAt)}
-                      </span>
-                    </div>
-                    <p className="whitespace-pre-wrap">{message.content}</p>
-                  </div>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-          ) : (
-            <div className="flex items-center justify-center h-full">
-              <p className="text-gray-500">No messages yet. Start a conversation!</p>
-            </div>
-          )}
+          <MessageList 
+            messages={messagesWithStreaming}
+            isLoading={isLoadingMessages}
+            isStreaming={isStreaming && streamingTurns.length === 0}
+          />
         </div>
         
         {/* Input area */}
-        <div className="p-4 border-t dark:border-gray-700">
-          <form onSubmit={handleSendMessage} className="flex flex-col space-y-2">
-            <div className="flex-1">
-              <textarea
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 resize-none"
-                placeholder={isStreaming ? "AI is responding..." : "Type your message..."}
-                disabled={isSending || isStreaming}
-                rows={3}
-                onKeyDown={(e) => {
-                  // Submit on Ctrl+Enter or Command+Enter
-                  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
-                    e.preventDefault();
-                    handleSendMessage(e as unknown as React.FormEvent);
-                  }
-                }}
-              />
-              <div className="text-xs text-gray-500 mt-1">
-                Press Ctrl+Enter or Command+Enter to send
-              </div>
-            </div>
-            <div className="flex justify-end">
-              <button
-                type="submit"
-                disabled={isSending || isStreaming || !newMessage.trim()}
-                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:opacity-50"
-              >
-                {isSending ? 'Sending...' : 'Send'}
-              </button>
-            </div>
-          </form>
-        </div>
+        <ChatInput
+          onSendMessage={handleSendMessage}
+          isDisabled={isSending}
+          isStreaming={isStreaming}
+          placeholder="Type your message..."
+        />
       </div>
     </div>
   );

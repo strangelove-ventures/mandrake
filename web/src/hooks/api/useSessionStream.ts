@@ -64,22 +64,29 @@ export function useSessionStream({
   
   // Connect/disconnect effect
   useEffect(() => {
-    if (!sessionId || !workspaceId || !shouldConnect) return;
+    if (!sessionId || !shouldConnect) return;
+    
+    console.log(`Connecting to session stream: ${sessionId} - Workspace: ${workspaceId || 'system'}`);
     
     // Set connected state
-    setState(prev => ({ ...prev, isConnected: true }));
+    setState(prev => ({ ...prev, isConnected: true, isComplete: false }));
     
     // Create stream
     const cleanup = createSessionStream(sessionId, workspaceId, {
       onInit: (event) => {
+        console.log('Stream initialized:', event);
         setState(prev => ({
           ...prev,
           init: event,
-          events: [...prev.events, event]
+          events: [...prev.events, event],
+          isConnected: true,
+          isComplete: false,
+          error: null
         }));
       },
       
       onTurn: (event) => {
+        console.log('Received turn event:', event);
         setState(prev => {
           // Find if this turn already exists
           const turnIndex = prev.turns.findIndex(t => t.turnId === event.turnId);
@@ -106,6 +113,7 @@ export function useSessionStream({
       },
       
       onError: (event) => {
+        console.error('Stream error:', event);
         setState(prev => ({
           ...prev,
           error: event,
@@ -115,6 +123,7 @@ export function useSessionStream({
       },
       
       onComplete: (event) => {
+        console.log('Stream completed:', event);
         setState(prev => ({
           ...prev,
           isComplete: true,
@@ -124,8 +133,8 @@ export function useSessionStream({
       },
       
       onEvent: (event) => {
-        // This handler is used to capture all events if needed
-        // Already captured in specific handlers, so nothing needed here
+        // This handler is used to capture all events
+        console.log('Generic event handler called:', event);
       }
     });
     

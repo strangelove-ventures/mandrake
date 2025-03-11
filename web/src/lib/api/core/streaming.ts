@@ -46,17 +46,47 @@ export function createSessionStream(
     url = `${baseUrl}/system/streaming/${sessionId}`;
   }
   
-  // Create the EventSource
+  // Create the EventSource with a timeout and retry count
+  console.log(`Creating EventSource for ${url}`);
+  
+  // Create a controller that we can use to abort the connection if needed
+  const controller = new AbortController();
+  const { signal } = controller;
+  
+  // Set a timeout to abort the connection if we don't receive a message in 10 seconds
+  const timeoutId = setTimeout(() => {
+    console.warn('EventSource timeout after 10 seconds');
+    controller.abort();
+    
+    const errorEvent: ErrorEvent = {
+      type: 'error',
+      message: 'Connection timeout after 10 seconds'
+    };
+    
+    handlers.onError?.(errorEvent);
+  }, 10000);
+  
   const eventSource = new EventSource(url);
+  
+  // Handle connection open
+  eventSource.onopen = () => {
+    console.log('EventSource connected');
+    // Clear the timeout when we get a connection
+    clearTimeout(timeoutId);
+  };
   
   // Handle incoming messages
   eventSource.onmessage = (event) => {
+    console.log('Received SSE message:', event.data);
     try {
       // Parse the event data
       const data = JSON.parse(event.data) as StreamEventUnion;
       
       // Call the generic event handler if provided
-      handlers.onEvent?.(data);
+      if (handlers.onEvent) {
+        console.log('Calling onEvent handler with data:', data);
+        handlers.onEvent(data);
+      }
       
       // Call event-specific handlers
       switch (data.type) {
@@ -91,6 +121,10 @@ export function createSessionStream(
   
   // Handle connection errors
   eventSource.onerror = (error) => {
+    console.error('EventSource error:', error);
+    // Clear the timeout if we get an error
+    clearTimeout(timeoutId);
+    
     const errorEvent: ErrorEvent = {
       type: 'error',
       message: `EventSource error: ${String(error)}`
@@ -103,6 +137,9 @@ export function createSessionStream(
   
   // Return cleanup function
   return () => {
+    console.log('Cleaning up EventSource');
+    clearTimeout(timeoutId);
+    controller.abort();
     eventSource.close();
   };
 }
