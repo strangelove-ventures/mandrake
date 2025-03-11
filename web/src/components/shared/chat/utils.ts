@@ -4,6 +4,30 @@
 import { Message, SessionHistoryResponse, StreamingTurn } from './types';
 
 /**
+ * Add a temporary user message to the message list, avoiding duplicates
+ */
+export function addUserMessage(messages: Message[], userMessage: Message | null): Message[] {
+  if (!userMessage) return messages;
+  
+  // Check if this message or its content already exists in the history
+  const isDuplicate = messages.some(msg => 
+    // Either the exact same temp ID
+    msg.id === userMessage.id ||
+    // Or same content in the last message if it's from the user
+    (msg.role === 'user' && 
+     msg.content === userMessage.content && 
+     messages.indexOf(msg) === messages.length - 1)
+  );
+  
+  if (isDuplicate) {
+    console.log('Not adding duplicate user message:', userMessage.content);
+    return messages;
+  }
+  
+  return [...messages, userMessage];
+}
+
+/**
  * Convert session history data to a flat list of messages
  */
 export function messagesFromHistory(historyData: SessionHistoryResponse | undefined): Message[] {

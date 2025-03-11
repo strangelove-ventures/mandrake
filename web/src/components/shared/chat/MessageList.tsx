@@ -16,12 +16,14 @@ interface MessageListProps {
   messages: Message[];
   isLoading?: boolean;
   isStreaming?: boolean;
+  hasError?: boolean;
 }
 
 export function MessageList({ 
   messages, 
   isLoading = false, 
-  isStreaming = false 
+  isStreaming = false,
+  hasError = false
 }: MessageListProps) {
   // Ref for auto-scrolling to the bottom
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -62,6 +64,18 @@ export function MessageList({
       
       {isStreaming && (
         <TypingIndicator />
+      )}
+      
+      {/* For when streaming abruptly disconnects */}
+      {messages.length > 0 && messages[messages.length - 1].role === 'user' && !isStreaming && !isLoading && !hasError && (
+        <div className="flex justify-start italic opacity-70 text-sm">
+          AI is still processing your request... 
+          <div className="ml-2 flex items-center">
+            <div className="h-1.5 w-1.5 bg-gray-400 rounded-full animate-pulse"></div>
+            <div className="h-1.5 w-1.5 bg-gray-400 rounded-full animate-pulse ml-1" style={{ animationDelay: '0.2s' }}></div>
+            <div className="h-1.5 w-1.5 bg-gray-400 rounded-full animate-pulse ml-1" style={{ animationDelay: '0.4s' }}></div>
+          </div>
+        </div>
       )}
       
       <div ref={messagesEndRef} />

@@ -100,6 +100,71 @@ export class ApiClient {
   }
 
   /**
+   * Sends a request to a streaming endpoint without expecting a JSON response
+   * Used specifically for triggering streaming endpoints that return text/event-stream
+   */
+  async fetchStreaming(endpoint: string, options: FetchOptions = {}): Promise<void> {
+    const { method = 'POST', body, headers = {}, signal } = options;
+    
+    // Create the full URL
+    const url = endpoint.startsWith('/') 
+      ? `${this.baseUrl}${endpoint}` 
+      : `${this.baseUrl}/${endpoint}`;
+    
+    console.log(`Streaming Request: ${method} ${url}`);
+    
+    // Prepare request options
+    const requestOptions: RequestInit = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...this.defaultHeaders,
+        ...headers,
+      },
+      signal,
+    };
+    
+    // Add body if provided
+    if (body !== undefined) {
+      requestOptions.body = JSON.stringify(body);
+    }
+    
+    try {
+      // Send the request but don't expect any particular response type
+      const response = await fetch(url, requestOptions);
+      
+      // Only check if the response is ok
+      if (!response.ok) {
+        let errorData: ErrorResponse;
+        try {
+          // Try to parse error as JSON
+          if (response.headers.get('Content-Type')?.includes('application/json')) {
+            errorData = await response.json() as ErrorResponse;
+          } else {
+            // Use text as error message
+            const errorText = await response.text();
+            errorData = { error: errorText, status: response.status };
+          }
+        } catch {
+          // If parsing fails, use status text
+          errorData = { error: response.statusText, status: response.status };
+        }
+        
+        console.error(`Streaming API Error: ${method} ${url}`, errorData);
+        throw new ApiError(response.status, errorData);
+      }
+      
+      console.log(`Streaming request sent: ${method} ${url}`);
+      // Don't try to parse the response - it's being handled by EventSource
+    } catch (error) {
+      // Only rethrow if it's not an abort error
+      if (!(error instanceof DOMException && error.name === 'AbortError')) {
+        throw error;
+      }
+    }
+  }
+
+  /**
    * Builds a workspace-scoped URL
    */
   createUrl(path: string, workspaceId?: string): string {

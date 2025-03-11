@@ -80,12 +80,13 @@ export const sessions = {
   /**
    * Send a message to a session through the streaming API
    */
-  sendMessage: async (sessionId: string, message: string, workspaceId?: string) => {
+  sendMessage: async (sessionId: string, message: string, workspaceId?: string): Promise<void> => {
     const path = workspaceId
       ? apiClient.createUrl(`/streaming/${sessionId}/request`, workspaceId)
       : `/system/streaming/${sessionId}/request`;
       
-    return apiClient.fetchJson(path, {
+    // Use fetchStreaming to avoid expecting a JSON response
+    return apiClient.fetchStreaming(path, {
       method: 'POST',
       body: { content: message }
     });

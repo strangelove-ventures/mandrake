@@ -8,6 +8,7 @@ import {
   ChatInput, 
   messagesFromHistory, 
   addStreamingData,
+  addUserMessage,
   Message
 } from '@/components/shared/chat';
 
@@ -48,6 +49,48 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
     workspaceId: '',  // Empty for system sessions
     autoConnect: false
   });
+
+  // Reset user message and error state when switching sessions
+  useEffect(() => {
+    // Clear temporary states when session ID changes
+    setUserMessage(null);
+    setError(null);
+    setRetryCount(0);
+  }, [sessionId]);
+  
+  // Make sure user message is removed when there's an error or when history updates
+  useEffect(() => {
+    if (messagesData || error) {
+      // Once we have real message history or an error, remove the temporary message
+      setUserMessage(null);
+    }
+  }, [messagesData, error]);
+  
+  // Check if error is related to API key or configuration
+  const isAPIKeyError = error ? (error.includes('API key') || error.includes('authentication')) : false;
+  
+  // Parse error messages to show more helpful information
+  const getFormattedErrorMessage = (error: any): string => {
+    if (!error) return 'An unknown error occurred';
+    
+    const errorString = String(error);
+    
+    // Check for common error types
+    if (errorString.includes('authentication_error') || errorString.includes('invalid x-api-key')) {
+      return 'Invalid or missing API key. Please check your model configuration.';
+    }
+    
+    if (errorString.includes('socket hang up') || errorString.includes('ECONNRESET')) {
+      return 'Connection to the AI service was interrupted. The response may appear after refreshing.';
+    }
+    
+    if (errorString.includes('timeout') || errorString.includes('timed out')) {
+      return 'Request timed out. The AI model may be overloaded, please try again later.';
+    }
+    
+    // Default case
+    return errorString;
+  };
   
   // Fallback history fetching when streaming fails
   const fetchHistoryFallback = async () => {
@@ -65,7 +108,7 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
   useEffect(() => {
     if (streamingError) {
       console.error('Streaming error:', streamingError);
-      setError(`Streaming error: ${streamingError.message}`);
+      setError(`Streaming error: ${getFormattedErrorMessage(streamingError)}`);
       
       // Automatically refetch messages after a streaming error
       const timer = setTimeout(() => {
@@ -124,12 +167,14 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
       const messageText = message.trim();
       
       // Add user message locally for immediate feedback
-      setUserMessage({
+      const tempUserMessage = {
         id: 'temp-user-' + Date.now(),
         role: 'user',
         content: messageText,
         createdAt: new Date().toISOString()
-      });
+      };
+      
+      setUserMessage(tempUserMessage);
       
       // Set up a fallback timer to fetch messages if streaming fails
       const fallbackTimer = setTimeout(() => {
@@ -167,7 +212,7 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
       }, 1000);
     } catch (error) {
       console.error('Failed to send message:', error);
-      setError(`Error sending message: ${error instanceof Error ? error.message : String(error)}`);
+      setError(`Error sending message: ${getFormattedErrorMessage(error)}`);
       disconnect();
       
       // Use the fallback method to get updated messages
@@ -192,23 +237,13 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
   const isStreaming = isConnected && !isComplete;
   
   // All messages including pending user message and streaming responses
-  const allMessages = [...messages];
-  
-  // Add pending user message if it exists
-  if (userMessage) {
-    allMessages.push(userMessage);
-  }
+  let messagesWithoutUserMessage = [...messages];
   
   // Add streaming responses
-  const messagesWithStreaming = addStreamingData(allMessages, streamingTurns, isStreaming);
+  let messagesWithStreaming = addStreamingData(messagesWithoutUserMessage, streamingTurns, isStreaming);
   
-  // Log any differences between allMessages and messagesWithStreaming
-  const streamingAdded = messagesWithStreaming.length > allMessages.length;
-  if (streamingAdded) {
-    console.log('Streaming data added to messages:', 
-      messagesWithStreaming.length - allMessages.length, 
-      'message(s)');
-  }
+  // Add pending user message if it exists - do this last to avoid duplicating in history
+  const allMessages = addUserMessage(messagesWithStreaming, userMessage);
   
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -232,26 +267,41 @@ export default function SessionChatModal({ isOpen, onClose, sessionId }: Session
         {error && (
           <div className="p-4 bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 text-sm rounded mx-4 mt-4">
             {error}
-            <button 
-              className="ml-2 underline"
-              onClick={() => {
-                setError(null);
-                if (retryCount < 3) {
-                  fetchHistoryFallback();
-                }
-              }}
-            >
-              Refresh
-            </button>
+            <div className="mt-2 flex gap-2">
+              <button 
+                className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300 dark:hover:bg-gray-600 text-xs"
+                onClick={() => {
+                  setError(null);
+                  if (retryCount < 3) {
+                    fetchHistoryFallback();
+                  }
+                }}
+              >
+                Refresh
+              </button>
+              
+              {isAPIKeyError && (
+                <button 
+                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 text-xs"
+                  onClick={() => {
+                    // Open the models configuration page
+                    window.location.href = '/system/models';
+                  }}
+                >
+                  Configure Model
+                </button>
+              )}
+            </div>
           </div>
         )}
         
         {/* Messages area */}
         <div className="flex-1 p-4 overflow-y-auto">
           <MessageList 
-            messages={messagesWithStreaming}
+            messages={allMessages}
             isLoading={isLoadingMessages}
             isStreaming={isStreaming && streamingTurns.length === 0}
+            hasError={error !== null}
           />
         </div>
         
