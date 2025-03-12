@@ -41,9 +41,11 @@ export function createSessionStream(
   // Build the URL based on workspace ID
   let url;
   if (workspaceId) {
-    url = `${baseUrl}/workspaces/${workspaceId}/streaming/${sessionId}`;
+    // Updated URL pattern to include /sessions/ in the path
+    url = `${baseUrl}/workspaces/${workspaceId}/sessions/${sessionId}/streaming`;
   } else {
-    url = `${baseUrl}/system/streaming/${sessionId}`;
+    // Updated URL pattern to include /sessions/ in the path
+    url = `${baseUrl}/system/sessions/${sessionId}/streaming`;
   }
   
   // Create the EventSource with a timeout and retry count

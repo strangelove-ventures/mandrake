@@ -2,8 +2,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSession, useSessionMessages, useSendMessage, useSessionStream, usePollingUpdates, useSessionPrompt } from '@/hooks/api';
-// import { useSessionStore } from '@/stores';
+import { useSession, useSessionMessages, useSendMessage, usePollingUpdates, useSessionPrompt } from '@/hooks/api';
+import { useSessionStreamQuery } from '@/hooks/api/useSessionStreamQuery'; // Import the new hook
 import { 
   MessageList, 
   ChatInput, 
@@ -47,15 +47,16 @@ export default function SessionChatModal({ isOpen, onClose, sessionId, workspace
     workspaceId || ''
   );
   
-  // For streaming updates
+  // Use our new React Query based streaming hook instead of useSessionStream
   const {
     isConnected,
     isComplete,
     turns: streamingTurns,
     error: streamingError,
     connect: connectStream,
-    disconnect: disconnectStream
-  } = useSessionStream({
+    disconnect: disconnectStream,
+    // reset: resetStream
+  } = useSessionStreamQuery({
     sessionId,
     workspaceId: workspaceId || '',
     autoConnect: false
@@ -224,7 +225,7 @@ export default function SessionChatModal({ isOpen, onClose, sessionId, workspace
         }
       }, 5000); // 5 second fallback
       
-      // Connect to stream first to catch the response
+      // Connect to stream first to catch the response using new hook
       console.log('Connecting to stream for', sessionId);
       connectStream();
       

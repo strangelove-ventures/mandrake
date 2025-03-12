@@ -5,6 +5,9 @@ export {
 export { 
   useSessionStream 
 } from './useSessionStream';
+export {
+  useSessionStreamQuery
+} from './useSessionStreamQuery';
 export { 
   useSessions, 
   useSession, 
