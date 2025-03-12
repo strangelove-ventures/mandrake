@@ -12,10 +12,9 @@ export const tools = {
    * List all available tool configurations
    */
   list: async (workspaceId?: string) => {
-    const basePath = '/system/tools/configs';
-    const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+    const path = workspaceId 
+      ? `/workspaces/${workspaceId}/tools/configs`
+      : '/system/tools/configs';
       
     try {
       // Get the list of configuration IDs
@@ -23,7 +22,10 @@ export const tools = {
       console.log('Config IDs:', configIds);
       
       // Get the active config ID
-      const activeResult = await apiClient.fetchJson(`${basePath}/active`);
+      const activePath = workspaceId
+        ? `/workspaces/${workspaceId}/tools/configs/active`
+        : '/system/tools/configs/active';
+      const activeResult = await apiClient.fetchJson(activePath);
       const activeId = activeResult.active;
       console.log('Active config ID:', activeId);
       
@@ -31,7 +33,10 @@ export const tools = {
       const configs: Record<string, any> = {};
       for (const id of configIds) {
         try {
-          const configDetails = await apiClient.fetchJson(`${basePath}/${id}`);
+          const configPath = workspaceId
+            ? `/workspaces/${workspaceId}/tools/configs/${id}`
+            : `/system/tools/configs/${id}`;
+          const configDetails = await apiClient.fetchJson(configPath);
           configs[id] = configDetails;
         } catch (err) {
           console.error(`Failed to fetch config details for ${id}:`, err);
@@ -56,10 +61,9 @@ export const tools = {
    * Get tool configuration by ID
    */
   get: async (id: string, workspaceId?: string) => {
-    const basePath = `/system/tools/configs/${id}`;
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/configs/${id}`
+      : `/system/tools/configs/${id}`;
       
     return apiClient.fetchJson(path);
   },
@@ -68,10 +72,9 @@ export const tools = {
    * Create a new tool configuration
    */
   create: async (config: any, workspaceId?: string) => {
-    const basePath = '/system/tools/configs';
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/configs`
+      : '/system/tools/configs';
       
     return apiClient.fetchJson(path, {
       method: 'POST',
@@ -83,10 +86,9 @@ export const tools = {
    * Update an existing tool configuration
    */
   update: async (id: string, config: any, workspaceId?: string) => {
-    const basePath = `/system/tools/configs/${id}`;
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/configs/${id}`
+      : `/system/tools/configs/${id}`;
       
     return apiClient.fetchJson(path, {
       method: 'PUT',
@@ -98,10 +100,9 @@ export const tools = {
    * Delete a tool configuration
    */
   delete: async (id: string, workspaceId?: string) => {
-    const basePath = `/system/tools/configs/${id}`;
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/configs/${id}`
+      : `/system/tools/configs/${id}`;
       
     return apiClient.fetchJson(path, {
       method: 'DELETE'
@@ -112,10 +113,9 @@ export const tools = {
    * Get active tool configuration
    */
   getActive: async (workspaceId?: string) => {
-    const basePath = '/system/tools/configs/active';
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/configs/active`
+      : '/system/tools/configs/active';
       
     const result = await apiClient.fetchJson(path);
     return { id: result.active };
@@ -125,10 +125,9 @@ export const tools = {
    * Set active tool configuration
    */
   setActive: async (id: string, workspaceId?: string) => {
-    const basePath = '/system/tools/configs/active';
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/configs/active`
+      : '/system/tools/configs/active';
       
     return apiClient.fetchJson(path, {
       method: 'PUT',
@@ -162,10 +161,9 @@ export const tools = {
    * Get methods available on a specific server
    */
   getServerMethods: async (id: string, workspaceId?: string) => {
-    const basePath = `/system/tools/operations/server/${id}`;
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/operations/server/${id}`
+      : `/system/tools/operations/server/${id}`;
       
     return apiClient.fetchJson(path);
   },
@@ -174,10 +172,9 @@ export const tools = {
    * Get details for a specific method
    */
   getMethodDetails: async (serverId: string, methodName: string, workspaceId?: string) => {
-    const basePath = `/system/tools/operations/server/${serverId}/method/${methodName}`;
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/operations/server/${serverId}/method/${methodName}`
+      : `/system/tools/operations/server/${serverId}/method/${methodName}`;
       
     return apiClient.fetchJson(path);
   },
@@ -186,10 +183,9 @@ export const tools = {
    * Invoke a method on a server
    */
   invokeMethod: async (serverId: string, methodName: string, params: any, workspaceId?: string) => {
-    const basePath = '/system/tools/operations/invoke';
     const path = workspaceId
-      ? apiClient.createUrl(basePath, workspaceId)
-      : basePath;
+      ? `/workspaces/${workspaceId}/tools/operations/invoke`
+      : '/system/tools/operations/invoke';
       
     return apiClient.fetchJson(path, {
       method: 'POST',

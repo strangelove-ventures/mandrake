@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * React Query hooks for workspaces API
  */
@@ -10,8 +11,6 @@ import { api } from '@/lib/api';
 import { 
   CreateWorkspaceRequest, 
   UpdateWorkspaceRequest,
-  WorkspaceResponse,
-  WorkspaceListResponse
 } from '@mandrake/utils/dist/types/api';
 
 // Query keys for workspaces

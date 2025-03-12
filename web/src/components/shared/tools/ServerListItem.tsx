@@ -1,7 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { Button } from '@/components/ui/button';
-import { Edit, Info, Power, Trash2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Edit, Trash2 } from 'lucide-react';
 import { ServerConfig } from './types';
 import ServerStatusIndicator from './ServerStatusIndicator';
 
@@ -12,7 +14,6 @@ interface ServerListItemProps {
   isSelected: boolean;
   onSelect: () => void;
   onEdit: () => void;
-  onViewDetails: () => void;
   onToggleDisabled: () => void;
   onDelete: () => void;
 }
@@ -24,29 +25,41 @@ export default function ServerListItem({
   isSelected,
   onSelect,
   onEdit,
-  onViewDetails,
   onToggleDisabled,
   onDelete
 }: ServerListItemProps) {
   return (
-    <li 
-      className={`p-3 border rounded-md flex justify-between items-center 
-        ${isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800'} 
-        ${config.disabled ? 'opacity-60' : ''}`}
-      onClick={() => {
-        if (!config.disabled) {
-          onSelect();
-        }
-      }}
+    <li className={`p-3 border rounded-md flex justify-between items-center 
+      ${isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20' : 'hover:bg-gray-50 dark:hover:bg-gray-800'} 
+      ${config.disabled ? 'opacity-60' : ''}`}
     >
-      <div className="flex items-center space-x-3">
+      {/* Main content area (clickable) */}
+      <div 
+        className="flex-grow flex items-center space-x-3 cursor-pointer" 
+        onClick={() => {
+          if (!config.disabled) {
+            onSelect();
+          }
+        }}
+      >
         <ServerStatusIndicator 
           status={status?.status || 'unknown'} 
           disabled={config.disabled}
         />
         <span className="font-medium">{serverId}</span>
       </div>
+      
+      {/* Action buttons */}
       <div className="flex items-center space-x-2">
+        {/* Enable/disable switch */}
+        <div className="pr-2" onClick={(e) => e.stopPropagation()}>
+          <Switch
+            checked={!config.disabled}
+            onCheckedChange={() => onToggleDisabled()}
+            aria-label={config.disabled ? "Enable server" : "Disable server"}
+          />
+        </div>
+        
         {/* Edit button */}
         <Button
           variant="ghost"
@@ -59,34 +72,6 @@ export default function ServerListItem({
           }}
         >
           <Edit className="h-4 w-4" />
-        </Button>
-        
-        {/* Details button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          title="View server details"
-          onClick={(e) => {
-            e.stopPropagation();
-            onViewDetails();
-          }}
-        >
-          <Info className="h-4 w-4" />
-        </Button>
-        
-        {/* Enable/disable toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8"
-          title={config.disabled ? "Enable server" : "Disable server"}
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleDisabled();
-          }}
-        >
-          <Power className={`h-4 w-4 ${config.disabled ? 'text-red-500' : 'text-green-500'}`} />
         </Button>
         
         {/* Delete button */}

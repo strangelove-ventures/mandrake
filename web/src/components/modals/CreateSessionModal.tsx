@@ -2,17 +2,20 @@
 
 import { useState, useEffect } from 'react';
 import { useSessionStore } from '@/stores';
+import { useCreateSession } from '@/hooks/api/useSessions';
 
 interface CreateSessionModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess?: (sessionId: string) => void;
+  workspaceId?: string;
 }
 
 export default function CreateSessionModal({ 
   isOpen, 
   onClose,
-  onSuccess
+  onSuccess,
+  workspaceId
 }: CreateSessionModalProps) {
   // Form state
   const [title, setTitle] = useState('');
@@ -26,30 +29,55 @@ export default function CreateSessionModal({
     }
   }, [isOpen]);
   
-  // Store interaction
-  const { createNewSession, isLoading, error, clearError } = useSessionStore();
+  // Create session mutation from React Query
+  const createSession = useCreateSession(workspaceId);
+  
+  // Fallback to store method if no workspaceId is provided
+  const { createNewSession, isLoading: storeLoading, error: storeError, clearError } = useSessionStore();
+  
+  // Use the appropriate method based on context
+  const isLoading = workspaceId ? createSession.isPending : storeLoading;
+  const error = workspaceId ? createSession.error : storeError;
   
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title) return;
     
-    const sessionId = await createNewSession({
-      title,
-      description
-    });
-    
-    if (sessionId) {
-      onClose();
-      if (onSuccess) {
-        onSuccess(sessionId);
+    try {
+      let sessionId: string | null = null;
+      
+      // Use direct API call if workspaceId is provided, otherwise use store method
+      if (workspaceId) {
+        const result = await createSession.mutateAsync({
+          title,
+          description,
+          metadata: {}
+        });
+        sessionId = result.id;
+      } else {
+        sessionId = await createNewSession({
+          title,
+          description
+        });
       }
+      
+      if (sessionId) {
+        onClose();
+        if (onSuccess) {
+          onSuccess(sessionId);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to create session:', err);
     }
   };
   
   // Reset error on dialog close
   const handleClose = () => {
-    clearError();
+    if (!workspaceId) {
+      clearError();
+    }
     onClose();
   };
   
@@ -97,7 +125,7 @@ export default function CreateSessionModal({
           {/* Error message */}
           {error && (
             <div className="mt-3 text-red-500 text-sm p-2 bg-red-50 dark:bg-red-900/20 rounded">
-              {error}
+              {error instanceof Error ? error.message : String(error)}
             </div>
           )}
           

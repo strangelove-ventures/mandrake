@@ -1,11 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useSessions, useCreateSession } from '@/hooks/api';
-import { Button } from '@/components/ui/button';
+import { useSessions } from '@/hooks/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
+import CreateSessionModal from '@/components/modals/CreateSessionModal';
 
 interface WorkspaceSessionListProps {
   workspaceId: string;
@@ -13,98 +11,107 @@ interface WorkspaceSessionListProps {
 }
 
 export default function WorkspaceSessionList({ workspaceId, onSelectSession }: WorkspaceSessionListProps) {
-  const { data: sessions, isLoading, refetch } = useSessions(workspaceId);
-  const createSession = useCreateSession(workspaceId);
+  // Get sessions from API
+  const { data: sessions, isLoading, error, refetch } = useSessions(workspaceId);
   
-  const [newSessionTitle, setNewSessionTitle] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
+  // State for create modal
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   
-  // Handle new session creation
-  const handleCreateSession = async () => {
-    try {
-      await createSession.mutateAsync({
-        title: newSessionTitle || 'New Session',
-        description: '',
-        metadata: {}
-      });
-      setNewSessionTitle('');
-      setIsCreating(false);
-      refetch();
-    } catch (error) {
-      console.error('Failed to create session:', error);
-    }
+  // Handle modal opening and closing
+  const openCreateModal = () => setIsCreateModalOpen(true);
+  const closeCreateModal = () => setIsCreateModalOpen(false);
+  
+  // After session creation
+  const handleSessionCreated = () => {
+    refetch();
   };
   
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
         <CardTitle>Workspace Sessions</CardTitle>
-        <Button 
-          onClick={() => setIsCreating(!isCreating)}
-          variant="outline"
-          size="sm"
+        <button 
+          onClick={openCreateModal}
+          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
         >
-          {isCreating ? 'Cancel' : 'New Session'}
-        </Button>
+          New Session
+        </button>
+        
+        {/* Session creation modal */}
+        <CreateSessionModal
+          isOpen={isCreateModalOpen}
+          onClose={closeCreateModal}
+          onSuccess={handleSessionCreated}
+          workspaceId={workspaceId}
+        />
       </CardHeader>
       
       <CardContent>
-        {/* New session form */}
-        {isCreating && (
-          <div className="mb-4 p-4 border border-dashed rounded-md border-gray-300 dark:border-gray-600 flex gap-2">
-            <Input
-              placeholder="Session Title"
-              value={newSessionTitle}
-              onChange={(e) => setNewSessionTitle(e.target.value)}
-              className="flex-1"
-            />
-            <Button 
-              onClick={handleCreateSession} 
-              disabled={createSession.isPending}
-            >
-              {createSession.isPending ? 'Creating...' : 'Create'}
-            </Button>
-          </div>
-        )}
-        
         {/* Sessions list */}
-        {isLoading ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <div 
-                key={i} 
-                className="h-16 bg-gray-100 dark:bg-gray-800 rounded-md animate-pulse"
-              />
-            ))}
-          </div>
-        ) : sessions && sessions.length > 0 ? (
-          <div className="space-y-2">
-            {sessions.map((session) => (
-              <div
-                key={session.id}
-                className="p-3 bg-gray-50 dark:bg-gray-800 rounded-md hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer transition-colors"
-                onClick={() => onSelectSession(session.id)}
-              >
-                <div className="flex justify-between items-start mb-1">
-                  <h3 className="font-medium">{session.title}</h3>
-                  <Badge variant="outline" className="text-xs">
-                    {new Date(session.createdAt).toLocaleDateString()}
-                  </Badge>
-                </div>
-                {session.description && (
-                  <p className="text-sm text-gray-500 dark:text-gray-400 truncate">
-                    {session.description}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="text-center py-6 text-gray-500 dark:text-gray-400">
-            <p>No sessions found.</p>
-            <p className="text-sm">Create a new session to get started.</p>
-          </div>
-        )}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b dark:border-gray-700">
+                <th className="pb-3 px-4">Name</th>
+                <th className="pb-3 px-4">Messages</th>
+                <th className="pb-3 px-4">Last Updated</th>
+              </tr>
+            </thead>
+            <tbody>
+              {isLoading ? (
+                // Loading skeleton
+                [...Array(3)].map((_, i) => (
+                  <tr key={i} className="border-b dark:border-gray-700">
+                    <td className="py-3 px-4">
+                      <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-32 animate-pulse"></div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-10 animate-pulse"></div>
+                    </td>
+                    <td className="py-3 px-4">
+                      <div className="h-5 bg-gray-200 dark:bg-gray-700 rounded w-24 animate-pulse"></div>
+                    </td>
+                  </tr>
+                ))
+              ) : sessions?.sort((a, b) => {
+                // Sort by createdAt date (newest first)
+                return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+              }).map(session => (
+                <tr 
+                  key={session.id}
+                  className="border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer"
+                  onClick={() => onSelectSession(session.id)}
+                >
+                  <td className="py-3 px-4">
+                    <span className="font-medium text-blue-600 dark:text-blue-400">{session.title}</span>
+                  </td>
+                  <td className="py-3 px-4">
+                    {session.messageCount || 0}
+                  </td>
+                  <td className="py-3 px-4 text-gray-500 dark:text-gray-400">
+                    {new Date(session.updatedAt || session.createdAt).toLocaleString()}
+                  </td>
+                </tr>
+              ))}
+              
+              {(!sessions || sessions.length === 0) && !isLoading && (
+                <tr>
+                  <td colSpan={3} className="py-4 text-center text-gray-500">
+                    No sessions found. Create a new session to get started.
+                  </td>
+                </tr>
+              )}
+              
+              {error && !isLoading && (
+                <tr>
+                  <td colSpan={3} className="py-4 text-center text-red-500">
+                    Error loading sessions: {String(error)}
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </CardContent>
     </Card>
   );

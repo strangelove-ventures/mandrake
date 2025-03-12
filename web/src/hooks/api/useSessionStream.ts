@@ -7,7 +7,6 @@ import {
   StreamInitEvent,
   TurnEvent,
   ErrorEvent,
-  CompletedEvent,
   StreamEventUnion
 } from '@mandrake/utils/dist/types/api';
 

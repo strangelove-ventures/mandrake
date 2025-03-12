@@ -1,35 +1,13 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
-import { useState, useEffect } from 'react';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle 
-} from '@/components/ui/dialog';
-import { 
-  Tabs, 
-  TabsContent, 
-  TabsList, 
-  TabsTrigger 
-} from '@/components/ui/tabs';
+import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Edit, 
-  Server, 
-  Code, 
-  Play, 
-  RefreshCw 
-} from 'lucide-react';
 import { ServerConfig } from './types';
-import { useToolsStore } from '@/stores/system/tools';
-import { useServerStatus } from '@/hooks/useServerStatus';
-import { dynamic } from '@/lib/api/resources/dynamic';
 import ServerMethodsList from './ServerMethodsList';
 import MethodExecutionPanel from './MethodExecutionPanel';
-import ServerConfigDisplay from './ServerConfigDisplay';
-import ServerStatusIndicator from './ServerStatusIndicator';
+import StableModal from './StableModal';
+import { api } from '@/lib/api';
 
 interface ServerDetailsModalProps {
   isOpen: boolean;
@@ -45,176 +23,96 @@ export default function ServerDetailsModal({
   isOpen,
   onClose,
   serverId,
-  config,
-  onEdit,
-  isWorkspace,
   workspaceId
 }: ServerDetailsModalProps) {
-  const { selectMethod } = useToolsStore();
-  const { serverStatus, loadServerStatus } = useServerStatus(workspaceId);
-
-  const [isAddingToDynamic, setIsAddingToDynamic] = useState(false);
-  const [activeTab, setActiveTab] = useState<string>('config');
-  const [selectedMethodName, setSelectedMethodName] = useState<string | null>(null);
+  const [currentMethodName, setCurrentMethodName] = useState<string | null>(null);
+  const [methodDetails, setMethodDetails] = useState<any | null>(null);
+  const [refreshing] = useState(false);
+  const [showExecutionPanel, setShowExecutionPanel] = useState(false);
+  const isMounted = useRef(true);
   
   useEffect(() => {
     if (isOpen) {
-      // Load status immediately when modal opens
-      loadServerStatus().catch(err => {
-        console.error('Error loading server status in modal:', err);
-      });
+      console.log('Modal opened - status loading DISABLED');
     }
-  }, [isOpen, loadServerStatus]);
+    
+    return () => {
+      isMounted.current = false;
+    };
+  }, [isOpen]);
   
-  const status = serverStatus[serverId] || { status: 'unknown' };
+  useEffect(() => {
+    if (!isOpen) {
+      setShowExecutionPanel(false);
+      setCurrentMethodName(null);
+      setMethodDetails(null);
+    }
+  }, [isOpen]);
   
-  // Handle method selection
-  const handleSelectMethod = (methodName: string) => {
-    setSelectedMethodName(methodName);
-    selectMethod(serverId, methodName);
-    setActiveTab('method');
+  // Handle method selection - direct implementation that doesn't use the store's selectMethod
+  const handleSelectMethod = async (methodName: string) => {
+    setCurrentMethodName(methodName);
+    setShowExecutionPanel(true);
+    
+    try {
+      // Fetch method details directly
+      const details = await api.tools.getMethodDetails(serverId, methodName, workspaceId);
+      if (isMounted.current) {
+        setMethodDetails(details);
+      }
+    } catch (err) {
+      console.error(`Failed to load details for method ${methodName}:`, err);
+    }
   };
   
-  // Add to dynamic context handler
-  const handleAddToDynamicContext = async () => {
-    try {
-      setIsAddingToDynamic(true);
-      if (!workspaceId) {
-        throw new Error('Workspace ID is required');
-      }
-      
-      // Create dynamic context configuration from tool server data
-      const dynamicContext = {
-        id: `tool-${serverId}`,
-        title: `${serverId.charAt(0).toUpperCase() + serverId.slice(1)} Tool`,
-        description: `Dynamic context for ${serverId} tool server`,
-        content: JSON.stringify({
-          toolServer: serverId,
-          config: config
-        }, null, 2),
-        enabled: true
-      };
-      
-      // Call the standard dynamic context creation endpoint
-      await dynamic.create(dynamicContext, workspaceId);
-      alert(`Successfully added ${serverId} to dynamic context`);
-      onClose();
-    } catch (err) {
-      console.error('Failed to add to dynamic context:', err);
-      alert(`Failed to add to dynamic context: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsAddingToDynamic(false);
-    }
+  // Handle back button click from execution panel
+  const handleBackToMethods = () => {
+    setShowExecutionPanel(false);
   };
   
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <div className="flex justify-between items-center">
-            <div className="flex items-center space-x-2">
-              <DialogTitle className="text-xl">{serverId} Server</DialogTitle>
+    <StableModal 
+      isOpen={isOpen} 
+      onClose={onClose}
+      className={`max-w-4xl ${showExecutionPanel ? 'max-h-[90vh]' : ''}`}
+    >
+      <div className="space-y-4">
+        {!showExecutionPanel ? (
+          // Methods List when not showing execution panel
+          <ServerMethodsList 
+            serverId={serverId} 
+            onSelectMethod={handleSelectMethod} 
+            isRefreshing={refreshing}
+            workspaceId={workspaceId}
+          />
+        ) : (
+          // Show execution panel when method is selected
+          <>
+            <div className="mb-4 flex justify-between items-center">
+              <Button 
+                variant="outline"
+                size="sm"
+                onClick={handleBackToMethods}
+              >
+                ← Back to Methods
+              </Button>
               
-              {/* Status indicator */}
-              <div className="flex items-center space-x-2">
-                <ServerStatusIndicator 
-                  status={status?.status || 'unknown'} 
-                  disabled={config.disabled}
-                  className="h-4 w-4"
-                />
-                <Badge
-                  variant={status?.status === 'running' ? 'default' : 
-                         status?.status === 'stopped' ? 'secondary' :
-                         status?.status === 'disabled' ? 'outline' : 'destructive'}
-                >
-                  {status?.status 
-                    ? status.status.charAt(0).toUpperCase() + status.status.slice(1) 
-                    : 'Unknown'}
-                </Badge>
+              <div className="text-lg font-medium">
+                Execute: <span className="text-blue-600 dark:text-blue-400">{currentMethodName}</span>
               </div>
             </div>
             
-            <div className="flex space-x-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => loadServerStatus()}
-                title="Refresh server status"
-              >
-                <RefreshCw className="h-4 w-4" />
-              </Button>
-              
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={onEdit}
-              >
-                <Edit className="h-4 w-4 mr-1" />
-                Edit
-              </Button>
-              
-              {/* Dynamic Context Button for workspace only */}
-              {isWorkspace && (
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={handleAddToDynamicContext}
-                  disabled={isAddingToDynamic}
-                >
-                  {isAddingToDynamic ? 'Adding...' : 'Add to Dynamic Context'}
-                </Button>
-              )}
-            </div>
-          </div>
-        </DialogHeader>
-        
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mt-4">
-          <TabsList className="grid grid-cols-3">
-            <TabsTrigger value="config" className="flex items-center">
-              <Server className="h-4 w-4 mr-2" />
-              Configuration
-            </TabsTrigger>
-            <TabsTrigger value="methods" className="flex items-center">
-              <Code className="h-4 w-4 mr-2" />
-              Methods
-            </TabsTrigger>
-            <TabsTrigger value="method" className="flex items-center" disabled={!selectedMethodName}>
-              <Play className="h-4 w-4 mr-2" />
-              Execute {selectedMethodName ? `'${selectedMethodName}'` : ''}
-            </TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="config" className="mt-4">
-            <ServerConfigDisplay
-              serverId={serverId}
-              config={config}
-              status={status}
-            />
-          </TabsContent>
-          
-          <TabsContent value="methods" className="mt-4">
-            <ServerMethodsList 
-              serverId={serverId} 
-              onSelectMethod={handleSelectMethod} 
-            />
-          </TabsContent>
-          
-          <TabsContent value="method" className="mt-4">
-            {selectedMethodName ? (
+            {currentMethodName && (
               <MethodExecutionPanel 
                 serverId={serverId} 
-                methodName={selectedMethodName} 
+                methodName={currentMethodName}
+                methodDetails={methodDetails}
+                workspaceId={workspaceId}
               />
-            ) : (
-              <div className="text-center p-8 border rounded-lg bg-gray-50 dark:bg-gray-800">
-                <p className="text-gray-500 dark:text-gray-400">
-                  Select a method from the Methods tab to execute it.
-                </p>
-              </div>
             )}
-          </TabsContent>
-        </Tabs>
-      </DialogContent>
-    </Dialog>
+          </>
+        )}
+      </div>
+    </StableModal>
   );
 }

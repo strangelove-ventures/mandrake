@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * React Query hooks for dynamic context API
  */
@@ -21,7 +22,7 @@ export const dynamicContextKeys = {
 export function useDynamicContextList(workspaceId?: string) {
   return useQuery({
     queryKey: dynamicContextKeys.list(workspaceId),
-    queryFn: () => api.dynamic.get(workspaceId)
+    queryFn: () => api.dynamic.get(workspaceId as string)
   });
 }
 
@@ -32,7 +33,7 @@ export function useCreateDynamicContext(workspaceId?: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (contextConfig: any) => api.dynamic.addItem(contextConfig, workspaceId),
+    mutationFn: (contextConfig: any) => api.dynamic.create(contextConfig, workspaceId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: dynamicContextKeys.list(workspaceId) });
     }
@@ -63,7 +64,7 @@ export function useToggleDynamicContextEnabled(workspaceId?: string) {
   
   return useMutation({
     mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) => 
-      api.dynamic.update({ id, refresh: { enabled } }, workspaceId),
+      api.dynamic.update(id, { refresh: { enabled } }, workspaceId),
     onSuccess: (_data, { id }) => {
       queryClient.invalidateQueries({ queryKey: dynamicContextKeys.detail(id, workspaceId) });
       queryClient.invalidateQueries({ queryKey: dynamicContextKeys.list(workspaceId) });
@@ -78,24 +79,10 @@ export function useDeleteDynamicContext(workspaceId?: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (id: string) => api.dynamic.removeItem(id, workspaceId),
+    mutationFn: (id: string) => api.dynamic.delete(id, workspaceId),
     onSuccess: (_data, id) => {
       queryClient.invalidateQueries({ queryKey: dynamicContextKeys.list(workspaceId) });
       queryClient.removeQueries({ queryKey: dynamicContextKeys.detail(id, workspaceId) });
-    }
-  });
-}
-
-/**
- * Hook for clearing all dynamic context methods
- */
-export function useClearDynamicContext(workspaceId?: string) {
-  const queryClient = useQueryClient();
-  
-  return useMutation({
-    mutationFn: () => api.dynamic.clear(workspaceId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: dynamicContextKeys.list(workspaceId) });
     }
   });
 }

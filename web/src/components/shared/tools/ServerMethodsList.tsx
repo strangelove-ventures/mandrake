@@ -1,42 +1,60 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useToolsStore } from '@/stores/system/tools';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api';
 
 interface ServerMethodsListProps {
   serverId: string;
   onSelectMethod: (methodName: string) => void;
+  refreshStatus?: () => void;
+  isRefreshing?: boolean;
+  workspaceId?: string;
 }
 
-export default function ServerMethodsList({ serverId, onSelectMethod }: ServerMethodsListProps) {
-  const { serverMethods, loadServerMethods, isLoading, error } = useToolsStore();
+export default function ServerMethodsList({ 
+  serverId, 
+  onSelectMethod, 
+  refreshStatus, 
+  isRefreshing,
+  workspaceId
+}: ServerMethodsListProps) {
+  // Use local state only for methods
+  const [methods, setMethods] = useState<any[]>([]);
   const [loadingState, setLoadingState] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
   
-  // Load methods for the server
+  // Load methods for the server - only on initial mount
   useEffect(() => {
     const fetchMethods = async () => {
       setLoadingState('loading');
       try {
-        await loadServerMethods(serverId);
+        // Fetch directly from API to avoid any store-based side effects
+        const methodList = await api.tools.getServerMethods(serverId, workspaceId);
+        setMethods(methodList);
         setLoadingState('success');
-      } catch {
+      } catch (err) {
+        console.error('Error loading methods:', err);
         setLoadingState('error');
       }
     };
     
-    // Only fetch if we don't already have methods for this server
-    if (!serverMethods[serverId]) {
-      fetchMethods();
-    } else {
-      setLoadingState('success');
-    }
-  }, [serverId, loadServerMethods, serverMethods]);
+    fetchMethods();
+  }, [serverId]);
   
-  // Get methods for the selected server
-  const methods = serverMethods[serverId] || [];
+  // Function to refresh methods
+  const handleRefreshMethods = async () => {
+    setLoadingState('loading');
+    try {
+      // Fetch directly from API to avoid any store-based side effects
+      const methodList = await api.tools.getServerMethods(serverId, workspaceId);
+      setMethods(methodList);
+      setLoadingState('success');
+    } catch (err) {
+      console.error('Error refreshing methods:', err);
+      setLoadingState('error');
+    }
+  };
   
   // If loading, show a loading state
   if (loadingState === 'loading') {
@@ -52,60 +70,45 @@ export default function ServerMethodsList({ serverId, onSelectMethod }: ServerMe
     );
   }
   
-  // If error, show error state
-  if (loadingState === 'error' || error) {
-    return (
-      <div className="text-center p-4">
-        <h3 className="text-lg font-medium text-red-600 dark:text-red-400">Error loading methods</h3>
-        <p className="mt-2 text-gray-500 dark:text-gray-400">
-          Failed to load methods for server: {serverId}
-        </p>
-        <button 
-          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          onClick={() => loadServerMethods(serverId)}
-        >
-          Retry
-        </button>
-      </div>
-    );
-  }
-  
-  // If no methods, show empty state
-  if (methods.length === 0 && loadingState === 'success') {
-    return (
-      <div className="text-center p-8 border rounded-lg bg-gray-50 dark:bg-gray-800">
-        <p className="text-gray-500 dark:text-gray-400">
-          No methods found for this server. The server might not be running or doesn't expose any methods.
-        </p>
-        <button 
-          className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          onClick={() => loadServerMethods(serverId)}
-        >
-          Refresh
-        </button>
-      </div>
-    );
-  }
-  
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Available Methods</CardTitle>
-        <CardDescription>
-          Methods exposed by the {serverId} server
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
+    <div className="mt-4">
+      <div className="flex justify-between items-center mb-3">
+        <h3 className="text-lg font-medium">Available Methods - {serverId}</h3>
+        
+        <div className="flex space-x-2">
+          {/* Method refresh button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefreshMethods}
+            disabled={loadingState === 'loading'}
+          >
+            <RefreshCw className={`h-4 w-4 mr-1 ${loadingState === 'loading' ? 'animate-spin' : ''}`} />
+            Refresh Methods
+          </Button>
+          
+          {/* Status refresh button (only if provided) */}
+          {refreshStatus && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={refreshStatus}
+              disabled={isRefreshing}
+            >
+              <RefreshCw className={`h-4 w-4 mr-1 ${isRefreshing ? 'animate-spin' : ''}`} />
+              {isRefreshing ? 'Refreshing...' : 'Refresh Status'}
+            </Button>
+          )}
+        </div>
+      </div>
+      
+      {methods.length > 0 ? (
         <ul className="space-y-2">
           {methods.map(method => (
             <li 
               key={method.name}
               className="p-3 border rounded-md flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
-              onClick={(e) => {
-                // Stop event propagation to prevent modal from closing
-                e.stopPropagation();
-                onSelectMethod(method.name);
-              }}
+              onClick={() => onSelectMethod(method.name)}
             >
               <div>
                 <div className="font-medium">{method.name}</div>
@@ -113,13 +116,27 @@ export default function ServerMethodsList({ serverId, onSelectMethod }: ServerMe
                   <div className="text-sm text-gray-500">{method.description}</div>
                 )}
               </div>
-              <div className="flex items-center space-x-2">
+              <div className="flex items-center">
                 <ChevronRight className="h-5 w-5 text-gray-400" />
               </div>
             </li>
           ))}
         </ul>
-      </CardContent>
-    </Card>
+      ) : (
+        <div className="text-center p-6 border rounded-lg bg-gray-50 dark:bg-gray-800">
+          <p className="text-gray-500 dark:text-gray-400">
+            {loadingState === 'loading' ? 'Loading methods...' : 'No methods found for this server'}
+          </p>
+          {loadingState === 'error' && (
+            <button 
+              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              onClick={handleRefreshMethods}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

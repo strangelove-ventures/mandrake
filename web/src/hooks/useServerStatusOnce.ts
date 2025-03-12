@@ -8,9 +8,10 @@ interface ServerStatus {
 }
 
 /**
- * Custom hook for loading and managing server status - POLLING REMOVED
+ * Custom hook for loading server status ONE TIME ONLY - no polling
+ * This is a simplified version of useServerStatus without any polling
  */
-export function useServerStatus(workspaceId?: string) {
+export function useServerStatusOnce(workspaceId?: string) {
   const [serverStatus, setServerStatus] = useState<Record<string, ServerStatus>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -58,9 +59,6 @@ export function useServerStatus(workspaceId?: string) {
       setIsLoading(false);
     }
   }, [workspaceId]);
-  
-  // NOTE: POLLING HAS BEEN REMOVED
-  // To load status, call loadServerStatus() manually
   
   return {
     serverStatus,

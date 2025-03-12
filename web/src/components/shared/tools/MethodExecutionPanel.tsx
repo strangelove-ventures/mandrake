@@ -7,14 +7,25 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Play, ArrowDown, ArrowUp, RotateCcw } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Play, ArrowDown, ArrowUp, RotateCcw, Info } from 'lucide-react';
+import { api } from '@/lib/api';
 
 interface MethodExecutionPanelProps {
   serverId: string;
   methodName: string;
+  methodDetails?: any; // Accept method details directly from parent
+  workspaceId?: string;
 }
 
-export default function MethodExecutionPanel({ serverId, methodName }: MethodExecutionPanelProps) {
+export default function MethodExecutionPanel({ 
+  serverId, 
+  methodName, 
+  methodDetails: propMethodDetails,
+  workspaceId
+}: MethodExecutionPanelProps) {
   const { 
     serverMethods, 
     loadMethodDetails, 
@@ -25,20 +36,66 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
   } = useToolsStore();
   
   const [paramsJson, setParamsJson] = useState('{}');
+  const [params, setParams] = useState<Record<string, any>>({});
   const [paramsError, setParamsError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showRawJson, setShowRawJson] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [localLoading, setLocalLoading] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [localMethod, setLocalMethod] = useState<any>(null);
   
-  // Find the method details
+  // Find the method details from either props or store
   const methodsForServer = serverMethods[serverId] || [];
-  const method = methodsForServer.find(m => m.name === methodName);
+  const storeMethod = methodsForServer.find(m => m.name === methodName);
+  const method = propMethodDetails || localMethod || storeMethod;
   
-  // Load method details if needed
+  // Update params object when JSON changes
   useEffect(() => {
-    if (!method || !method.parameters) {
-      loadMethodDetails(serverId, methodName);
+    try {
+      const parsed = JSON.parse(paramsJson);
+      setParams(parsed);
+      setParamsError(null);
+    } catch (err) {
+      setParamsError('Invalid JSON parameters');
     }
-  }, [serverId, methodName, method, loadMethodDetails]);
+  }, [paramsJson]);
+  
+  // Update JSON when params object changes
+  const updateParams = (key: string, value: any) => {
+    const newParams = { ...params, [key]: value };
+    setParams(newParams);
+    setParamsJson(JSON.stringify(newParams, null, 2));
+  };
+  
+  // Load method details if needed - directly fetch if not provided in props
+  useEffect(() => {
+    if (propMethodDetails) {
+      // If method details were provided by parent, use those
+      setLocalMethod(propMethodDetails);
+    } else if (!storeMethod || !storeMethod.parameters) {
+      // Otherwise try to load from store or directly
+      const fetchMethodDetails = async () => {
+        setLocalLoading(true);
+        try {
+          // Try to fetch directly to avoid triggering status checks
+          const details = await api.tools.getMethodDetails(serverId, methodName, workspaceId);
+          setLocalMethod(details);
+          setLocalError(null);
+        } catch (err) {
+          console.error(`Failed to load details for method ${methodName}:`, err);
+          setLocalError('Failed to load method details');
+          
+          // Fall back to store method if direct fetch fails
+          loadMethodDetails(serverId, methodName);
+        } finally {
+          setLocalLoading(false);
+        }
+      };
+      
+      fetchMethodDetails();
+    }
+  }, [serverId, methodName, propMethodDetails, storeMethod, loadMethodDetails]);
   
   // Filter execution history for this method
   const methodHistory = methodExecutionHistory.filter(
@@ -47,25 +104,148 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
   
   // Handle form submission to invoke method
   const handleInvoke = async () => {
-    // Validate JSON
     try {
-      const params = JSON.parse(paramsJson);
-      setParamsError(null);
-      
-      // Invoke method
-      try {
-        const result = await invokeMethod(serverId, methodName, params);
-        setResult(result);
-      } catch (err) {
-        console.error('Error invoking method:', err);
-        // Error is handled via the store
-      }
+      setLocalLoading(true);
+      // Use direct API call to control workspaceId parameter
+      const result = await api.tools.invokeMethod(serverId, methodName, params, workspaceId);
+      setResult(result);
     } catch (err) {
-      setParamsError('Invalid JSON parameters');
+      console.error('Error invoking method:', err);
+      // Error is handled directly
+    } finally {
+      setLocalLoading(false);
     }
   };
   
-  // Generate a simple parameter form from the method schema
+  // Determine field type based on schema property
+  const getFieldType = (property: any) => {
+    if (!property || !property.type) return 'text';
+    
+    switch (property.type) {
+      case 'boolean':
+        return 'boolean';
+      case 'integer':
+      case 'number':
+        return 'number';
+      case 'array':
+        return 'array';
+      case 'object':
+        return 'object';
+      default:
+        return 'text';
+    }
+  };
+  
+  // Render appropriate field based on schema type
+  const renderField = (key: string, property: any, required: boolean = false) => {
+    const type = getFieldType(property);
+    const value = params[key];
+    
+    switch (type) {
+      case 'boolean':
+        return (
+          <div className="flex items-center space-x-2">
+            <Switch 
+              id={`param-${key}`}
+              checked={Boolean(value)}
+              onCheckedChange={(checked) => updateParams(key, checked)}
+            />
+            <Label htmlFor={`param-${key}`}>{value ? 'True' : 'False'}</Label>
+          </div>
+        );
+        
+      case 'number':
+        return (
+          <Input
+            id={`param-${key}`}
+            type="number"
+            value={value || ''}
+            onChange={(e) => {
+              const val = e.target.value === '' ? '' : Number(e.target.value);
+              updateParams(key, val);
+            }}
+            placeholder={property.description || key}
+          />
+        );
+        
+      case 'array':
+        return (
+          <Textarea
+            id={`param-${key}`}
+            value={Array.isArray(value) ? JSON.stringify(value, null, 2) : '[]'}
+            onChange={(e) => {
+              try {
+                const arr = JSON.parse(e.target.value);
+                if (Array.isArray(arr)) {
+                  updateParams(key, arr);
+                }
+              } catch (err) {
+                // Invalid JSON, but we'll let them continue typing
+              }
+            }}
+            placeholder={`[\n  "item1",\n  "item2"\n]`}
+            className="font-mono"
+            rows={3}
+          />
+        );
+        
+      case 'object':
+        return (
+          <Textarea
+            id={`param-${key}`}
+            value={typeof value === 'object' && value !== null ? JSON.stringify(value, null, 2) : '{}'}
+            onChange={(e) => {
+              try {
+                const obj = JSON.parse(e.target.value);
+                if (typeof obj === 'object' && obj !== null) {
+                  updateParams(key, obj);
+                }
+              } catch (err) {
+                // Invalid JSON, but we'll let them continue typing
+              }
+            }}
+            placeholder="{}"
+            className="font-mono"
+            rows={3}
+          />
+        );
+        
+      case 'text':
+      default:
+        // Check if there's an enum for dropdown
+        if (property.enum && Array.isArray(property.enum) && property.enum.length > 0) {
+          return (
+            <Select
+              value={String(value || '')}
+              onValueChange={(val) => updateParams(key, val)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder={`Select ${key}`} />
+              </SelectTrigger>
+              <SelectContent>
+                {property.enum.map((option: any) => (
+                  <SelectItem key={option} value={String(option)}>
+                    {String(option)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          );
+        }
+        
+        // Default text input
+        return (
+          <Input
+            id={`param-${key}`}
+            value={value || ''}
+            onChange={(e) => updateParams(key, e.target.value)}
+            placeholder={property.description || key}
+          />
+        );
+    }
+  };
+  
+  // Generate a parameter form from the method schema
   const renderParameterForm = () => {
     if (!method || !method.parameters) {
       return (
@@ -91,43 +271,72 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
     const parameters = method.parameters;
     
     if (parameters.type === 'object' && parameters.properties) {
-      // For simple object parameters, create form fields
-      try {
-        const parsedParams = JSON.parse(paramsJson);
-        
-        return (
+      return (
+        <div className="space-y-4">
+          {/* Parameter Fields */}
           <div className="space-y-4">
-            <div className="text-sm text-gray-500">
-              Method parameters:
-            </div>
-            
-            {/* Display form fields based on parameters */}
-            <div className="space-y-3">
-              {Object.entries(parameters.properties).map(([key, prop]: [string, any]) => (
-                <div key={key} className="flex flex-col space-y-1">
-                  <label className="text-sm font-medium">
-                    {key}
-                    {parameters.required?.includes(key) && <span className="text-red-500 ml-1">*</span>}
-                  </label>
-                  <Input
-                    value={parsedParams[key] || ''}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const newParams = { ...parsedParams, [key]: value };
-                      setParamsJson(JSON.stringify(newParams, null, 2));
-                    }}
-                    placeholder={prop.description || key}
-                  />
-                  {prop.description && (
-                    <p className="text-xs text-gray-500">{prop.description}</p>
-                  )}
+            {Object.keys(parameters.properties).length > 0 ? (
+              <>
+                <div className="flex justify-between items-center">
+                  <div className="text-sm font-medium">Method Parameters</div>
+                  <div className="flex items-center space-x-2">
+                    <Label htmlFor="show-json" className="text-sm cursor-pointer">
+                      Show JSON
+                    </Label>
+                    <Switch
+                      id="show-json"
+                      checked={showRawJson}
+                      onCheckedChange={setShowRawJson}
+                    />
+                  </div>
                 </div>
-              ))}
-            </div>
-            
-            <div className="pt-2">
-              <label className="text-sm font-medium">Raw JSON:</label>
+                
+                {/* Form Fields */}
+                <div className="space-y-4">
+                  {Object.entries(parameters.properties).map(([key, prop]: [string, any]) => (
+                    <div key={key} className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor={`param-${key}`} className="text-sm font-medium">
+                          {key}
+                          {parameters.required?.includes(key) && (
+                            <span className="text-red-500 ml-1">*</span>
+                          )}
+                        </Label>
+                        
+                        {/* Show description tooltip if available */}
+                        {prop.description && (
+                          <div className="relative group">
+                            <Info className="h-4 w-4 text-gray-400 cursor-help" />
+                            <div className="absolute right-0 w-64 p-2 mt-1 text-xs bg-gray-700 text-white rounded shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-opacity z-50">
+                              {prop.description}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Render the appropriate field type */}
+                      {renderField(key, prop, parameters.required?.includes(key))}
+                    </div>
+                  ))}
+                </div>
+              </>
+            ) : (
+              <div className="p-4 border rounded bg-gray-50 dark:bg-gray-800">
+                <p className="text-sm text-gray-500">
+                  This method doesn't require any parameters.
+                </p>
+              </div>
+            )}
+          </div>
+          
+          {/* Raw JSON Editor (conditionally shown) */}
+          {showRawJson && (
+            <div className="pt-2 border-t">
+              <Label htmlFor="raw-json" className="text-sm font-medium">
+                Raw JSON:
+              </Label>
               <Textarea
+                id="raw-json"
                 value={paramsJson}
                 onChange={(e) => setParamsJson(e.target.value)}
                 className="font-mono mt-1"
@@ -137,28 +346,9 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
                 <div className="text-sm text-red-500 mt-1">{paramsError}</div>
               )}
             </div>
-          </div>
-        );
-      } catch (err) {
-        // If there's an error parsing the JSON, fall back to raw editing
-        return (
-          <div className="space-y-4">
-            <div className="text-sm text-gray-500">
-              Enter parameters as JSON:
-            </div>
-            <Textarea
-              value={paramsJson}
-              onChange={(e) => setParamsJson(e.target.value)}
-              className="font-mono"
-              rows={5}
-              placeholder="{}"
-            />
-            {paramsError && (
-              <div className="text-sm text-red-500">{paramsError}</div>
-            )}
-          </div>
-        );
-      }
+          )}
+        </div>
+      );
     } else {
       // For non-object parameters, show raw JSON editor
       return (
@@ -182,7 +372,7 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
   };
   
   // Loading state
-  if (isLoading && !method) {
+  if ((isLoading || localLoading) && !method) {
     return (
       <div className="animate-pulse space-y-4 p-4">
         <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/3"></div>
@@ -194,16 +384,33 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
   }
   
   // Error state
-  if (error && !method) {
+  if ((error || localError) && !method) {
     return (
       <Alert variant="destructive">
         <AlertDescription>
-          Error loading method details: {error}
+          Error loading method details: {error || localError}
           <Button 
             variant="outline" 
             size="sm" 
             className="mt-2"
-            onClick={() => loadMethodDetails(serverId, methodName)}
+            onClick={() => {
+              // Try to load directly instead of through the store
+              const fetchMethodDetails = async () => {
+                setLocalLoading(true);
+                try {
+                  const details = await api.tools.getMethodDetails(serverId, methodName);
+                  setLocalMethod(details);
+                  setLocalError(null);
+                } catch (err) {
+                  console.error(`Failed to load details for method ${methodName}:`, err);
+                  setLocalError('Failed to load method details');
+                } finally {
+                  setLocalLoading(false);
+                }
+              };
+              
+              fetchMethodDetails();
+            }}
           >
             <RotateCcw className="h-4 w-4 mr-1" />
             Retry
@@ -229,12 +436,16 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
           {/* Execution button */}
           <div className="flex justify-end">
             <Button 
-              onClick={handleInvoke} 
-              disabled={isLoading}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleInvoke();
+              }} 
+              disabled={isLoading || localLoading || Boolean(paramsError)}
               className="flex items-center"
             >
               <Play className="h-4 w-4 mr-2" />
-              {isLoading ? 'Executing...' : 'Execute'}
+              {isLoading || localLoading ? 'Executing...' : 'Execute'}
             </Button>
           </div>
           
@@ -258,7 +469,11 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
             <div className="mt-6">
               <div 
                 className="flex items-center cursor-pointer text-sm text-gray-600 dark:text-gray-400"
-                onClick={() => setShowHistory(!showHistory)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setShowHistory(!showHistory);
+                }}
               >
                 {showHistory ? (
                   <>
@@ -320,7 +535,9 @@ export default function MethodExecutionPanel({ serverId, methodName }: MethodExe
                         variant="outline"
                         size="sm"
                         className="mt-2"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
                           setParamsJson(JSON.stringify(execution.params, null, 2));
                         }}
                       >

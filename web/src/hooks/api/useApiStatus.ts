@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Hook to check API status
  */
@@ -31,7 +32,7 @@ export function useApiStatus() {
         if (isMounted) {
           setStatus({
             status: 'online',
-            message: `API is online (${response.status || 'OK'})`
+            message: `API is online (${(response as any).status || 'OK'})`
           });
           console.log('API status set to online');
         }

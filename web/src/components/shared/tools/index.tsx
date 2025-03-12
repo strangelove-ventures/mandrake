@@ -11,7 +11,7 @@ import { useToolsConfig } from './hooks';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import ServerTabs from './ServerTabs';
-import ServerEditor from './ServerEditor';
+import ServerEditModal from './ServerEditModal';
 
 /**
  * ToolsConfig component that can be used in both system and workspace contexts
@@ -238,12 +238,20 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
       )}
       
       {/* Server edit dialog */}
-      <ServerEditor
-        isOpen={isEditingServer}
-        onClose={() => setIsEditingServer(false)}
-        editingServer={editingServer}
-        onSave={handleSaveServerEdits}
-      />
+      {isEditingServer && editingServer && (
+        <ServerEditModal
+          isOpen={isEditingServer}
+          onClose={() => setIsEditingServer(false)}
+          serverId={editingServer.serverId}
+          config={editingServer.config}
+          onSave={async (serverId, updatedConfig) => {
+            await handleSaveServerEdits({
+              ...editingServer,
+              config: updatedConfig
+            });
+          }}
+        />
+      )}
       
       {/* Debug output */}
       <div className="mt-4 p-4 border border-gray-200 dark:border-gray-700 rounded bg-gray-50 dark:bg-gray-800 hidden">
@@ -273,7 +281,10 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
 
 // Named exports for individual components
 export { default as ConfigList } from './ConfigList';
-export { default as ServerDetail } from './ServerDetail';
-export { default as ServerEditor } from './ServerEditor';
+export { default as ServerDetailsModal } from './ServerDetailsModal';
+export { default as ServerEditModal } from './ServerEditModal';
 export { default as ServerTabs } from './ServerTabs';
+export { default as MethodsModal } from './MethodsModal';
+export { default as ServerMethodsList } from './ServerMethodsList';
+export { default as MethodExecutionPanel } from './MethodExecutionPanel';
 export { useToolsConfig } from './hooks';

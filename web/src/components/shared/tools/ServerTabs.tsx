@@ -6,9 +6,11 @@ import { RefreshCw } from 'lucide-react';
 import { ToolConfig } from './types';
 import { useToolsStore } from '@/stores/system/tools';
 import { useServerStatus } from '@/hooks/useServerStatus';
-import ServerDetailsModal from './ServerDetailsModal';
 import ServerListItem from './ServerListItem';
 import AddServerModal from './AddServerModal';
+import MethodsModal from './MethodsModal';
+import ServerEditModal from './ServerEditModal';
+import ServerDetailsModal from './ServerDetailsModal';
 
 interface ServerTabsProps {
   config: ToolConfig;
@@ -52,9 +54,10 @@ export default function ServerTabs({
 }: ServerTabsProps) {
   const serverIds = Object.keys(config);
   const selectedServer = selectedServerId && config[selectedServerId];
-  const { loadServerStatus } = useToolsStore();
+  const { loadServerStatus, updateToolConfig } = useToolsStore();
   const { serverStatus } = useServerStatus(workspaceId);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
   return (
     <div className="space-y-4">
@@ -95,10 +98,9 @@ export default function ServerTabs({
                   onSelectServer(serverId);
                   setIsDetailsModalOpen(true);
                 }}
-                onEdit={() => onEditServer(serverId)}
-                onViewDetails={() => {
+                onEdit={() => {
                   onSelectServer(serverId);
-                  setIsDetailsModalOpen(true);
+                  setIsEditModalOpen(true);
                 }}
                 onToggleDisabled={() => onToggleServerDisabled(serverId)}
                 onDelete={() => {
@@ -126,9 +128,25 @@ export default function ServerTabs({
           onClose={() => setIsDetailsModalOpen(false)}
           serverId={selectedServerId}
           config={selectedServer}
-          onEdit={() => onEditServer(selectedServerId)}
+          onEdit={() => setIsEditModalOpen(true)}
           isWorkspace={isWorkspace}
           workspaceId={workspaceId}
+        />
+      )}
+      
+      {/* Edit server modal */}
+      {selectedServer && (
+        <ServerEditModal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          serverId={selectedServerId}
+          config={selectedServer}
+          onSave={async (serverId, updatedConfig) => {
+            // Call the original edit handler with the updated config
+            const updatedConfigSet = { ...config };
+            updatedConfigSet[serverId] = updatedConfig;
+            await updateToolConfig(selectedConfigId, updatedConfigSet);
+          }}
         />
       )}
     </div>

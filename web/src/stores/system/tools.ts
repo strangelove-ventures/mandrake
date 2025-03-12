@@ -56,7 +56,7 @@ export interface ToolsState {
   loadActiveTools: () => Promise<void>;
   setActiveTools: (id: string) => Promise<void>;
   updateToolConfig: (configId: string, config: ToolConfig) => Promise<void>;
-  loadServerStatus: () => Promise<void>;
+  loadServerStatus: (workspaceId?: string) => Promise<Record<string, ServerStatus>>;
   loadServerMethods: (serverId: string) => Promise<void>;
   loadMethodDetails: (serverId: string, methodName: string) => Promise<void>;
   invokeMethod: (serverId: string, methodName: string, params: any) => Promise<any>;
@@ -165,14 +165,16 @@ export const useToolsStore = create<ToolsState>((set, get) => ({
   /**
    * Load status for all servers
    */
-  loadServerStatus: async () => {
+  loadServerStatus: async (workspaceId?: string) => {
     try {
       // Non-blocking status update - don't set loading state
-      const status = await api.tools.getServersStatus();
+      const status = await api.tools.getServersStatus(workspaceId);
       set({ serverStatus: status });
+      return status;
     } catch (err) {
       console.error('Failed to load server status:', err);
       // Don't set error state since this is a background operation
+      return {};
     }
   },
   
@@ -296,15 +298,10 @@ export const useToolsStore = create<ToolsState>((set, get) => ({
    * Select a method for details view
    */
   selectMethod: (serverId: string, methodName: string) => {
+    // Just set the selected method without loading details automatically
     set({ selectedMethod: { serverId, methodName } });
     
-    // Fetch details if not already loaded
-    const state = get();
-    const methodsForServer = state.serverMethods[serverId] || [];
-    const method = methodsForServer.find(m => m.name === methodName);
-    
-    if (!method || !method.parameters) {
-      get().loadMethodDetails(serverId, methodName);
-    }
+    // NOTE: Automatic loading of method details has been removed
+    // Call loadMethodDetails manually if needed
   }
 }));

@@ -41,8 +41,7 @@ export default function SystemSessionList() {
     setIsChatModalOpen(true);
     
     // Also set as current session in the store
-    // Using direct method name known to exist in the store
-    sessionStore.setCurrentSession(sessionId);
+    sessionStore.setCurrentSessionId(sessionId);
   };
   
   // Handle closing chat modal
