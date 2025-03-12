@@ -14,7 +14,7 @@ export function formatToolCall(parsedCall: ParsedToolCall): string {
     arguments: parsedCall.arguments
   };
 
-  return JSON.stringify({ tool_calls: [toolCall] }, null, 2);
+  return JSON.stringify(toolCall, null, 2);
 }
 
 /**
@@ -29,7 +29,7 @@ export function formatToolResult(parsedCall: ParsedToolCall, result: any): strin
     content: result
   };
 
-  return JSON.stringify({ tool_results: [toolResult] }, null, 2);
+  return JSON.stringify(toolResult, null, 2);
 }
 
 /**
@@ -46,7 +46,7 @@ export function formatToolError(parsedCall: ParsedToolCall, error: any): string 
     error: errorMessage
   };
 
-  return JSON.stringify({ tool_results: [toolResult] }, null, 2);
+  return JSON.stringify(toolResult, null, 2);
 }
 
 /**

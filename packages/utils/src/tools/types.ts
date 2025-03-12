@@ -12,11 +12,11 @@ import type { ToolArguments } from '../types/mcp/tools';
 export interface ToolCall extends ToolArguments {}
 
 /**
- * Represents an array of tool calls
+ * Tool call - used directly without wrapper
+ * This replaces the previous ToolCalls interface that had a wrapper
  */
-export interface ToolCalls {
-  tool_calls: ToolCall[];
-}
+// Keeping the old interface name for backward compatibility with existing code
+export interface ToolCalls extends ToolCall {}
 
 /**
  * Represents the result of a tool call execution
@@ -29,11 +29,11 @@ export interface ToolResult {
 }
 
 /**
- * Represents an array of tool results
+ * Tool result - used directly without wrapper
+ * This replaces the previous ToolResults interface that had a wrapper
  */
-export interface ToolResults {
-  tool_results: ToolResult[];
-}
+// Keeping the old interface name for backward compatibility with existing code
+export interface ToolResults extends ToolResult {}
 
 /**
  * Internal representation of a parsed tool call with server and method separated

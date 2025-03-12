@@ -1,6 +1,5 @@
 import { formatMarkdownSection, SectionTitles } from '../types';
 import type { PromptSection, ToolsSectionConfig } from '../types';
-import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 export class ToolsSection implements PromptSection {
   private readonly toolInstructions = `You have access to a set of tools that can be executed. Use tools one at a time to accomplish tasks.
@@ -9,29 +8,21 @@ export class ToolsSection implements PromptSection {
 To use a tool, output a JSON object with the following structure:
 
 {
-  "tool_calls": [
-    {
-      "name": "server.method",
-      "arguments": {
-        "param1": "value1",
-        "param2": "value2"
-      }
-    }
-  ]
+  "name": "server.method",
+  "arguments": {
+    "param1": "value1",
+    "param2": "value2"
+  }
 }
 
-## IMPORTANT: Only include ONE tool call at a time
-Make only a single tool call, then wait for the result before making another call. Never include multiple tools in the array.
+## IMPORTANT: Make only one tool call at a time
+Make a single tool call, then wait for the result before making another call.
 
 ## Usage Example
 
 {
-  "tool_calls": [
-    {
-      "name": "ripper.list_allowed_directories",
-      "arguments": {}
-    }
-  ]
+  "name": "ripper.list_allowed_directories",
+  "arguments": {}
 }
 
 ## Tool Use Guidelines
@@ -41,23 +32,15 @@ Make only a single tool call, then wait for the result before making another cal
 3. Tool responses will be returned in this format:
 
 {
-  "tool_results": [
-    {
-      "name": "server.method",
-      "content": { /* result data */ }
-    }
-  ]
+  "name": "server.method",
+  "content": { /* result data */ }
 }
 
 4. If a tool call results in an error, it will be returned as:
 
 {
-  "tool_results": [
-    {
-      "name": "server.method",
-      "error": "Error message details"
-    }
-  ]
+  "name": "server.method",
+  "error": "Error message details"
 }
 
 5. Never assume a tool call succeeded - always check the response
@@ -91,12 +74,8 @@ Description: ${tool.description || ''}
 Example:
 \`\`\`json
 {
-  "tool_calls": [
-    {
-      "name": "${tool.serverName}.${tool.name}",
-      "arguments": ${JSON.stringify(exampleArgs, null, 2)}
-    }
-  ]
+  "name": "${tool.serverName}.${tool.name}",
+  "arguments": ${JSON.stringify(exampleArgs, null, 2)}
 }
 \`\`\``;
     }).join('\n\n');

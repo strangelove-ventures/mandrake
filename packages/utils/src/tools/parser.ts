@@ -13,18 +13,6 @@ import {
 } from './types';
 
 /**
- * Regular expression to find JSON tool call blocks in text
- * Looks for patterns like: { "tool_calls": [...] }
- */
-const TOOL_CALLS_REGEX = /\{[\s\n]*"tool_calls"[\s\n]*:[\s\n]*\[[\s\S]*?\][\s\n]*\}/g;
-
-/**
- * Regular expression to find JSON tool result blocks in text
- * Looks for patterns like: { "tool_results": [...] }
- */
-const TOOL_RESULTS_REGEX = /\{[\s\n]*"tool_results"[\s\n]*:[\s\n]*\[[\s\S]*?\][\s\n]*\}/g;
-
-/**
  * Parses a tool name into server and method components
  * @param fullName The full tool name in "server.method" format
  * @returns Object with serverName and methodName or null if invalid format
@@ -57,55 +45,39 @@ export function extractToolCalls(text: string): ToolCall[] {
     return [];
   }
 
-  // First, try to ensure we're extracting balanced JSON objects
-  const matches: string[] = [];
-  let match;
-  while ((match = TOOL_CALLS_REGEX.exec(text)) !== null) {
-    try {
-      // Basic check for balanced braces
-      const potentialJson = match[0];
-      let openBraces = 0;
-      let isValid = true;
-      
-      for (let i = 0; i < potentialJson.length; i++) {
-        if (potentialJson[i] === '{') openBraces++;
-        if (potentialJson[i] === '}') openBraces--;
-        if (openBraces < 0) {
-          isValid = false;
-          break;
-        }
-      }
-      
-      if (isValid && openBraces === 0) {
-        matches.push(potentialJson);
-      }
-    } catch (e) {
-      // Skip this match if there's an error
-    }
-  }
+  const toolCalls: ToolCall[] = [];
+  let depth = 0;
+  let start = -1;
   
-  if (matches.length === 0) {
-    return [];
-  }
-
-  const allToolCalls: ToolCall[] = [];
-
-  for (const match of matches) {
-    try {
-      const parsed = JSON.parse(match) as ToolCalls;
-      if (parsed.tool_calls && Array.isArray(parsed.tool_calls)) {
-        allToolCalls.push(...parsed.tool_calls);
+  // Find JSON objects by tracking opening and closing braces
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      if (depth === 0) {
+        start = i;
       }
-    } catch (e) {
-      // Skip malformed JSON silently
-      // Only log in development
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Failed to parse tool call JSON:', e);
+      depth++;
+    } else if (text[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const jsonCandidate = text.substring(start, i + 1);
+        try {
+          const parsed = JSON.parse(jsonCandidate);
+          if (parsed.name && parsed.arguments) {
+            toolCalls.push(parsed as ToolCall);
+          }
+        } catch (e) {
+          // Skip malformed JSON silently
+          // Only log in development
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Failed to parse tool call JSON:', e);
+          }
+        }
+        start = -1;
       }
     }
   }
 
-  return allToolCalls;
+  return toolCalls;
 }
 
 /**
@@ -118,55 +90,39 @@ export function extractToolResults(text: string): ToolResult[] {
     return [];
   }
 
-  // Extract only valid, balanced JSON objects
-  const matches: string[] = [];
-  let match;
-  while ((match = TOOL_RESULTS_REGEX.exec(text)) !== null) {
-    try {
-      // Check for balanced braces
-      const potentialJson = match[0];
-      let openBraces = 0;
-      let isValid = true;
-      
-      for (let i = 0; i < potentialJson.length; i++) {
-        if (potentialJson[i] === '{') openBraces++;
-        if (potentialJson[i] === '}') openBraces--;
-        if (openBraces < 0) {
-          isValid = false;
-          break;
-        }
-      }
-      
-      if (isValid && openBraces === 0) {
-        matches.push(potentialJson);
-      }
-    } catch (e) {
-      // Skip this match if there's an error
-    }
-  }
+  const toolResults: ToolResult[] = [];
+  let depth = 0;
+  let start = -1;
   
-  if (matches.length === 0) {
-    return [];
-  }
-
-  const allToolResults: ToolResult[] = [];
-
-  for (const match of matches) {
-    try {
-      const parsed = JSON.parse(match) as ToolResults;
-      if (parsed.tool_results && Array.isArray(parsed.tool_results)) {
-        allToolResults.push(...parsed.tool_results);
+  // Find JSON objects by tracking opening and closing braces
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '{') {
+      if (depth === 0) {
+        start = i;
       }
-    } catch (e) {
-      // Skip malformed JSON silently
-      // Only log in development
-      if (process.env.NODE_ENV === 'development') {
-        console.error('Failed to parse tool result JSON:', e);
+      depth++;
+    } else if (text[i] === '}') {
+      depth--;
+      if (depth === 0 && start !== -1) {
+        const jsonCandidate = text.substring(start, i + 1);
+        try {
+          const parsed = JSON.parse(jsonCandidate);
+          if (parsed.name && (parsed.content !== undefined || parsed.error !== undefined)) {
+            toolResults.push(parsed as ToolResult);
+          }
+        } catch (e) {
+          // Skip malformed JSON silently
+          // Only log in development
+          if (process.env.NODE_ENV === 'development') {
+            console.error('Failed to parse tool result JSON:', e);
+          }
+        }
+        start = -1;
       }
     }
   }
 
-  return allToolResults;
+  return toolResults;
 }
 
 /**

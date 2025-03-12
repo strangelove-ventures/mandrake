@@ -7,7 +7,7 @@ import {
   extractParsedToolCalls,
   extractToolCallsForDisplay
 } from '../../src/tools/parser';
-import { ToolParsingError, ToolParsingErrorType } from '../../src/tools/types';
+import { ToolParsingError, type ToolCall, ToolParsingErrorType } from '../../src/tools/types';
 
 describe('Tool Parser', () => {
   describe('parseToolName', () => {
@@ -43,14 +43,10 @@ describe('Tool Parser', () => {
       Some text before
       
       {
-        "tool_calls": [
-          {
-            "name": "fs.readFile",
-            "arguments": {
-              "path": "/path/to/file"
-            }
-          }
-        ]
+        "name": "fs.readFile",
+        "arguments": {
+          "path": "/path/to/file"
+        }
       }
       
       Some text after
@@ -69,28 +65,20 @@ describe('Tool Parser', () => {
     test('should extract multiple tool calls', () => {
       const text = `
       {
-        "tool_calls": [
-          {
-            "name": "fs.readFile",
-            "arguments": {
-              "path": "/path/to/file1"
-            }
-          }
-        ]
+        "name": "fs.readFile",
+        "arguments": {
+          "path": "/path/to/file1"
+        }
       }
       
       Some text in between
       
       {
-        "tool_calls": [
-          {
-            "name": "fs.writeFile",
-            "arguments": {
-              "path": "/path/to/file2",
-              "content": "Hello World"
-            }
-          }
-        ]
+        "name": "fs.writeFile",
+        "arguments": {
+          "path": "/path/to/file2",
+          "content": "Hello World"
+        }
       }
       `;
 
@@ -105,28 +93,19 @@ describe('Tool Parser', () => {
     test('should handle malformed JSON gracefully', () => {
       const text = `
       {
-        "tool_calls": [
-          {
-            "name": "fs.readFile",
-            "arguments": {
-              "path": "/path/to/file"
-            }
-          }
-        ]
+        "name": "fs.readFile",
+        "arguments": {
+          "path": "/path/to/file"
+        }
       }
       
       {
-        "tool_calls": [
-          {
-            "name": "fs.writeFile",
-            "arguments": {
-              "path": "/path/to/file2",
-              "content": "Hello World"
-            
-          }
-        ]
-      }
-      `;
+        "name": "fs.writeFile",
+        "arguments": {
+          "path": "/path/to/file2",
+          "content": "Hello World"
+        
+      ` // <-- Missing closing braces
 
       // Mock console.error to prevent test output pollution
       const originalConsoleError = console.error;
@@ -156,12 +135,8 @@ describe('Tool Parser', () => {
       Some text before
       
       {
-        "tool_results": [
-          {
-            "name": "fs.readFile",
-            "content": "File content here"
-          }
-        ]
+        "name": "fs.readFile",
+        "content": "File content here"
       }
       
       Some text after
@@ -178,12 +153,8 @@ describe('Tool Parser', () => {
     test('should extract error results', () => {
       const text = `
       {
-        "tool_results": [
-          {
-            "name": "fs.readFile",
-            "error": "File not found"
-          }
-        ]
+        "name": "fs.readFile",
+        "error": "File not found"
       }
       `;
 
@@ -198,23 +169,15 @@ describe('Tool Parser', () => {
     test('should extract multiple tool results', () => {
       const text = `
       {
-        "tool_results": [
-          {
-            "name": "fs.readFile",
-            "content": "File content here"
-          }
-        ]
+        "name": "fs.readFile",
+        "content": "File content here"
       }
       
       Some text in between
       
       {
-        "tool_results": [
-          {
-            "name": "fs.writeFile",
-            "content": true
-          }
-        ]
+        "name": "fs.writeFile",
+        "content": true
       }
       `;
 
@@ -227,24 +190,14 @@ describe('Tool Parser', () => {
     test('should handle malformed JSON gracefully', () => {
       const text = `
       {
-        "tool_results": [
-          {
-            "name": "fs.readFile",
-            "content": "File content here"
-          }
-        ]
+        "name": "fs.readFile",
+        "content": "File content here"
       }
       
       {
-        "tool_results": [
-          {
-            "name": "fs.writeFile",
-            "content": true
-            
-          }
-        
-      }
-      `;
+        "name": "fs.writeFile",
+        "content": true
+      ` // <-- Missing closing brace
 
       // Mock console.error to prevent test output pollution
       const originalConsoleError = console.error;
@@ -328,9 +281,9 @@ describe('Tool Parser', () => {
         arguments: null
       };
 
-      expect(() => parseToolCall(toolCall)).toThrow(ToolParsingError);
-      try {
-        parseToolCall(toolCall);
+      expect(() => parseToolCall(toolCall as any)).toThrow(ToolParsingError);
+      try { 
+        parseToolCall(toolCall as any);
       } catch (e) {
         expect(e).toBeInstanceOf(ToolParsingError);
         expect((e as ToolParsingError).type).toBe(ToolParsingErrorType.MISSING_ARGUMENTS);
@@ -342,14 +295,10 @@ describe('Tool Parser', () => {
     test('should extract and parse tool calls', () => {
       const text = `
       {
-        "tool_calls": [
-          {
-            "name": "fs.readFile",
-            "arguments": {
-              "path": "/path/to/file"
-            }
-          }
-        ]
+        "name": "fs.readFile",
+        "arguments": {
+          "path": "/path/to/file"
+        }
       }
       `;
 
@@ -368,25 +317,17 @@ describe('Tool Parser', () => {
     test('should filter out invalid tool calls', () => {
       const text = `
       {
-        "tool_calls": [
-          {
-            "name": "fs.readFile",
-            "arguments": {
-              "path": "/path/to/file"
-            }
-          }
-        ]
+        "name": "fs.readFile",
+        "arguments": {
+          "path": "/path/to/file"
+        }
       }
       
       {
-        "tool_calls": [
-          {
-            "name": "invalidName",
-            "arguments": {
-              "path": "/path/to/file2"
-            }
-          }
-        ]
+        "name": "invalidName",
+        "arguments": {
+          "path": "/path/to/file2"
+        }
       }
       `;
 
@@ -409,23 +350,15 @@ describe('Tool Parser', () => {
     test('should extract tool calls and results for display', () => {
       const text = `
       {
-        "tool_calls": [
-          {
-            "name": "fs.readFile",
-            "arguments": {
-              "path": "/path/to/file"
-            }
-          }
-        ]
+        "name": "fs.readFile",
+        "arguments": {
+          "path": "/path/to/file"
+        }
       }
       
       {
-        "tool_results": [
-          {
-            "name": "fs.readFile",
-            "content": "File content here"
-          }
-        ]
+        "name": "fs.readFile",
+        "content": "File content here"
       }
       `;
 
@@ -465,23 +398,15 @@ describe('Tool Parser', () => {
     test('should handle error results', () => {
       const text = `
       {
-        "tool_calls": [
-          {
-            "name": "fs.readFile",
-            "arguments": {
-              "path": "/path/to/file"
-            }
-          }
-        ]
+        "name": "fs.readFile",
+        "arguments": {
+          "path": "/path/to/file"
+        }
       }
       
       {
-        "tool_results": [
-          {
-            "name": "fs.readFile",
-            "error": "File not found"
-          }
-        ]
+        "name": "fs.readFile",
+        "error": "File not found"
       }
       `;
 
@@ -506,34 +431,22 @@ describe('Tool Parser', () => {
     test('should filter out invalid tool calls and results', () => {
       const text = `
       {
-        "tool_calls": [
-          {
-            "name": "fs.readFile",
-            "arguments": {
-              "path": "/path/to/file"
-            }
-          }
-        ]
+        "name": "fs.readFile",
+        "arguments": {
+          "path": "/path/to/file"
+        }
       }
       
       {
-        "tool_calls": [
-          {
-            "name": "invalidName",
-            "arguments": {
-              "path": "/path/to/file2"
-            }
-          }
-        ]
+        "name": "invalidName",
+        "arguments": {
+          "path": "/path/to/file2"
+        }
       }
       
       {
-        "tool_results": [
-          {
-            "name": "fs.readFile",
-            "content": "File content here"
-          }
-        ]
+        "name": "fs.readFile",
+        "content": "File content here"
       }
       `;
 

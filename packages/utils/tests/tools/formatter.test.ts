@@ -23,14 +23,10 @@ describe('Tool Formatter', () => {
     test('should format a tool call correctly', () => {
       const result = formatToolCall(sampleParsedCall);
       const expected = JSON.stringify({
-        tool_calls: [
-          {
-            name: 'fs.readFile',
-            arguments: {
-              path: '/path/to/file'
-            }
-          }
-        ]
+        name: 'fs.readFile',
+        arguments: {
+          path: '/path/to/file'
+        }
       }, null, 2);
 
       expect(result).toBe(expected);
@@ -44,12 +40,8 @@ describe('Tool Formatter', () => {
 
       const result = formatToolCall(parsedCall);
       const expected = JSON.stringify({
-        tool_calls: [
-          {
-            name: 'fs.readFile',
-            arguments: {}
-          }
-        ]
+        name: 'fs.readFile',
+        arguments: {}
       }, null, 2);
 
       expect(result).toBe(expected);
@@ -60,12 +52,8 @@ describe('Tool Formatter', () => {
     test('should format a successful tool result', () => {
       const result = formatToolResult(sampleParsedCall, 'File content here');
       const expected = JSON.stringify({
-        tool_results: [
-          {
-            name: 'fs.readFile',
-            content: 'File content here'
-          }
-        ]
+        name: 'fs.readFile',
+        content: 'File content here'
       }, null, 2);
 
       expect(result).toBe(expected);
@@ -82,12 +70,8 @@ describe('Tool Formatter', () => {
 
       const result = formatToolResult(sampleParsedCall, complexResult);
       const expected = JSON.stringify({
-        tool_results: [
-          {
-            name: 'fs.readFile',
-            content: complexResult
-          }
-        ]
+        name: 'fs.readFile',
+        content: complexResult
       }, null, 2);
 
       expect(result).toBe(expected);
@@ -96,12 +80,8 @@ describe('Tool Formatter', () => {
     test('should handle null result', () => {
       const result = formatToolResult(sampleParsedCall, null);
       const expected = JSON.stringify({
-        tool_results: [
-          {
-            name: 'fs.readFile',
-            content: null
-          }
-        ]
+        name: 'fs.readFile',
+        content: null
       }, null, 2);
 
       expect(result).toBe(expected);
@@ -113,12 +93,8 @@ describe('Tool Formatter', () => {
       const error = new Error('File not found');
       const result = formatToolError(sampleParsedCall, error);
       const expected = JSON.stringify({
-        tool_results: [
-          {
-            name: 'fs.readFile',
-            error: 'File not found'
-          }
-        ]
+        name: 'fs.readFile',
+        error: 'File not found'
       }, null, 2);
 
       expect(result).toBe(expected);
@@ -127,12 +103,8 @@ describe('Tool Formatter', () => {
     test('should format an error result with string', () => {
       const result = formatToolError(sampleParsedCall, 'Permission denied');
       const expected = JSON.stringify({
-        tool_results: [
-          {
-            name: 'fs.readFile',
-            error: 'Permission denied'
-          }
-        ]
+        name: 'fs.readFile',
+        error: 'Permission denied'
       }, null, 2);
 
       expect(result).toBe(expected);
@@ -141,12 +113,8 @@ describe('Tool Formatter', () => {
     test('should handle non-string/non-Error error values', () => {
       const result = formatToolError(sampleParsedCall, { code: 404, message: 'Not found' });
       const expected = JSON.stringify({
-        tool_results: [
-          {
-            name: 'fs.readFile',
-            error: '[object Object]'
-          }
-        ]
+        name: 'fs.readFile',
+        error: '[object Object]'
       }, null, 2);
 
       expect(result).toBe(expected);
