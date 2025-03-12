@@ -120,15 +120,16 @@ export function useModelsConfig(workspaceId?: string) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        await loadModels();
-        await loadActiveModel();
+        console.log(`Loading models with workspaceId: ${workspaceId || 'system'}`); 
+        await loadModels(workspaceId);
+        await loadActiveModel(workspaceId);
       } catch (error) {
         console.error('Failed to load models data:', error);
       }
     };
     
     loadData();
-  }, [loadModels, loadActiveModel]);
+  }, [loadModels, loadActiveModel, workspaceId]);
   
   // Provider operations
   
@@ -155,7 +156,7 @@ export function useModelsConfig(workspaceId?: string) {
       const { providerId, config } = providerEdit;
       
       // Call API to update provider config
-      await updateProvider(providerId, config);
+      await updateProvider(providerId, config, workspaceId);
       
       // Update local state
       if (modelsData) {
@@ -168,7 +169,7 @@ export function useModelsConfig(workspaceId?: string) {
       setEditingProvider(null);
       
       // Refresh data
-      await loadModels();
+      await loadModels(workspaceId);
     } catch (err) {
       console.error('Error saving provider config:', err);
       setProviderConfigError(err instanceof Error ? err.message : 'Failed to update provider');
@@ -203,7 +204,7 @@ export function useModelsConfig(workspaceId?: string) {
       setModelsData(newModelsData);
       
       // Refresh data
-      await loadModels();
+      await loadModels(workspaceId);
     } catch (err) {
       console.error('Error toggling provider enabled state:', err);
     }
@@ -247,7 +248,7 @@ export function useModelsConfig(workspaceId?: string) {
       setNewProviderType('anthropic');
       
       // Refresh data
-      await loadModels();
+      await loadModels(workspaceId);
     } catch (err) {
       console.error('Error adding provider:', err);
       setProviderConfigError(err instanceof Error ? err.message : 'Failed to add provider');
@@ -279,7 +280,7 @@ export function useModelsConfig(workspaceId?: string) {
       const { modelId, config } = modelEdit;
       
       // Call API to update model config
-      await updateModel(modelId, config);
+      await updateModel(modelId, config, workspaceId);
       
       // Update local state
       if (modelsData) {
@@ -292,7 +293,7 @@ export function useModelsConfig(workspaceId?: string) {
       setEditingModel(null);
       
       // Refresh data
-      await loadModels();
+      await loadModels(workspaceId);
     } catch (err) {
       console.error('Error saving model config:', err);
       setModelConfigError(err instanceof Error ? err.message : 'Failed to update model');
@@ -327,7 +328,7 @@ export function useModelsConfig(workspaceId?: string) {
       setModelsData(newModelsData);
       
       // Refresh data
-      await loadModels();
+      await loadModels(workspaceId);
     } catch (err) {
       console.error('Error toggling model enabled state:', err);
     }
@@ -351,14 +352,14 @@ export function useModelsConfig(workspaceId?: string) {
       setModelsData(newModelsData);
       
       // Call API to set active model
-      await setActiveModel(modelId);
+      await setActiveModel(modelId, workspaceId);
       
       // Select the newly activated model
       setSelectedModelId(modelId);
       
       // Refresh data to confirm changes
-      await loadModels();
-      await loadActiveModel();
+      await loadModels(workspaceId);
+      await loadActiveModel(workspaceId);
     } catch (err) {
       console.error('Error setting active model:', err);
       // Revert local state on error
@@ -410,7 +411,7 @@ export function useModelsConfig(workspaceId?: string) {
       setNewModelProviderId('');
       
       // Refresh data
-      await loadModels();
+      await loadModels(workspaceId);
     } catch (err) {
       console.error('Error adding model:', err);
       setModelConfigError(err instanceof Error ? err.message : 'Failed to add model');

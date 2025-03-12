@@ -97,9 +97,10 @@ export const sessions = {
    */
   getMessages: async (sessionId: string, workspaceId?: string) => {
     const path = workspaceId
-      ? apiClient.createUrl(`/sessions/${sessionId}/messages`, workspaceId)
+      ? apiClient.createUrl(`/sessions/${sessionId}/history`, workspaceId)
       : `/system/sessions/${sessionId}/history`;
       
+    console.log(`Fetching session messages from: ${path}`);
     return apiClient.fetchJson(path);
   },
   

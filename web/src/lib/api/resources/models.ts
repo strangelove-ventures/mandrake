@@ -13,9 +13,10 @@ export const models = {
  */
 list: async (workspaceId?: string) => {
   const basePath = workspaceId 
-    ? `/api/workspaces/${workspaceId}/models` 
+    ? `/workspaces/${workspaceId}/models` 
     : '/system/models';
     
+  console.log(`Fetching models with path: ${basePath} (workspace: ${workspaceId || 'system'})`);
   try {
     // First get the list of models
     const modelsResponse = await apiClient.fetchJson(basePath);
@@ -33,8 +34,9 @@ list: async (workspaceId?: string) => {
       let activeId = '';
       try {
         const activeEndpoint = workspaceId 
-          ? `/api/workspaces/${workspaceId}/models/active` 
+          ? `/workspaces/${workspaceId}/models/active` 
           : '/system/models/active';
+        console.log(`Fetching active model with path: ${activeEndpoint}`);
         const activeResponse = await apiClient.fetchJson(activeEndpoint);
         activeId = activeResponse.id || '';
       } catch (err) {
@@ -45,7 +47,7 @@ list: async (workspaceId?: string) => {
       let providers = {};
       try {
         const providersEndpoint = workspaceId 
-          ? `/api/workspaces/${workspaceId}/providers` 
+          ? `/workspaces/${workspaceId}/providers` 
           : '/system/providers';
         const providersResponse = await apiClient.fetchJson(providersEndpoint);
         
@@ -102,9 +104,10 @@ list: async (workspaceId?: string) => {
    */
   getActive: async (workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/models/active` 
+      ? `/workspaces/${workspaceId}/models/active` 
       : '/system/models/active';
-      
+    
+    console.log(`getActive - Fetching from: ${basePath} (workspace: ${workspaceId || 'system'})`);
     try {
       const response = await apiClient.fetchJson(basePath);
       return response;
@@ -119,9 +122,10 @@ list: async (workspaceId?: string) => {
    */
   setActive: async (modelId: string, workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/models/active` 
+      ? `/workspaces/${workspaceId}/models/active` 
       : '/system/models/active';
-      
+    
+    console.log(`setActive - Setting model ${modelId} at: ${basePath} (workspace: ${workspaceId || 'system'})`);
     try {
       return apiClient.fetchJson(basePath, {
         method: 'PUT',
@@ -138,7 +142,7 @@ list: async (workspaceId?: string) => {
    */
   get: async (modelId: string, workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/models/${modelId}` 
+      ? `/workspaces/${workspaceId}/models/${modelId}` 
       : `/system/models/${modelId}`;
       
     try {
@@ -154,7 +158,7 @@ list: async (workspaceId?: string) => {
    */
   listProviders: async (workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/providers` 
+      ? `/workspaces/${workspaceId}/providers` 
       : '/system/providers';
       
     try {
@@ -172,7 +176,7 @@ list: async (workspaceId?: string) => {
    */
   update: async (modelId: string, updates: any, workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/models/${modelId}` 
+      ? `/workspaces/${workspaceId}/models/${modelId}` 
       : `/system/models/${modelId}`;
       
     try {
@@ -191,7 +195,7 @@ list: async (workspaceId?: string) => {
    */
   create: async (modelId: string, config: any, workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/models` 
+      ? `/workspaces/${workspaceId}/models` 
       : '/system/models';
       
     try {
@@ -210,7 +214,7 @@ list: async (workspaceId?: string) => {
    */
   delete: async (modelId: string, workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/models/${modelId}` 
+      ? `/workspaces/${workspaceId}/models/${modelId}` 
       : `/system/models/${modelId}`;
       
     try {
@@ -228,7 +232,7 @@ list: async (workspaceId?: string) => {
    */
   updateProvider: async (providerId: string, updates: any, workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/providers/${providerId}` 
+      ? `/workspaces/${workspaceId}/providers/${providerId}` 
       : `/system/providers/${providerId}`;
       
     try {
@@ -247,7 +251,7 @@ list: async (workspaceId?: string) => {
    */
   createProvider: async (providerId: string, config: any, workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/providers` 
+      ? `/workspaces/${workspaceId}/providers` 
       : '/system/providers';
       
     try {
@@ -266,7 +270,7 @@ list: async (workspaceId?: string) => {
    */
   deleteProvider: async (providerId: string, workspaceId?: string) => {
     const basePath = workspaceId 
-      ? `/api/workspaces/${workspaceId}/providers/${providerId}` 
+      ? `/workspaces/${workspaceId}/providers/${providerId}` 
       : `/system/providers/${providerId}`;
       
     try {

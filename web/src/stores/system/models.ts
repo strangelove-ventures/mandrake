@@ -12,11 +12,11 @@ export interface ModelsState {
   error: string | null;
   
   // Actions
-  loadModels: () => Promise<void>;
-  loadActiveModel: () => Promise<void>;
-  setActiveModel: (id: string) => Promise<void>;
-  updateModel: (id: string, config: any) => Promise<void>;
-  updateProvider: (id: string, config: any) => Promise<void>;
+  loadModels: (workspaceId?: string) => Promise<void>;
+  loadActiveModel: (workspaceId?: string) => Promise<void>;
+  setActiveModel: (id: string, workspaceId?: string) => Promise<void>;
+  updateModel: (id: string, config: any, workspaceId?: string) => Promise<void>;
+  updateProvider: (id: string, config: any, workspaceId?: string) => Promise<void>;
   clearError: () => void;
 }
 
@@ -28,12 +28,12 @@ export const useModelsStore = create<ModelsState>((set) => ({
   error: null,
   
   // Actions
-  loadModels: async () => {
+  loadModels: async (workspaceId?: string) => {
     try {
       set({ isLoading: true, error: null });
       
       // Load models configurations from API
-      const models = await api.models.list();
+      const models = await api.models.list(workspaceId);
       console.log('Store - Models API response:', models);
       set({ 
         models,
@@ -48,12 +48,12 @@ export const useModelsStore = create<ModelsState>((set) => ({
     }
   },
   
-  loadActiveModel: async () => {
+  loadActiveModel: async (workspaceId?: string) => {
     try {
       set({ isLoading: true, error: null });
       
       // Load active model ID from API
-      const response = await api.models.getActive();
+      const response = await api.models.getActive(workspaceId);
       set({ 
         activeModelId: response.id,
         isLoading: false 
@@ -67,12 +67,12 @@ export const useModelsStore = create<ModelsState>((set) => ({
     }
   },
   
-  setActiveModel: async (id) => {
+  setActiveModel: async (id, workspaceId?: string) => {
     try {
       set({ isLoading: true, error: null });
       
       // Set active model via API
-      await api.models.setActive(id);
+      await api.models.setActive(id, workspaceId);
       
       // Update local state
       set({ 
@@ -88,15 +88,15 @@ export const useModelsStore = create<ModelsState>((set) => ({
     }
   },
   
-  updateModel: async (id, config) => {
+  updateModel: async (id, config, workspaceId?: string) => {
     try {
       set({ isLoading: true, error: null });
       
       // Update model via API
-      await api.models.update(id, config);
+      await api.models.update(id, config, workspaceId);
       
       // Refresh models list to get updated data
-      const models = await api.models.list();
+      const models = await api.models.list(workspaceId);
       
       // Update local state
       set({ 
@@ -113,15 +113,15 @@ export const useModelsStore = create<ModelsState>((set) => ({
     }
   },
   
-  updateProvider: async (id, config) => {
+  updateProvider: async (id, config, workspaceId?: string) => {
     try {
       set({ isLoading: true, error: null });
       
       // Update provider via API
-      await api.models.updateProvider(id, config);
+      await api.models.updateProvider(id, config, workspaceId);
       
       // Refresh models list to get updated data
-      const models = await api.models.list();
+      const models = await api.models.list(workspaceId);
       
       // Update local state
       set({ 

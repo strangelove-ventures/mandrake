@@ -24,6 +24,7 @@ interface DynamicContextConfigProps {
 }
 
 export default function DynamicContextConfig({ workspaceId }: DynamicContextConfigProps) {
+  console.log(`Rendering DynamicContextConfig component with workspaceId: ${workspaceId}`);
   const { data: contextMethods, isLoading } = useDynamicContextList(workspaceId);
   const createMutation = useCreateDynamicContext(workspaceId);
   const updateMutation = useUpdateDynamicContext(workspaceId);

@@ -19,6 +19,7 @@ import ModelDialog from './ModelDialog';
  * ModelsConfig component that can be used in both system and workspace contexts
  */
 export default function ModelsConfig({ isWorkspace = false, workspaceId }: ModelsComponentProps) {
+  console.log(`ModelsConfig shared component - isWorkspace: ${isWorkspace}, workspaceId: ${workspaceId || 'none'}`);
   const {
     modelsData,
     selectedProviderId,

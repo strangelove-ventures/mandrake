@@ -20,9 +20,20 @@ export const dynamicContextKeys = {
  * Hook to fetch all dynamic context methods
  */
 export function useDynamicContextList(workspaceId?: string) {
+  console.log(`useDynamicContextList hook called with workspaceId: ${workspaceId || 'none'}`);
   return useQuery({
     queryKey: dynamicContextKeys.list(workspaceId),
-    queryFn: () => api.dynamic.get(workspaceId as string)
+    queryFn: async () => {
+      console.log(`Executing queryFn with workspaceId: ${workspaceId || 'none'}`);
+      try {
+        const result = await api.dynamic.list(workspaceId);
+        console.log('Dynamic list query successful:', result);
+        return result;
+      } catch (error) {
+        console.error('Dynamic list query failed:', error);
+        throw error;
+      }
+    }
   });
 }
 
@@ -33,7 +44,10 @@ export function useCreateDynamicContext(workspaceId?: string) {
   const queryClient = useQueryClient();
   
   return useMutation({
-    mutationFn: (contextConfig: any) => api.dynamic.create(contextConfig, workspaceId),
+    mutationFn: async (contextConfig: any) => {
+      console.log(`Creating dynamic context with workspaceId: ${workspaceId || 'none'}`);
+      return api.dynamic.create(contextConfig, workspaceId);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: dynamicContextKeys.list(workspaceId) });
     }

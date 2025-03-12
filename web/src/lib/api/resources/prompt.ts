@@ -25,36 +25,24 @@ export const prompt = {
    */
   get: async (workspaceId?: string): Promise<PromptConfigApi> => {
     try {
-      // Try first with system/prompt
+      // Try first with /prompt directly
       const path = workspaceId
-        ? apiClient.createUrl('/system/prompt', workspaceId)
-        : '/system/prompt';
+        ? `/workspaces/${workspaceId}/prompt`
+        : '/prompt';
         
       console.log(`Fetching prompt config from ${path}`);
       return await apiClient.fetchJson(path);
     } catch (error) {
-      console.error('Failed to fetch from /system/prompt, trying fallback path', error);
+      console.error('Failed to fetch prompt config', error);
       
-      // Fallback to /prompt
-      try {
-        const fallbackPath = workspaceId
-          ? apiClient.createUrl('/prompt', workspaceId)
-          : '/prompt';
-          
-        console.log(`Fetching prompt config from fallback path ${fallbackPath}`);
-        return await apiClient.fetchJson(fallbackPath);
-      } catch (fallbackError) {
-        console.error('Failed to fetch from fallback path too', fallbackError);
-        
-        // Return default values as a last resort
-        console.warn('Returning default prompt config as fallback');
-        return {
-          system: "You are Mandrake, a seasoned AI assistant with deep expertise in software development and system operations.",
-          includeWorkspaceMetadata: true,
-          includeSystemInfo: true,
-          includeDateTime: true
-        };
-      }
+      // Return default values as a last resort
+      console.warn('Returning default prompt config as fallback');
+      return {
+        system: "You are Mandrake, a seasoned AI assistant with deep expertise in software development and system operations.",
+        includeWorkspaceMetadata: true,
+        includeSystemInfo: true,
+        includeDateTime: true
+      };
     }
   },
   
@@ -63,10 +51,10 @@ export const prompt = {
    */
   update: async (config: PromptConfigApi, workspaceId?: string): Promise<{ success: boolean }> => {
     try {
-      // Try first with system/prompt
+      // Try first with /prompt directly
       const path = workspaceId
-        ? apiClient.createUrl('/system/prompt', workspaceId)
-        : '/system/prompt';
+        ? `/workspaces/${workspaceId}/prompt`
+        : '/prompt';
         
       console.log(`Updating prompt config at ${path}`, config);
       return await apiClient.fetchJson(path, {
@@ -74,18 +62,8 @@ export const prompt = {
         body: config
       });
     } catch (error) {
-      console.error('Failed to update at /system/prompt, trying fallback path', error);
-      
-      // Fallback to /prompt
-      const fallbackPath = workspaceId
-        ? apiClient.createUrl('/prompt', workspaceId)
-        : '/prompt';
-        
-      console.log(`Updating prompt config at fallback path ${fallbackPath}`, config);
-      return await apiClient.fetchJson(fallbackPath, {
-        method: 'PUT',
-        body: config
-      });
+      console.error('Failed to update prompt config', error);
+      throw error;
     }
   }
 };

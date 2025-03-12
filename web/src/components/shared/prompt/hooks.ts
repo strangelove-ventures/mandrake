@@ -35,6 +35,7 @@ export function usePromptConfig(workspaceId?: string) {
   useEffect(() => {
     const loadData = async () => {
       try {
+        console.log(`Loading prompt config for ${workspaceId ? `workspace ${workspaceId}` : 'system'}`);
         await loadConfig(workspaceId);
       } catch (error) {
         console.error('Failed to load prompt data:', error);
