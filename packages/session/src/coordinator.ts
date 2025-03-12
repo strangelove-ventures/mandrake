@@ -108,64 +108,85 @@ export class SessionCoordinator {
         let resolveNext: ((value: IteratorResult<any, any>) => void) | null = null;
         let done = false;
         let removeListener: (() => void) | null = null;
+        let lastError: Error | null = null;
         
         // Set up the turn update listener
         const setupListener = () => {
-          removeListener = sessionManager.trackStreamingTurns(responseId, (turn) => {
-            // Add the new turn to the buffer
-            buffer.push(turn);
-            
-            // If someone is waiting for the next item, resolve their promise
-            if (resolveNext) {
-              const next = resolveNext;
-              resolveNext = null;
-              next({ done: false, value: buffer.shift() } as IteratorResult<any, any>);
-            }
-            
-            // Mark done when the last turn is completed
-            // We check for completed status, which the session manager sets
-            // when processing is completely done
-            if (turn.status === 'completed') {
-              // Check if this is the final turn (no more tool calls will be made)
-              // Need to parse the toolCalls string to check
-              let hasToolCalls = false;
+          try {
+            removeListener = sessionManager.trackStreamingTurns(responseId, (turn) => {
               try {
-                const toolCallsObj = typeof turn.toolCalls === 'string' ? JSON.parse(turn.toolCalls) : turn.toolCalls;
-                hasToolCalls = !!(toolCallsObj && toolCallsObj.call && 
-                                 Object.keys(toolCallsObj.call).length > 0);
-              } catch (e) {
-                // If we can't parse, assume no tool calls
-                hasToolCalls = false;
-              }
-              
-              // If this turn has no tool calls or is the last in a series,
-              // we can finish streaming
-              if (!hasToolCalls) {
-                done = true;
+                // Add the new turn to the buffer
+                buffer.push(turn);
                 
-                // If someone is waiting and buffer is empty, resolve with done
-                if (resolveNext && buffer.length === 0) {
+                // If someone is waiting for the next item, resolve their promise
+                if (resolveNext) {
                   const next = resolveNext;
                   resolveNext = null;
-                  (next as any)({ done: true, value: undefined });
+                  next({ done: false, value: buffer.shift() } as IteratorResult<any, any>);
+                }
+                
+                // Mark done when the last turn is completed
+                // We check for completed status, which the session manager sets
+                // when processing is completely done
+                if (turn.status === 'completed') {
+                  // Check if this is the final turn (no more tool calls will be made)
+                  // Need to parse the toolCalls string to check
+                  let hasToolCalls = false;
+                  try {
+                    const toolCallsObj = typeof turn.toolCalls === 'string' ? JSON.parse(turn.toolCalls) : turn.toolCalls;
+                    hasToolCalls = !!(toolCallsObj && toolCallsObj.call && 
+                                   Object.keys(toolCallsObj.call).length > 0);
+                  } catch (e) {
+                    // If we can't parse, assume no tool calls
+                    hasToolCalls = false;
+                  }
                   
-                  // Remove the listener since we're done
-                  if (removeListener) {
-                    removeListener();
-                    removeListener = null;
+                  // If this turn has no tool calls or is the last in a series,
+                  // we can finish streaming
+                  if (!hasToolCalls) {
+                    done = true;
+                    
+                    // If someone is waiting and buffer is empty, resolve with done
+                    if (resolveNext && buffer.length === 0) {
+                      const next = resolveNext;
+                      resolveNext = null;
+                      (next as any)({ done: true, value: undefined });
+                      
+                      // Remove the listener since we're done
+                      if (removeListener) {
+                        removeListener();
+                        removeListener = null;
+                      }
+                    }
                   }
                 }
+              } catch (err) {
+                lastError = err as Error;
+                console.error('Error in turn update processing:', err);
               }
-            }
-          });
+            });
+          } catch (error) {
+            lastError = error as Error;
+            console.error('Error setting up turn update listener:', error);
+          }
         };
         
         // Set up the listener right away
         setupListener();
-        
+
         return {
           next(): Promise<IteratorResult<any, any>> {
             return new Promise((resolve) => {
+              if (lastError) {
+                // If we had an error, don't break the stream, log and continue
+                console.error('Recovered from error in stream:', lastError);
+                lastError = null;
+                // Try to set up the listener again
+                if (!removeListener) {
+                  setupListener();
+                }
+              }
+
               // If we have items in the buffer, return the next one
               if (buffer.length > 0) {
                 resolve({ done: false, value: buffer.shift() });
@@ -228,7 +249,15 @@ export class SessionCoordinator {
       // Return the response ID immediately with the completion promise
       return {
         responseId: response.id,
-        completionPromise
+        completionPromise: completionPromise.catch(error => {
+          // Log any errors during processing but don't rethrow
+          // This prevents the connection from being terminated on errors
+          this.logger.error('Error during request processing, but continuing', {
+            sessionId,
+            responseId: response.id,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        })
       };
     } catch (error) {
       this.logger.error('Failed to create round for request', {
@@ -283,57 +312,35 @@ export class SessionCoordinator {
       });
 
       let isComplete = false;
+      let retryCount = 0;
+      const maxRetries = 3;
+      
       while (!isComplete) {
-        this.logger.info('Sending message to provider', {
-          historyLength: conversationHistory.length,
-          lastRole: conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1].role : 'none'
-        });
-
-        const messageStream = provider.createMessage(
-          context.systemPrompt,
-          conversationHistory as Message[]
-        );
-
-        const {
-          text,
-          toolCalls,
-          isCompleted
-        } = await this.processStreamForToolCalls(messageStream, currentTurn);
-
-        if (toolCalls.length > 0) {
-          const tool = toolCalls[0];
-
-          this.logger.info('FOUND_TOOL_CALL', {
-            server: tool.serverName,
-            method: tool.methodName
+        try {
+          this.logger.info('Sending message to provider', {
+            historyLength: conversationHistory.length,
+            lastRole: conversationHistory.length > 0 ? conversationHistory[conversationHistory.length - 1].role : 'none'
           });
 
-          await this.opts.sessionManager.updateTurn(currentTurn.id, {
-            toolCalls: {
-              call: {
-                serverName: tool.serverName,
-                methodName: tool.methodName,
-                arguments: tool.arguments
-              },
-              response: null
-            },
-            status: 'completed',
-            streamEndTime: Math.floor(Date.now() / 1000)
-          });
+          const messageStream = provider.createMessage(
+            context.systemPrompt,
+            conversationHistory as Message[]
+          );
 
-          try {
-            this.logger.info('EXECUTING_TOOL', {
+          const {
+            text,
+            toolCalls,
+            isCompleted
+          } = await this.processStreamForToolCalls(messageStream, currentTurn);
+
+          if (toolCalls.length > 0) {
+            const tool = toolCalls[0];
+
+            this.logger.info('FOUND_TOOL_CALL', {
               server: tool.serverName,
               method: tool.methodName
             });
 
-            const result = await this.executeToolCall(
-              sessionId,
-              tool.serverName,
-              tool.methodName,
-              tool.arguments
-            );
-
             await this.opts.sessionManager.updateTurn(currentTurn.id, {
               toolCalls: {
                 call: {
@@ -341,76 +348,131 @@ export class SessionCoordinator {
                   methodName: tool.methodName,
                   arguments: tool.arguments
                 },
-                response: result
-              }
-            });
-            
-            // After completing a tool call, get the updated conversation history
-            // that includes the tool call and response
-            const updatedHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
-            const updatedConversation = convertSessionToMessages(updatedHistory);
-            
-            // Replace our in-memory conversation with the updated version
-            conversationHistory.length = 0;
-            updatedConversation.forEach(msg => conversationHistory.push(msg));
-
-          } catch (error) {
-            this.logger.error('TOOL_EXECUTION_ERROR', {
-              server: tool.serverName,
-              method: tool.methodName,
-              error: (error as Error).message
+                response: null
+              },
+              status: 'completed',
+              streamEndTime: Math.floor(Date.now() / 1000)
             });
 
-            await this.opts.sessionManager.updateTurn(currentTurn.id, {
-              toolCalls: {
-                call: {
-                  serverName: tool.serverName,
-                  methodName: tool.methodName,
-                  arguments: tool.arguments
-                },
-                response: {
-                  error: (error as Error).message
+            try {
+              this.logger.info('EXECUTING_TOOL', {
+                server: tool.serverName,
+                method: tool.methodName
+              });
+
+              const result = await this.executeToolCall(
+                sessionId,
+                tool.serverName,
+                tool.methodName,
+                tool.arguments
+              );
+
+              await this.opts.sessionManager.updateTurn(currentTurn.id, {
+                toolCalls: {
+                  call: {
+                    serverName: tool.serverName,
+                    methodName: tool.methodName,
+                    arguments: tool.arguments
+                  },
+                  response: result
                 }
-              }
+              });
+              
+              // After completing a tool call, get the updated conversation history
+              // that includes the tool call and response
+              const updatedHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
+              const updatedConversation = convertSessionToMessages(updatedHistory);
+              
+              // Replace our in-memory conversation with the updated version
+              conversationHistory.length = 0;
+              updatedConversation.forEach(msg => conversationHistory.push(msg));
+
+              // Reset retry count after a successful tool call
+              retryCount = 0;
+
+            } catch (error) {
+              this.logger.error('TOOL_EXECUTION_ERROR', {
+                server: tool.serverName,
+                method: tool.methodName,
+                error: (error as Error).message
+              });
+
+              await this.opts.sessionManager.updateTurn(currentTurn.id, {
+                toolCalls: {
+                  call: {
+                    serverName: tool.serverName,
+                    methodName: tool.methodName,
+                    arguments: tool.arguments
+                  },
+                  response: {
+                    error: (error as Error).message
+                  }
+                }
+              });
+              
+              // After completing a tool call (even with error), get the updated conversation history
+              // that includes the tool call and error
+              const updatedHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
+              const updatedConversation = convertSessionToMessages(updatedHistory);
+              
+              // Replace our in-memory conversation with the updated version
+              conversationHistory.length = 0;
+              updatedConversation.forEach(msg => conversationHistory.push(msg));
+            }
+
+            // Create a new turn for the next part of the conversation
+            currentTurn = await this.opts.sessionManager.createTurn({
+              responseId: responseId,
+              content: '',
+              rawResponse: '',
+              inputTokens: 0,
+              outputTokens: 0,
+              inputCost: 0,
+              outputCost: 0
+            });
+
+            this.logger.debug('NEW_TURN_CREATED', { turnId: currentTurn.id });
+
+          } else {
+            await this.opts.sessionManager.updateTurn(currentTurn.id, {
+              status: 'completed',
+              streamEndTime: Math.floor(Date.now() / 1000)
             });
             
-            // After completing a tool call (even with error), get the updated conversation history
-            // that includes the tool call and error
+            // For the final turn, update our history from the database
             const updatedHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
             const updatedConversation = convertSessionToMessages(updatedHistory);
             
-            // Replace our in-memory conversation with the updated version
-            conversationHistory.length = 0;
-            updatedConversation.forEach(msg => conversationHistory.push(msg));
+            // Since this is the last turn, we don't need to update our conversation history
+            // as we're about to exit the loop
+
+            isComplete = true;
           }
-
-          // Create a new turn for the next part of the conversation
-          currentTurn = await this.opts.sessionManager.createTurn({
-            responseId: responseId,
-            content: '',
-            rawResponse: '',
-            inputTokens: 0,
-            outputTokens: 0,
-            inputCost: 0,
-            outputCost: 0
-          });
-
-          this.logger.debug('NEW_TURN_CREATED', { turnId: currentTurn.id });
-
-        } else {
-          await this.opts.sessionManager.updateTurn(currentTurn.id, {
-            status: 'completed',
-            streamEndTime: Math.floor(Date.now() / 1000)
+          
+        } catch (error) {
+          this.logger.error('Error during request processing iteration', {
+            sessionId,
+            responseId,
+            retryCount,
+            error: error instanceof Error ? error.message : String(error)
           });
           
-          // For the final turn, update our history from the database
-          const updatedHistory = await this.opts.sessionManager.renderSessionHistory(sessionId);
-          const updatedConversation = convertSessionToMessages(updatedHistory);
+          retryCount++;
           
-          // Since this is the last turn, we don't need to update our conversation history
-          // as we're about to exit the loop
-
-          isComplete = true;
+          if (retryCount >= maxRetries) {
+            // Too many retries, mark the turn as completed with an error
+            await this.opts.sessionManager.updateTurn(currentTurn.id, {
+              content: `An error occurred while processing this request: ${error instanceof Error ? error.message : String(error)}`,
+              status: 'completed',
+              streamEndTime: Math.floor(Date.now() / 1000)
+            });
+            
+            isComplete = true;
+            throw error; // Rethrow to be caught by outer try/catch
+          }
+          
+          // Wait a moment before retrying
+          await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
         }
       }
 
@@ -436,6 +498,10 @@ export class SessionCoordinator {
     let jsonBuffer = '';
     let toolCalls = [];
     let isCompleted = false;
+    
+    // To avoid excessive parsing attempts, we'll track when we last tried to extract tool calls
+    let lastExtractAttempt = 0;
+    const MIN_EXTRACT_INTERVAL = 100; // milliseconds
 
     for await (const chunk of messageStream) {
       switch (chunk.type) {
@@ -448,23 +514,44 @@ export class SessionCoordinator {
             content: textBuffer
           });
 
-          // Look for complete tool calls using the JSON Schema parser
-          const parsedToolCalls = tools.extractParsedToolCalls(jsonBuffer);
-          if (parsedToolCalls.length > 0) {
-            // If we found tool calls, transform them into our internal format
-            try {
-              const internalToolCalls = parsedToolCalls.map(call => ({
-                serverName: call.serverName,
-                methodName: call.methodName,
-                arguments: call.arguments
-              }));
-              
-              if (internalToolCalls.length > 0) {
-                toolCalls = internalToolCalls;
-                return { text: textBuffer, toolCalls, isCompleted: false };
+          // Rate limit the tool call extraction attempts
+          const now = Date.now();
+          if (now - lastExtractAttempt >= MIN_EXTRACT_INTERVAL) {
+            lastExtractAttempt = now;
+            
+            // Check for certain patterns that indicate a potential tool call might be forming
+            if (jsonBuffer.includes('"tool_calls"') && jsonBuffer.includes('{') && jsonBuffer.includes('}')) {
+              // Look for complete tool calls using the JSON Schema parser
+              try {
+                const parsedToolCalls = tools.extractParsedToolCalls(jsonBuffer);
+                if (parsedToolCalls.length > 0) {
+                  // If we found tool calls, transform them into our internal format
+                  try {
+                    const internalToolCalls = parsedToolCalls.map(call => ({
+                      serverName: call.serverName,
+                      methodName: call.methodName,
+                      arguments: call.arguments
+                    }));
+                    
+                    if (internalToolCalls.length > 0) {
+                      toolCalls = internalToolCalls;
+                      return { text: textBuffer, toolCalls, isCompleted: false };
+                    }
+                  } catch (error) {
+                    // Just log and continue if there's an error transforming the tool calls
+                    this.logger.debug("Error transforming tool calls", {
+                      error: error instanceof Error ? error.message : String(error),
+                      parsedCalls: parsedToolCalls.length
+                    });
+                  }
+                }
+              } catch (error) {
+                // We'll just continue if there's an error extracting tool calls
+                // This is likely just incomplete JSON
+                this.logger.debug("Error extracting tool calls", {
+                  error: error instanceof Error ? error.message : String(error)
+                });
               }
-            } catch (error) {
-              this.logger.error("PARSE_TOOL_CALL_ERROR", error as Error);
             }
           }
           break;
