@@ -91,3 +91,6 @@ export * from './common-types';
 
 // Export new shared types
 export * from './types';
+
+// Export tools module
+export * as tools from './tools';
