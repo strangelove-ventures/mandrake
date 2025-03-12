@@ -1,42 +1,43 @@
 import type { TokenCounter, Message, SessionHistoryEntity} from '@mandrake/utils';
+import { tools } from '@mandrake/utils';
 import type { } from '@mandrake/workspace';
 import type { TrimStrategy } from './trim';
 import { StandardTrimStrategy } from './trim';
 
 /**
- * Format a tool call into XML
+ * Format a tool call into JSON Schema format
  */
 export function formatToolCall(call: any): string {
-  return `<tool_call>
-<server>${call.serverName}</server>
-<method>${call.methodName}</method>
-<description>${call.description || ''}</description>
-<arguments>
-${JSON.stringify(call.arguments, null, 2)}
-</arguments>
-</tool_call>`;
+  return tools.formatToolCall({
+    serverName: call.serverName,
+    methodName: call.methodName,
+    arguments: call.arguments,
+    fullName: `${call.serverName}.${call.methodName}`
+  });
 }
 
 /**
- * Format a tool result into XML
+ * Format a tool result into JSON Schema format
  */
-export function formatToolResult(result: any): string {
-  return `<tool_result>
-<result>
-${JSON.stringify(result, null, 2)}
-</result>
-</tool_result>`;
+export function formatToolResult(call: any, result: any): string {
+  return tools.formatToolResult({
+    serverName: call.serverName,
+    methodName: call.methodName,
+    arguments: call.arguments,
+    fullName: `${call.serverName}.${call.methodName}`
+  }, result);
 }
 
 /**
- * Format a tool error into XML
+ * Format a tool error into JSON Schema format
  */
-export function formatToolError(error: any): string {
-  return `<tool_result>
-<error>
-${JSON.stringify(error, null, 2)}
-</error>
-</tool_result>`;
+export function formatToolError(call: any, error: any): string {
+  return tools.formatToolError({
+    serverName: call.serverName,
+    methodName: call.methodName,
+    arguments: call.arguments,
+    fullName: `${call.serverName}.${call.methodName}`
+  }, error);
 }
 
 /**
@@ -100,20 +101,23 @@ export function convertSessionToMessages(
             
             // Handle the case where we have a call and response
             if (toolCallsData.call && toolCallsData.call.serverName && toolCallsData.call.methodName) {
-              // Add the tool call XML
-              assistantContent += formatToolCall({
+              // Create the parsed tool call structure
+              const callObj = {
                 serverName: toolCallsData.call.serverName,
                 methodName: toolCallsData.call.methodName,
                 description: toolCallsData.call.description || '',
                 arguments: toolCallsData.call.arguments
-              });
+              };
               
-              // Add the tool result XML
+              // Add the tool call in JSON format
+              assistantContent += formatToolCall(callObj);
+              
+              // Add the tool result in JSON format
               if (toolCallsData.response) {
                 if (toolCallsData.response.error) {
-                  assistantContent += formatToolError(toolCallsData.response);
+                  assistantContent += formatToolError(callObj, toolCallsData.response.error);
                 } else {
-                  assistantContent += formatToolResult(toolCallsData.response);
+                  assistantContent += formatToolResult(callObj, toolCallsData.response);
                 }
               }
             }

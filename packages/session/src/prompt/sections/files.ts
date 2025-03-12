@@ -1,5 +1,5 @@
-import { XmlTags, wrapWithXmlTag } from '../types';
 import type { PromptSection, FilesSectionConfig } from '../types';
+import { formatMarkdownSection, SectionTitles } from '../types';
 
 export class FilesSection implements PromptSection {
     constructor(private readonly config: FilesSectionConfig) { }
@@ -11,12 +11,10 @@ export class FilesSection implements PromptSection {
 
         const filesContent = this.config.files
             .map(file => {
-                return wrapWithXmlTag(XmlTags.FILE,
-                    `name: ${file.name}\n\ncontent:\n${file.content}`
-                );
+                return `### ${file.name}\n\n\`\`\`\n${file.content}\n\`\`\``;
             })
             .join('\n\n');
-
-        return wrapWithXmlTag(XmlTags.FILES, filesContent);
+        
+        return formatMarkdownSection(SectionTitles.FILES, filesContent);
     }
 }

@@ -76,7 +76,7 @@ describe('Session Integration', () => {
         await testDir.cleanup();
     });
 
-    test.skip('handles multistage tool flow with local commands and file operations', async () => {
+    test('provides streaming updates for responses', async () => {
         const session = await workspace.sessions.createSession({
             title: 'Local Command Test'
         });

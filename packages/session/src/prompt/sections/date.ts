@@ -1,5 +1,5 @@
-import { XmlTags, wrapWithXmlTag } from '../types';
 import type { PromptSection, DateSectionConfig } from '../types';
+import { formatMarkdownSection, SectionTitles } from '../types';
 
 export class DateSection implements PromptSection {
   constructor(private readonly config: DateSectionConfig = {}) {}
@@ -14,6 +14,6 @@ export class DateSection implements PromptSection {
           day: 'numeric'
         });
     
-    return wrapWithXmlTag(XmlTags.DATETIME, dateStr);
+    return formatMarkdownSection(SectionTitles.DATETIME, dateStr);
   }
 }

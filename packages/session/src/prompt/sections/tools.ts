@@ -1,58 +1,78 @@
-import { XmlTags, wrapWithXmlTag } from '../types';
+import { formatMarkdownSection, SectionTitles } from '../types';
 import type { PromptSection, ToolsSectionConfig } from '../types';
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
 export class ToolsSection implements PromptSection {
-  private readonly toolInstructions = `# Tool Use
-
-You have access to a set of tools that can be executed upon the user's approval. You use tools step-by-step to accomplish a given task, with each tool use informed by the result of the previous tool use.
+  private readonly toolInstructions = `You have access to a set of tools that can be executed. Use tools one at a time to accomplish tasks.
 
 ## Usage Format
+To use a tool, output a JSON object with the following structure:
 
-<${XmlTags.TOOL_CALL}>
-<${XmlTags.SERVER}>server</${XmlTags.SERVER}>
-<${XmlTags.METHOD}>method</${XmlTags.METHOD}>
-<${XmlTags.ARGUMENTS}>
 {
-  "param1": "value1",
-  "param2": "value2"
+  "tool_calls": [
+    {
+      "name": "server.method",
+      "arguments": {
+        "param1": "value1",
+        "param2": "value2"
+      }
+    }
+  ]
 }
-</${XmlTags.ARGUMENTS}>
-</${XmlTags.TOOL_CALL}>
+
+## IMPORTANT: Only include ONE tool call at a time
+Make only a single tool call, then wait for the result before making another call. Never include multiple tools in the array.
 
 ## Usage Example
 
-<${XmlTags.TOOL_CALL}>
-<${XmlTags.SERVER}>ripper</${XmlTags.SERVER}>
-<${XmlTags.METHOD}>list_allowed_directories</${XmlTags.METHOD}>
-<${XmlTags.ARGUMENTS}>
-{}
-</${XmlTags.ARGUMENTS}>
-</${XmlTags.TOOL_CALL}>
+{
+  "tool_calls": [
+    {
+      "name": "ripper.list_allowed_directories",
+      "arguments": {}
+    }
+  ]
+}
 
 ## Tool Use Guidelines
 
-1. Use one tool per message. The user will parse the result and call the tool
-   then they will append the result to the end of the assistant message. You should 
-   read result out of that and conitnue the conversation.
-2. The tool call format is as shown above, it is XML based. 
-3. Tool responses will include:
-   - Success or failure status
-   - Any error messages or validation failures
-   - The tool's output data if successful
-4. Never assume a tool call succeeded - always check the response
-5. Tool calls may fail due to:
+1. Use only one tool at a time and wait for the result
+2. Always check the response for success or failure
+3. Tool responses will be returned in this format:
+
+{
+  "tool_results": [
+    {
+      "name": "server.method",
+      "content": { /* result data */ }
+    }
+  ]
+}
+
+4. If a tool call results in an error, it will be returned as:
+
+{
+  "tool_results": [
+    {
+      "name": "server.method",
+      "error": "Error message details"
+    }
+  ]
+}
+
+5. Never assume a tool call succeeded - always check the response
+6. Tool calls may fail due to:
    - Invalid parameters
    - Server errors
    - Network issues
    - Authentication failures
-6. If a tool call fails, examine the error and either:
+7. If a tool call fails, examine the error and either:
    - Fix the parameters and try again
    - Try an alternative approach using another tool or method
-   - Tell the user what steps can be taken to resolve the error if you can't
+   - Tell the user what steps can be taken to resolve the error
    - Ask the user for clarification or additional information
 
-# Available Tools:`;
+## Available Tools:`;
 
   constructor(private readonly config: ToolsSectionConfig) { }
 
@@ -61,21 +81,27 @@ You have access to a set of tools that can be executed upon the user's approval.
       return '';
     }
 
+    // Generate tool documentation in JSON format
     const toolDocs = this.config.tools.map(tool => {
       const exampleArgs = this.createExampleArgs(tool.inputSchema);
+      
+      return `## ${tool.serverName}.${tool.name}
+Description: ${tool.description || ''}
 
-      return wrapWithXmlTag(XmlTags.TOOL_CALL, [
-        wrapWithXmlTag(XmlTags.SERVER, tool.serverName, true),
-        wrapWithXmlTag(XmlTags.METHOD, tool.name, true),
-        wrapWithXmlTag(XmlTags.DESCRIPTION, tool.description as string, true),
-        // Schema commented out for now
-        // wrapWithXmlTag(XmlTags.SCHEMA, JSON.stringify(tool.inputSchema, null, 2), true),
-        wrapWithXmlTag(XmlTags.ARGUMENTS, JSON.stringify(exampleArgs, null, 2))
-      ].join('\n'));
+Example:
+\`\`\`json
+{
+  "tool_calls": [
+    {
+      "name": "${tool.serverName}.${tool.name}",
+      "arguments": ${JSON.stringify(exampleArgs, null, 2)}
+    }
+  ]
+}
+\`\`\``;
     }).join('\n\n');
 
-    const instructions = wrapWithXmlTag(XmlTags.TOOL_INSTRUCTIONS, this.toolInstructions);
-    return wrapWithXmlTag(XmlTags.TOOLS, instructions + '\n\n' + toolDocs);
+    return formatMarkdownSection(SectionTitles.TOOLS, `${this.toolInstructions}\n\n${toolDocs}`, 1);
   }
 
   private createExampleArgs(schema: any): any {

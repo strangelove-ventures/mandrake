@@ -1,5 +1,5 @@
-import { XmlTags, wrapWithXmlTag } from '../types';
 import type { PromptSection, DynamicContextSectionConfig } from '../types';
+import { formatMarkdownSection, SectionTitles } from '../types';
 
 export class DynamicContextSection implements PromptSection {
     constructor(private readonly config: DynamicContextSectionConfig) { }
@@ -11,12 +11,10 @@ export class DynamicContextSection implements PromptSection {
 
         const contextContent = this.config.dynamicContext
             .map(ctx => {
-                return wrapWithXmlTag(XmlTags.DYNAMIC_CONTEXT,
-                    `name: ${ctx.name}\n\nresult:\n${JSON.stringify(ctx.result, null, 2)}`
-                );
+                return `### ${ctx.name}\n\n\`\`\`json\n${JSON.stringify(ctx.result, null, 2)}\n\`\`\``;
             })
             .join('\n\n');
 
-        return wrapWithXmlTag(XmlTags.DYNAMIC_CONTEXTS, contextContent);
+        return formatMarkdownSection(SectionTitles.DYNAMIC_CONTEXTS, contextContent);
     }
 }

@@ -1,5 +1,5 @@
-import { XmlTags, wrapWithXmlTag } from '../types';
 import type { ContextSection, MetadataSectionConfig } from '../types';
+import { formatMarkdownSection, SectionTitles } from '../types';
 
 export class MetadataSection implements ContextSection {
   constructor(private readonly config: MetadataSectionConfig) {}
@@ -13,6 +13,6 @@ export class MetadataSection implements ContextSection {
   }
 
   build(): string {
-    return wrapWithXmlTag(XmlTags.WORKSPACE, this.getContextString());
+    return formatMarkdownSection(SectionTitles.WORKSPACE, this.getContextString());
   }
 }

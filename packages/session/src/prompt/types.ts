@@ -1,5 +1,17 @@
 import type { Tool } from '@modelcontextprotocol/sdk/types.js';
 
+/**
+ * Format content with a markdown section heading
+ * @param title The section title
+ * @param content The section content
+ * @param level The heading level (default: 2 for ##)
+ * @returns Formatted markdown section
+ */
+export function formatMarkdownSection(title: SectionTitles, content: string, level: number = 2): string {
+  const heading = '#'.repeat(level);
+  return `${heading} ${title}\n\n${content}`;
+}
+
 export interface PromptBuilder {
   buildPrompt(): string;
 }
@@ -53,32 +65,13 @@ export interface DynamicContextSectionConfig {
   }[];
 }
 
-// XML Tag types
-export enum XmlTags {
-  INSTRUCTIONS = 'instructions',
-  TOOLS = 'tools',
-  TOOL = 'tool',
-  TOOL_CALL = 'tool_call',
-  METHOD = 'method',
-  ARGUMENTS = 'arguments',
-  DESCRIPTION = 'description',
-  SCHEMA = 'schema',
-  SERVER = 'server',
-  TOOL_INSTRUCTIONS = 'tool_instructions',
-  FILES = 'files',
-  FILE = 'file',
-  DYNAMIC_CONTEXTS = 'dynamic_contexts',
-  DYNAMIC_CONTEXT = 'dynamic_context',
-  WORKSPACE = 'workspace',
-  SYSTEM = 'system',
-  DATETIME = 'datetime'
-}
-
-// XML Utility functions
-export function wrapWithXmlTag(tag: XmlTags, content: string, newlines?: boolean): string {
-  if (!newlines) {
-    return `<${tag}>\n${content}\n</${tag}>`;
-  } else {
-    return `<${tag}>${content}</${tag}>`;
-  }
+// Section titles for markdown formatting
+export enum SectionTitles {
+  INSTRUCTIONS = 'Instructions',
+  TOOLS = 'Tools',
+  FILES = 'Files',
+  DYNAMIC_CONTEXTS = 'Dynamic Context',
+  WORKSPACE = 'Workspace',
+  SYSTEM = 'System Information',
+  DATETIME = 'Current Date and Time'
 }

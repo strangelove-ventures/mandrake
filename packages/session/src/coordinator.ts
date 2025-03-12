@@ -1,4 +1,11 @@
-import { type Logger, createLogger, getTokenCounter, getModelInfo, type Message } from '@mandrake/utils';
+import { 
+  type Logger, 
+  createLogger, 
+  getTokenCounter, 
+  getModelInfo, 
+  type Message,
+  tools
+} from '@mandrake/utils';
 import type { SessionCoordinatorOptions, Context } from './types';
 import { MessageProcessError } from './errors';
 import { setupProviderFromManager } from './utils/provider';
@@ -420,13 +427,13 @@ export class SessionCoordinator {
     }
   }
 
-  // Process a message stream and extract any tool calls
+  // Process a message stream and extract any tool calls using JSON Schema format
   private async processStreamForToolCalls(
     messageStream: AsyncIterable<any>,
     currentTurn: any
   ): Promise<{ text: string; toolCalls: any[]; isCompleted: boolean }> {
     let textBuffer = '';
-    let xmlBuffer = '';
+    let jsonBuffer = '';
     let toolCalls = [];
     let isCompleted = false;
 
@@ -434,20 +441,30 @@ export class SessionCoordinator {
       switch (chunk.type) {
         case 'text':
           textBuffer += chunk.text;
-          xmlBuffer += chunk.text;
+          jsonBuffer += chunk.text;
 
           await this.opts.sessionManager.updateTurn(currentTurn.id, {
             rawResponse: textBuffer,
             content: textBuffer
           });
 
-          if (xmlBuffer.includes('<tool_call>') && xmlBuffer.includes('</tool_call>')) {
-            const { tools, remaining } = this.extractCompleteToolCalls(xmlBuffer);
-            xmlBuffer = remaining;
-
-            if (tools.length > 0) {
-              toolCalls = tools;
-              return { text: textBuffer, toolCalls, isCompleted: false };
+          // Look for complete tool calls using the JSON Schema parser
+          const parsedToolCalls = tools.extractParsedToolCalls(jsonBuffer);
+          if (parsedToolCalls.length > 0) {
+            // If we found tool calls, transform them into our internal format
+            try {
+              const internalToolCalls = parsedToolCalls.map(call => ({
+                serverName: call.serverName,
+                methodName: call.methodName,
+                arguments: call.arguments
+              }));
+              
+              if (internalToolCalls.length > 0) {
+                toolCalls = internalToolCalls;
+                return { text: textBuffer, toolCalls, isCompleted: false };
+              }
+            } catch (error) {
+              this.logger.error("PARSE_TOOL_CALL_ERROR", error as Error);
             }
           }
           break;
@@ -470,101 +487,9 @@ export class SessionCoordinator {
     return { text: textBuffer, toolCalls: [], isCompleted: true };
   }
 
-  private extractCompleteToolCalls(content: string): { tools: any[], remaining: string } {
-    const result = {
-      tools: [] as Array<{ serverName: string, methodName: string, arguments: any }>,
-      remaining: content
-    };
+  // We no longer need extractCompleteToolCalls since we're using the JSON Schema parser
 
-    const tagStart = '<tool_call>';
-    const tagEnd = '</tool_call>';
-
-    let startIndex = content.indexOf(tagStart);
-
-    if (startIndex === -1) {
-      return result;
-    }
-
-    while (startIndex !== -1) {
-      const endIndex = content.indexOf(tagEnd, startIndex);
-
-      if (endIndex === -1) {
-        return result;
-      }
-
-      const completeToolCall = content.substring(startIndex, endIndex + tagEnd.length);
-
-      this.logger.debug("COMPLETE_TOOL_CALL_FOUND", {
-        length: completeToolCall.length,
-        snippet: completeToolCall.substring(0, 50) + "..."
-      });
-
-      try {
-        // Try to parse the tool call
-        const parsed = this.parseCompleteToolCall(completeToolCall);
-        if (parsed) {
-          result.tools.push(parsed);
-        }
-      } catch (error) {
-        this.logger.error("PARSE_TOOL_CALL_ERROR", error as Error);
-      }
-
-      // Remove this tool call from the content for the next search
-      content = content.substring(0, startIndex) + content.substring(endIndex + tagEnd.length);
-
-      // Look for more tool calls
-      startIndex = content.indexOf(tagStart);
-    }
-
-    result.remaining = content;
-    return result;
-  }
-
-  // Parse a complete tool call XML string
-  private parseCompleteToolCall(xml: string): { serverName: string, methodName: string, arguments: any } | null {
-    this.logger.debug("PARSING_TOOL_CALL", { xmlLength: xml.length });
-
-    // Extract server
-    const serverMatch = xml.match(/<server>(.*?)<\/server>/s);
-    if (!serverMatch) {
-      this.logger.debug("NO_SERVER_MATCH");
-      return null;
-    }
-
-    // Extract method
-    const methodMatch = xml.match(/<method>(.*?)<\/method>/s);
-    if (!methodMatch) {
-      this.logger.debug("NO_METHOD_MATCH");
-      return null;
-    }
-
-    // Extract arguments - use careful regex to handle nested JSON
-    const argsMatch = xml.match(/<arguments>\s*([\s\S]*?)\s*<\/arguments>/s);
-    if (!argsMatch) {
-      this.logger.debug("NO_ARGS_MATCH");
-      return null;
-    }
-
-    this.logger.debug("EXTRACTED_PARTS", {
-      server: serverMatch[1],
-      method: methodMatch[1],
-      argsLength: argsMatch[1].length
-    });
-
-    try {
-      // Parse the arguments as JSON
-      const args = JSON.parse(argsMatch[1]);
-
-      return {
-        serverName: serverMatch[1],
-        methodName: methodMatch[1],
-        arguments: args
-      };
-    } catch (error) {
-      this.logger.error("ARGS_PARSE_ERROR", error as Error);
-      return null;
-    }
-  }
+  // We no longer need parseCompleteToolCall since we're using the JSON Schema parser
 
   private async executeToolCall(
     sessionId: string,

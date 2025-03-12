@@ -8,11 +8,7 @@ import type {
   DynamicContextSectionConfig
 } from './types';
 
-import {
-  XmlTags,
-  wrapWithXmlTag
-} from './types';
-
+import { formatMarkdownSection, SectionTitles } from './types';
 
 import {
   ToolsSection,
@@ -39,7 +35,7 @@ export class SystemPromptBuilder implements PromptBuilder {
   constructor(private readonly config: SystemPromptBuilderConfig) {
     // Instructions are always included
     this.sections.push(
-      wrapWithXmlTag(XmlTags.INSTRUCTIONS, config.instructions)
+      formatMarkdownSection(SectionTitles.INSTRUCTIONS, config.instructions, 1)
     );
 
     // Add optional sections if configured
