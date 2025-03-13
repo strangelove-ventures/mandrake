@@ -133,9 +133,14 @@ export class SessionCoordinator {
                   // Need to parse the toolCalls string to check
                   let hasToolCalls = false;
                   try {
-                    const toolCallsObj = typeof turn.toolCalls === 'string' ? JSON.parse(turn.toolCalls) : turn.toolCalls;
-                    hasToolCalls = !!(toolCallsObj && toolCallsObj.call && 
-                                   Object.keys(toolCallsObj.call).length > 0);
+                    // Handle both string and object formats for backward compatibility
+                    const toolCallsData = typeof turn.toolCalls === 'string' 
+                      ? JSON.parse(turn.toolCalls) 
+                      : turn.toolCalls;
+                    
+                    // Check if we have a valid tool call with call data
+                    hasToolCalls = !!(toolCallsData && toolCallsData.call && 
+                                   Object.keys(toolCallsData.call).length > 0);
                   } catch (e) {
                     // If we can't parse, assume no tool calls
                     hasToolCalls = false;
@@ -333,6 +338,12 @@ export class SessionCoordinator {
             isCompleted
           } = await this.processStreamForToolCalls(messageStream, currentTurn);
 
+          this.logger.debug('Process stream result', { 
+            textLength: text.length, 
+            toolCallsCount: toolCalls.length,
+            isCompleted 
+          });
+
           if (toolCalls.length > 0) {
             const tool = toolCalls[0];
 
@@ -519,11 +530,14 @@ export class SessionCoordinator {
           if (now - lastExtractAttempt >= MIN_EXTRACT_INTERVAL) {
             lastExtractAttempt = now;
             
-            // Check for certain patterns that indicate a potential tool call might be forming
-            if (jsonBuffer.includes('"tool_calls"') && jsonBuffer.includes('{') && jsonBuffer.includes('}')) {
-              // Look for complete tool calls using the JSON Schema parser
+            // Check for potential JSON objects that might be tool calls
+            if (jsonBuffer.includes('{') && jsonBuffer.includes('}')) {
+              // Look for complete tool calls using the simplified format parser
               try {
+                this.logger.debug('Attempting to extract tool calls from JSON buffer');
                 const parsedToolCalls = tools.extractParsedToolCalls(jsonBuffer);
+                this.logger.debug('Parsed tool calls result', { count: parsedToolCalls.length });
+                
                 if (parsedToolCalls.length > 0) {
                   // If we found tool calls, transform them into our internal format
                   try {
@@ -534,6 +548,10 @@ export class SessionCoordinator {
                     }));
                     
                     if (internalToolCalls.length > 0) {
+                      this.logger.info('Found tool call', {
+                        serverName: internalToolCalls[0].serverName,
+                        methodName: internalToolCalls[0].methodName
+                      });
                       toolCalls = internalToolCalls;
                       return { text: textBuffer, toolCalls, isCompleted: false };
                     }
@@ -569,6 +587,34 @@ export class SessionCoordinator {
           });
           break;
       }
+    }
+
+    // One final attempt to extract tool calls from the complete response
+    this.logger.debug('Final attempt to extract tool calls');
+    try {
+      const parsedToolCalls = tools.extractParsedToolCalls(jsonBuffer);
+      this.logger.debug('Final parsed tool calls result', { count: parsedToolCalls.length });
+      
+      if (parsedToolCalls.length > 0) {
+        const internalToolCalls = parsedToolCalls.map(call => ({
+          serverName: call.serverName,
+          methodName: call.methodName,
+          arguments: call.arguments
+        }));
+        
+        if (internalToolCalls.length > 0) {
+          this.logger.info('Found tool call in final check', {
+            serverName: internalToolCalls[0].serverName,
+            methodName: internalToolCalls[0].methodName
+          });
+          toolCalls = internalToolCalls;
+          return { text: textBuffer, toolCalls, isCompleted: false };
+        }
+      }
+    } catch (error) {
+      this.logger.debug("Error in final tool call extraction", {
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
 
     return { text: textBuffer, toolCalls: [], isCompleted: true };
