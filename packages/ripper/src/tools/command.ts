@@ -21,7 +21,7 @@ type CommandResult = {
 export function command(securityContext: SecurityContext): Tool<typeof CommandParams> {
   return {
     name: "command",
-    description: "Execute a command in a subprocess, with security restrictions on dangerous operations",
+    description: "Execute a CLI command on the system. Commands run in the current working directory by default. For commands in different directories, specify the 'cwd' parameter. Commands must be compatible with the operating system. Environment variables can be set using the 'env' parameter. Security restrictions prevent executing potentially dangerous operations. Returns stdout, stderr, exit code, and success status. Use for operations like running builds, starting servers, or performing system tasks. Note that interactive commands requiring user input are not supported. Always provide the complete command with all necessary arguments and flags.",
     parameters: CommandParams,
     execute: async (args: z.infer<typeof CommandParams>, context: Context): Promise<ContentResult> => {
       try {

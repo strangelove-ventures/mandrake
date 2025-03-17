@@ -20,7 +20,7 @@ export const ListAllowedDirectoriesParams = z.object({});
 export function listAllowedDirectories(securityContext: SecurityContext): Tool<typeof ListAllowedDirectoriesParams> {
   return {
     name: "list_allowed_directories",
-    description: "List all directories that are allowed to be accessed",
+    description: "Returns the list of directories that this server is allowed to access. Use this to understand which directories are available before trying to access files. Shows all paths the ripper server has permissions to read from and write to, along with their existence status. Also lists any exclude patterns that prevent access to specific files or subdirectories. This helps determine valid locations for reading, writing, and executing commands. No parameters are required.",
     parameters: ListAllowedDirectoriesParams,
     execute: async (args: z.infer<typeof ListAllowedDirectoriesParams>, context: Context): Promise<ContentResult> => {
       const results: DirectoryInfo[] = await Promise.all(

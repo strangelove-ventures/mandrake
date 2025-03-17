@@ -18,7 +18,7 @@ type WriteFileResult = {
 export function writeFile(securityContext: SecurityContext): Tool<typeof WriteFileParams> {
   return {
     name: "write_file",
-    description: "Write content to a file, creating parent directories if needed",
+    description: "Write content to a file, creating parent directories if needed. This tool will completely replace the contents of an existing file or create a new file. Always provide the complete intended file contents - partial updates are not supported. Paths must use forward slashes (/) regardless of the operating system. Always provide absolute paths or paths relative to the workspace root directory. If the directory structure doesn't exist, it will be created automatically. Returns success status and any errors encountered.",
     parameters: WriteFileParams,
     execute: async (args: z.infer<typeof WriteFileParams>, context: Context): Promise<ContentResult> => {
       const excludePatterns = securityContext.excludePatterns.map(p => new RegExp(p));

@@ -26,7 +26,7 @@ type ListDirectoryResult = {
 export function listDirectory(securityContext: SecurityContext): Tool<typeof ListDirectoryParams> {
   return {
     name: "list_directory",
-    description: "List contents of a directory with FILE/DIR prefixes",
+    description: "Get a detailed listing of all files and directories in a specified path. Results clearly distinguish between files and directories with [FILE] and [DIR] prefixes. This is essential for understanding directory structure and finding specific files. Directories are listed first, followed by files, both in alphabetical order. The path parameter must use forward slashes (/) regardless of the operating system. Use absolute paths or paths relative to the workspace root. Cannot list directories outside allowed directories. Use '.' to reference the current directory.",
     parameters: ListDirectoryParams,
     execute: async (args: z.infer<typeof ListDirectoryParams>, context: Context): Promise<ContentResult> => {
       try {

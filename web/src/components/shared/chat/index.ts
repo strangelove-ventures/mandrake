@@ -1,9 +1,19 @@
 /**
- * Export all chat components
+ * Chat component exports
  */
-export * from './ChatInput';
-export * from './MessageBubble';
-export * from './MessageList';
-export * from './TypingIndicator';
+export { MessageList } from './MessageList';
+export { MessageBubble } from './MessageBubble';
+export { ChatInput } from './ChatInput';
+export { TypingIndicator } from './TypingIndicator';
+export { ToolCallDisplay } from './ToolCallDisplay';
+
+// Export utilities
+export {
+    addUserMessage,
+    messagesFromHistory,
+    addStreamingData,
+    formatTime
+} from './utils';
+
+// Export types
 export * from './types';
-export * from './utils';

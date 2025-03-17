@@ -35,7 +35,7 @@ export class SystemPromptBuilder implements PromptBuilder {
   constructor(private readonly config: SystemPromptBuilderConfig) {
     // Instructions are always included
     this.sections.push(
-      formatMarkdownSection(SectionTitles.INSTRUCTIONS, config.instructions, 1)
+      config.instructions
     );
 
     // Add optional sections if configured

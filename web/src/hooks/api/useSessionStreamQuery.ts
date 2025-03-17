@@ -216,6 +216,18 @@ export function useSessionStreamQuery({
         
         console.log('Received turn event:', turnEvent);
         
+        // Add responseId to the turn event if it's missing
+        // Use the init.responseId if available, or derive from the turnId
+        if (!turnEvent.responseId && stateRef.current.init?.responseId) {
+          turnEvent.responseId = stateRef.current.init.responseId;
+        } else if (!turnEvent.responseId && turnEvent.turnId) {
+          // Try to extract responseId from turnId (often formatted as responseId:turnIndex)
+          const parts = turnEvent.turnId.split(':');
+          if (parts.length > 1) {
+            turnEvent.responseId = parts[0];
+          }
+        }
+        
         // Find if this turn already exists
         const existingTurns = [...stateRef.current.turns];
         const turnIndex = existingTurns.findIndex(t => t.turnId === turnEvent.turnId);

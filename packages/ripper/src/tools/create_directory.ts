@@ -29,7 +29,7 @@ type CreateDirectoryResult = {
 export function createDirectory(securityContext: SecurityContext): Tool<typeof CreateDirectoryParams> {
   return {
     name: "create_directory",
-    description: "Create a directory and any necessary parent directories",
+    description: "Create a new directory or ensure a directory exists. Creates all necessary parent directories in one operation. If the directory already exists, this operation succeeds silently. Perfect for setting up directory structures for projects or ensuring required paths exist. Path parameter must use forward slashes (/) regardless of operating system. Always use absolute paths or paths relative to the workspace root. Cannot create directories outside allowed directories. Returns success status and any errors encountered.",
     parameters: CreateDirectoryParams,
     execute: async (args: z.infer<typeof CreateDirectoryParams>, context: Context): Promise<ContentResult> => {
       try {

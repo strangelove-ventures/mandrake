@@ -28,7 +28,7 @@ export function addUserMessage(messages: Message[], userMessage: Message | null)
 }
 
 /**
- * Convert session history data to a flat list of messages
+ * Convert session history data to a flat list of messages, preserving response structure
  */
 export function messagesFromHistory(historyData: SessionHistoryResponse | undefined): Message[] {
   if (!historyData) return [];
@@ -44,15 +44,22 @@ export function messagesFromHistory(historyData: SessionHistoryResponse | undefi
       createdAt: round.request.createdAt
     });
     
-    // Add assistant responses from turns
-    round.response.turns.forEach(turn => {
-      messages.push({
-        id: turn.id,
-        role: 'assistant',
-        content: turn.content,
-        createdAt: turn.createdAt
+    // Process all turns in the response to include response ID
+    if (round.response.turns.length > 0) {
+      round.response.turns.forEach(turn => {
+        messages.push({
+          id: turn.id,
+          role: 'assistant',
+          content: turn.content,
+          createdAt: turn.createdAt,
+          responseId: round.response.id,
+          index: turn.index,
+          rawResponse: turn.rawResponse,
+          toolCalls: turn.toolCalls,
+          status: turn.status
+        });
       });
-    });
+    }
   });
   
   // Sort by timestamp
@@ -62,7 +69,7 @@ export function messagesFromHistory(historyData: SessionHistoryResponse | undefi
 }
 
 /**
- * Add streaming data to messages list
+ * Add streaming data to messages list, preserving response structure
  */
 export function addStreamingData(
   messages: Message[], 
@@ -72,28 +79,78 @@ export function addStreamingData(
   if (!isStreaming || streamingTurns.length === 0) return messages;
   
   const result = [...messages];
-  const lastStreamingTurn = streamingTurns[streamingTurns.length - 1];
   
-  console.log('Adding streaming data, turn:', lastStreamingTurn);
+  // Group streaming turns by responseId
+  const turnsByResponse: Record<string, StreamingTurn[]> = {};
   
-  // Add streaming message if it's not already in the history
-  const existingMsgIndex = result.findIndex(
-    msg => msg.id === lastStreamingTurn.turnId
-  );
+  streamingTurns.forEach(turn => {
+    const responseId = turn.responseId || `temp-response-${Date.now()}`;
+    if (!turnsByResponse[responseId]) {
+      turnsByResponse[responseId] = [];
+    }
+    turnsByResponse[responseId].push(turn);
+  });
   
-  if (existingMsgIndex === -1) {
-    console.log('Adding new streaming message to display');
-    result.push({
-      id: lastStreamingTurn.turnId,
-      role: 'assistant',
-      content: lastStreamingTurn.content,
-      createdAt: new Date().toISOString()
-    });
-  } else {
-    console.log('Updating existing message with new content');
-    // Update existing message with new content
-    result[existingMsgIndex].content = lastStreamingTurn.content;
-  }
+  // Process each response group
+  Object.entries(turnsByResponse).forEach(([responseId, turns]) => {
+    // Check if we already have messages for this response
+    const existingTurns = result.filter(
+      msg => msg.role === 'assistant' && 'responseId' in msg && msg.responseId === responseId
+    );
+    
+    if (existingTurns.length === 0) {
+      // No existing turns for this response, add all streaming turns as new messages
+      turns.forEach(turn => {
+        result.push({
+          id: turn.turnId,
+          role: 'assistant',
+          content: turn.content,
+          createdAt: new Date().toISOString(),
+          responseId: responseId,
+          index: turn.index,
+          rawResponse: turn.rawResponse,
+          toolCalls: turn.toolCalls,
+          status: turn.status
+        });
+      });
+    } else {
+      // Update existing turns with streaming content
+      turns.forEach(streamingTurn => {
+        const existingIndex = result.findIndex(
+          msg => msg.role === 'assistant' && 
+                 'id' in msg && 
+                 msg.id === streamingTurn.turnId
+        );
+        
+        if (existingIndex !== -1) {
+          // Update existing message
+          result[existingIndex].content = streamingTurn.content;
+          if (streamingTurn.rawResponse) {
+            result[existingIndex].rawResponse = streamingTurn.rawResponse;
+          }
+          if (streamingTurn.toolCalls) {
+            result[existingIndex].toolCalls = streamingTurn.toolCalls;
+          }
+          if (streamingTurn.status) {
+            result[existingIndex].status = streamingTurn.status;
+          }
+        } else {
+          // Add as a new turn for this response
+          result.push({
+            id: streamingTurn.turnId,
+            role: 'assistant',
+            content: streamingTurn.content,
+            createdAt: new Date().toISOString(),
+            responseId: responseId,
+            index: streamingTurn.index,
+            rawResponse: streamingTurn.rawResponse,
+            toolCalls: streamingTurn.toolCalls,
+            status: streamingTurn.status
+          });
+        }
+      });
+    }
+  });
   
   return result;
 }

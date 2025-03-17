@@ -30,7 +30,7 @@ type MoveFileResult = {
 export function moveFile(securityContext: SecurityContext): Tool<typeof MoveFileParams> {
   return {
     name: "move_file",
-    description: "Move/rename a file or directory, creating parent directories if needed",
+    description: "Move or rename files and directories. Can move files between directories and rename them in a single operation. If the destination exists, the operation will fail. Works across different directories and can be used for simple renaming within the same directory. Creates destination parent directories if they don't exist. Both source and destination parameters must use forward slashes (/) regardless of operating system. Both source and destination must be within allowed directories. Returns success status and any errors encountered.",
     parameters: MoveFileParams,
     execute: async (args: z.infer<typeof MoveFileParams>, context: Context): Promise<ContentResult> => {
       try {

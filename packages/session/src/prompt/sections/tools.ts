@@ -55,6 +55,17 @@ Make a single tool call, then wait for the result before making another call.
    - Tell the user what steps can be taken to resolve the error
    - Ask the user for clarification or additional information
 
+## Using JSON Schema
+Each tool below includes its JSON schema that describes required parameters and their types.
+Key elements to understand in these schemas:
+
+1. \`required\`: Lists parameters that must be provided
+2. \`properties\`: Describes each parameter with its:
+   - \`type\`: string, number, boolean, array, object, etc.
+   - \`description\`: Explains what the parameter does
+   - \`format\`: For strings, may specify patterns like "uri", "date-time", etc.
+   - Additional constraints like \`minimum\`, \`maxLength\`, etc.
+
 ## Available Tools:`;
 
   constructor(private readonly config: ToolsSectionConfig) { }
@@ -64,58 +75,25 @@ Make a single tool call, then wait for the result before making another call.
       return '';
     }
 
-    // Generate tool documentation in JSON format
+    // Generate tool documentation with JSON schema
     const toolDocs = this.config.tools.map(tool => {
-      const exampleArgs = this.createExampleArgs(tool.inputSchema);
-      
       return `## ${tool.serverName}.${tool.name}
 Description: ${tool.description || ''}
 
-Example:
+Schema:
 \`\`\`json
-{
-  "name": "${tool.serverName}.${tool.name}",
-  "arguments": ${JSON.stringify(exampleArgs, null, 2)}
-}
+${JSON.stringify(tool.inputSchema, (key, value) => {
+  if (key === "additionalProperties" || key === "$schema") {
+    return undefined;
+  }
+  return value;
+}, 2)}
 \`\`\``;
     }).join('\n\n');
 
     return formatMarkdownSection(SectionTitles.TOOLS, `${this.toolInstructions}\n\n${toolDocs}`, 1);
   }
 
-  private createExampleArgs(schema: any): any {
-    if (!schema || !schema.properties) return {};
-
-    const example: Record<string, any> = {};
-
-    for (const [key, prop] of Object.entries<any>(schema.properties)) {
-      switch (prop.type) {
-        case 'string':
-          example[key] = `example_${key}`;
-          break;
-        case 'array':
-          if (prop.items?.type === 'string') {
-            example[key] = [`first_${key}`, `second_${key}`];
-          } else {
-            example[key] = [];
-          }
-          break;
-        case 'number':
-        case 'integer':
-          example[key] = 42;
-          break;
-        case 'boolean':
-          example[key] = false;
-          break;
-        case 'object':
-          example[key] = this.createExampleArgs(prop);
-          break;
-        default:
-          example[key] = null;
-      }
-    }
-
-    return example;
-  }
+  // Method removed as we now use the actual JSON schema directly
 
 }

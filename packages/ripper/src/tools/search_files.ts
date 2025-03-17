@@ -82,7 +82,7 @@ async function searchDirectory(
 export function searchFiles(securityContext: SecurityContext): Tool<typeof SearchFilesParams> {
   return {
     name: "search_files",
-    description: "Search for files matching a pattern recursively",
+    description: "Recursively search for files containing text that matches a regex pattern in a specified directory. Searches through all subdirectories from the starting path. Provide a regex pattern that will be used to search file contents (not just filenames). Returns a list of file paths containing matches. The search is case-sensitive by default (use (?i) for case-insensitive search). The maxResults parameter limits the total number of matching files returned (default 100). Always use forward slashes (/) in the path parameter regardless of the operating system. Uses security context to ensure searches are within allowed directories.",
     parameters: SearchFilesParams,
     execute: async (args: z.infer<typeof SearchFilesParams>, context: Context): Promise<ContentResult> => {
       try {

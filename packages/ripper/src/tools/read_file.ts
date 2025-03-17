@@ -27,7 +27,7 @@ type ReadFileResult = {
 export function readFiles(securityContext: SecurityContext): Tool<typeof ReadFilesParams> {
   return {
     name: "read_files",
-    description: "Read the contents of one or more files",
+    description: "Read the contents of one or more files. Accepts an array of file paths and returns their contents as UTF-8 encoded strings. Uses security context to ensure files are within allowed directories. Files must be text-based; binary files may return unexpected results. For PDF and DOCX files, it attempts to extract text content. For large files, content may be truncated.",
     parameters: ReadFilesParams,
     execute: async (args: z.infer<typeof ReadFilesParams>, context: Context): Promise<ContentResult> => {
       const results: ReadFileResult[] = [];

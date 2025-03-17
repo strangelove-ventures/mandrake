@@ -85,7 +85,7 @@ async function buildTree(
 export function tree(securityContext: SecurityContext): Tool<typeof TreeParams> {
   return {
     name: "tree",
-    description: "Generate a tree visualization of a directory structure",
+    description: "Get a recursive tree view of files and directories as a JSON structure. Each entry includes 'name', 'type' (file/directory), 'path', and 'children' for directories. Files have no children array, while directories always have a children array (which may be empty). Directories are listed first, followed by files, both in alphabetical order. The depth parameter controls how many levels deep to traverse (default is unlimited). Path must use forward slashes (/) regardless of operating system. Cannot access directories outside allowed directories. Returns the full directory tree structure for easier analysis.",
     parameters: TreeParams,
     execute: async (args: z.infer<typeof TreeParams>, context: Context): Promise<ContentResult> => {
       try {

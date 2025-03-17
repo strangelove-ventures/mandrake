@@ -61,7 +61,7 @@ function generateDiff(original: Buffer, edited: Buffer, path: string): string {
 export function editFile(securityContext: SecurityContext): Tool<typeof EditParams> {
   return {
     name: "edit_file",
-    description: "Edit a file using search/replace operations and return a git-style diff",
+    description: "Make line-based edits to a text file using search/replace operations and return a git-style diff. Allows precise modifications to specific parts of files without rewriting the entire file. Each edit requires 'oldText' (exact text to find) and 'newText' (replacement text). The search text must match EXACTLY, including all whitespace, indentation, and newlines. For multiple edits, provide an array of edits that will be applied in sequence. Set 'dryRun' to true to preview changes without modifying the file. Returns the diff showing all changes made. Always use forward slashes (/) in file paths regardless of operating system.",
     parameters: EditParams,
     execute: async (args: z.infer<typeof EditParams>, context: Context): Promise<ContentResult> => {
       try {
