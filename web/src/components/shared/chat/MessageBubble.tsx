@@ -3,6 +3,7 @@
 import { Message, ResponseMessage } from './types';
 import { ToolCallDisplay } from './ToolCallDisplay';
 import { extractToolCallsForDisplay } from '@mandrake/utils/src/tools/parser';
+import { ToolCallDisplay as ToolCallDisplayType } from '@mandrake/utils/src/tools/types';
 
 interface MessageBubbleProps {
   message: Message | ResponseMessage;
@@ -55,9 +56,78 @@ export function MessageBubble({ message }: MessageBubbleProps) {
       }
 
       // Extract and add tool calls if present
-      if (turn.rawResponse) {
-        const toolCalls = extractToolCallsForDisplay(turn.rawResponse);
+      // First check if we have structured toolCalls data
+      if (turn.toolCalls) {
+        try {
+          const parsedToolCalls = JSON.parse(turn.toolCalls);
+          if (parsedToolCalls && parsedToolCalls.call) {
+            // Create a request call from the structured data
+            const requestCall: ToolCallDisplayType = {
+              callType: 'request',
+              serverName: parsedToolCalls.call.serverName,
+              methodName: parsedToolCalls.call.methodName,
+              data: parsedToolCalls.call.arguments,
+              timestamp: Date.now(),
+              id: `${parsedToolCalls.call.serverName}.${parsedToolCalls.call.methodName}-${Date.now()}`
+            };
+            
+            // Create a response if one exists
+            let responseCall: ToolCallDisplayType | undefined = undefined;
+            if (parsedToolCalls.response) {
+              responseCall = {
+                callType: parsedToolCalls.response.error ? 'error' : 'response',
+                serverName: parsedToolCalls.call.serverName,
+                methodName: parsedToolCalls.call.methodName,
+                data: parsedToolCalls.response.error || parsedToolCalls.response.content,
+                timestamp: Date.now() + 1, // Ensure it sorts after the request
+                id: `${parsedToolCalls.call.serverName}.${parsedToolCalls.call.methodName}-response-${Date.now()}`
+              };
+            }
+            
+            contentBlocks.push(
+              <div key={`tool-structured-${turnIndex}`} className="mb-3">
+                <ToolCallDisplay
+                  toolCall={requestCall}
+                  responseCall={responseCall}
+                />
+              </div>
+            );
+          }
+        } catch (error) {
+          console.error('Error parsing structured toolCalls', error);
+          
+          // Fallback to extracting from rawResponse
+          if (turn.rawResponse) {
+            const toolCalls = extractToolCallsForDisplay(turn.rawResponse);
+            
+            // Process tool calls in pairs (request and response)
+            const requestCalls = toolCalls.filter(call => call.callType === 'request');
 
+            requestCalls.forEach((requestCall, i) => {
+              // Find the matching response or error
+              const responseCall = toolCalls.find(
+                call =>
+                  (call.callType === 'response' || call.callType === 'error') &&
+                  call.serverName === requestCall.serverName &&
+                  call.methodName === requestCall.methodName
+              );
+
+              contentBlocks.push(
+                <div key={`tool-${requestCall.id || i}`} className="mb-3">
+                  <ToolCallDisplay
+                    toolCall={requestCall}
+                    responseCall={responseCall}
+                  />
+                </div>
+              );
+            });
+          }
+        }
+      }
+      // If no structured tool calls or parsing failed, try extracting from rawResponse
+      else if (turn.rawResponse) {
+        const toolCalls = extractToolCallsForDisplay(turn.rawResponse);
+        
         // Process tool calls in pairs (request and response)
         const requestCalls = toolCalls.filter(call => call.callType === 'request');
 

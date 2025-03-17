@@ -2,7 +2,7 @@ import { formatMarkdownSection, SectionTitles } from '../types';
 import type { PromptSection, ToolsSectionConfig } from '../types';
 
 export class ToolsSection implements PromptSection {
-  private readonly toolInstructions = `You have access to a set of tools that can be executed. Use tools one at a time to accomplish tasks.
+  private readonly toolInstructions = `You have access to a set of tools that can be executed. Use tools one at a time to accomplish tasks. This means you should wait for the user to send back the result of a tool before using another one. The tool call should be the last part of a message you send to the user.
 
 ## Usage Format
 To use a tool, output a JSON object with the following structure:

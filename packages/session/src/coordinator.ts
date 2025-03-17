@@ -520,9 +520,12 @@ export class SessionCoordinator {
           textBuffer += chunk.text;
           jsonBuffer += chunk.text;
 
+          // Strip any tool call JSON before updating content
+          // Strip it right at the point of update to ensure it's always clean
+          const cleanedContent = this.stripToolCallsJson(textBuffer);
           await this.opts.sessionManager.updateTurn(currentTurn.id, {
             rawResponse: textBuffer,
-            content: textBuffer
+            content: cleanedContent
           });
 
           // Rate limit the tool call extraction attempts
@@ -548,6 +551,12 @@ export class SessionCoordinator {
                     }));
                     
                     if (internalToolCalls.length > 0) {
+                      // Final cleanup of content before returning
+                      // This ensures tool call JSON is removed from displayed content
+                      await this.opts.sessionManager.updateTurn(currentTurn.id, {
+                        content: this.stripToolCallsJson(textBuffer)
+                      });
+
                       this.logger.info('Found tool call', {
                         serverName: internalToolCalls[0].serverName,
                         methodName: internalToolCalls[0].methodName
@@ -603,6 +612,12 @@ export class SessionCoordinator {
         }));
         
         if (internalToolCalls.length > 0) {
+          // Final cleanup of content before returning
+          // This ensures tool call JSON is removed from displayed content
+          await this.opts.sessionManager.updateTurn(currentTurn.id, {
+            content: this.stripToolCallsJson(textBuffer)
+          });
+
           this.logger.info('Found tool call in final check', {
             serverName: internalToolCalls[0].serverName,
             methodName: internalToolCalls[0].methodName
@@ -616,6 +631,13 @@ export class SessionCoordinator {
         error: error instanceof Error ? error.message : String(error)
       });
     }
+
+    // One final content cleanup
+    // This ensures we don't have any leftover JSON fragments
+    const finalCleanContent = this.stripToolCallsJson(textBuffer);
+    await this.opts.sessionManager.updateTurn(currentTurn.id, {
+      content: finalCleanContent
+    });
 
     return { text: textBuffer, toolCalls: [], isCompleted: true };
   }
@@ -653,6 +675,40 @@ export class SessionCoordinator {
       });
       throw error;
     }
+  }
+  
+  /**
+   * Strips tool call JSON from text content
+   * @param content Text that may contain tool call JSON
+   * @returns Clean text with JSON removed
+   */
+  private stripToolCallsJson(content: string): string {
+    if (!content) return '';
+    
+    // Regex to clean more aggressively
+    // First, we'll find well-formed tool call JSON objects
+    const fullJsonPattern = /\{\s*"name"\s*:\s*"[\w\.]+"[\s\S]*?"arguments"[\s\S]*?\}/g;
+    
+    // Then we'll also clean up any partial JSON or dangling brackets
+    const partialJsonPattern = /\{\s*"name"[\s\S]*?(?:\}|$)/g; // Catch partial tool calls
+    const danglingBracePattern = /\}\s*(?:\{[^\}]*)?$/g; // Catch dangling braces
+    
+    // Simpler pattern to catch isolated braces
+    const isolatedBracePattern = /\s*\}\s*/g; // Catch isolated } characters
+    
+    // Apply all cleanings
+    let cleanContent = content;
+    cleanContent = cleanContent.replace(fullJsonPattern, '');
+    cleanContent = cleanContent.replace(partialJsonPattern, '');
+    cleanContent = cleanContent.replace(danglingBracePattern, '');
+    cleanContent = cleanContent.replace(isolatedBracePattern, ' '); // Replace isolated braces with a space
+    
+    // Fix up whitespace and formatting
+    cleanContent = cleanContent.replace(/\n{3,}/g, '\n\n');  // Replace 3+ newlines with 2
+    cleanContent = cleanContent.replace(/^\s+|\s+$/g, '');     // Trim leading/trailing whitespace
+    cleanContent = cleanContent.replace(/([^\n])\s{2,}([^\n])/g, '$1 $2'); // Replace multiple spaces with single space (but preserve newlines)
+    
+    return cleanContent;
   }
 
   async buildContext(sessionId: string): Promise<Context> {
