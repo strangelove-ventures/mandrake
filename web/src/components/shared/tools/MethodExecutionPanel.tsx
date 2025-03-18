@@ -453,13 +453,11 @@ export default function MethodExecutionPanel({
           {result && (
             <div className="mt-6 space-y-2">
               <h3 className="text-lg font-medium">Results</h3>
-              <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-md overflow-x-auto">
-                <pre className="text-sm font-mono">
-                  {typeof result === 'object' 
-                    ? JSON.stringify(result, null, 2) 
-                    : String(result)
-                  }
-                </pre>
+              <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono overflow-x-auto max-h-[300px] overflow-y-auto">
+                {typeof result === 'object' 
+                  ? JSON.stringify(result, null, 2) 
+                  : String(result)
+                }
               </div>
             </div>
           )}
@@ -512,7 +510,7 @@ export default function MethodExecutionPanel({
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <h4 className="text-xs text-gray-500 mb-1">Parameters</h4>
-                          <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono overflow-x-auto">
+                          <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono overflow-x-auto max-h-[200px] overflow-y-auto">
                             {JSON.stringify(execution.params, null, 2)}
                           </div>
                         </div>
@@ -521,7 +519,7 @@ export default function MethodExecutionPanel({
                           <h4 className="text-xs text-gray-500 mb-1">
                             {execution.status === 'error' ? 'Error' : 'Result'}
                           </h4>
-                          <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono overflow-x-auto">
+                          <div className="p-2 bg-gray-100 dark:bg-gray-800 rounded text-xs font-mono overflow-x-auto max-h-[200px] overflow-y-auto">
                             {execution.status === 'error'
                               ? execution.error
                               : JSON.stringify(execution.result, null, 2)

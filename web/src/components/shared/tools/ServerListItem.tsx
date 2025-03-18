@@ -3,7 +3,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Edit, Trash2 } from 'lucide-react';
+import { Edit, Trash2, Play, Square } from 'lucide-react';
 import { ServerConfig } from './types';
 import ServerStatusIndicator from './ServerStatusIndicator';
 
@@ -16,6 +16,8 @@ interface ServerListItemProps {
   onEdit: () => void;
   onToggleDisabled: () => void;
   onDelete: () => void;
+  onStart?: () => void;
+  onStop?: () => void;
 }
 
 export default function ServerListItem({
@@ -26,7 +28,9 @@ export default function ServerListItem({
   onSelect,
   onEdit,
   onToggleDisabled,
-  onDelete
+  onDelete,
+  onStart,
+  onStop
 }: ServerListItemProps) {
   return (
     <li className={`p-3 border rounded-md flex justify-between items-center 
@@ -51,6 +55,39 @@ export default function ServerListItem({
       
       {/* Action buttons */}
       <div className="flex items-center space-x-2">
+        {/* Start/Stop buttons */}
+        {!config.disabled && (
+          <>
+            {status?.status === 'running' ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 hover:text-red-500"
+                title="Stop server"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStop && onStop();
+                }}
+              >
+                <Square className="h-4 w-4" />
+              </Button>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 hover:text-green-500"
+                title="Start server"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStart && onStart();
+                }}
+              >
+                <Play className="h-4 w-4" />
+              </Button>
+            )}
+          </>
+        )}
+        
         {/* Enable/disable switch */}
         <div className="pr-2" onClick={(e) => e.stopPropagation()}>
           <Switch

@@ -63,7 +63,7 @@ export default function StableModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden">
       {/* Backdrop */}
       <div className="fixed inset-0 bg-black/80 backdrop-blur-sm" />
       
@@ -71,6 +71,7 @@ export default function StableModal({
       <div
         ref={modalRef}
         className={`z-50 bg-background rounded-lg border p-6 shadow-lg overflow-y-auto ${className}`}
+        style={{ maxHeight: '90vh', overflowY: 'auto', maxWidth: '95vw' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}

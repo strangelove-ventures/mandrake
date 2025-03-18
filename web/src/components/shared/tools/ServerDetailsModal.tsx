@@ -74,9 +74,9 @@ export default function ServerDetailsModal({
     <StableModal 
       isOpen={isOpen} 
       onClose={onClose}
-      className={`max-w-4xl ${showExecutionPanel ? 'max-h-[90vh]' : ''}`}
+      className="max-w-4xl"
     >
-      <div className="space-y-4">
+      <div className="space-y-4 overflow-y-auto">
         {!showExecutionPanel ? (
           // Methods List when not showing execution panel
           <ServerMethodsList 

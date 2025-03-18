@@ -18,6 +18,7 @@ export function useToolsConfig(workspaceId?: string) {
     loadActiveTools, 
     setActiveTools,
     updateToolConfig,
+    addServerConfig,
     isLoading: storeIsLoading, 
     error: storeError,
     loadServerMethods,
@@ -110,15 +111,16 @@ export function useToolsConfig(workspaceId?: string) {
   useEffect(() => {
     const loadData = async () => {
       try {
-        await loadTools();
-        await loadActiveTools();
+        console.log('Loading tools with workspaceId:', workspaceId || 'none');
+        await loadTools(workspaceId);
+        await loadActiveTools(workspaceId);
       } catch (error) {
         console.error('Failed to load tools data:', error);
       }
     };
     
     loadData();
-  }, [loadTools, loadActiveTools]);
+  }, [loadTools, loadActiveTools, workspaceId]);
   
   // Handle selecting a config
   const handleSelectConfig = useCallback((configId: string) => {
@@ -141,14 +143,14 @@ export function useToolsConfig(workspaceId?: string) {
   // Handle activating a config
   const handleActivateConfig = useCallback(async (configId: string) => {
     try {
-      await setActiveTools(configId);
+      await setActiveTools(configId, workspaceId);
       // Refresh data
-      await loadTools();
-      await loadActiveTools();
+      await loadTools(workspaceId);
+      await loadActiveTools(workspaceId);
     } catch (error) {
       console.error('Failed to activate config:', error);
     }
-  }, [loadActiveTools, loadTools, setActiveTools]);
+  }, [loadActiveTools, loadTools, setActiveTools, workspaceId]);
   
   // Handle editing a server
   const handleEditServer = useCallback((configId: string, serverId: string) => {
@@ -186,7 +188,7 @@ export function useToolsConfig(workspaceId?: string) {
       };
 
       // Call API to update config
-      await updateToolConfig(configId, updatedConfig);
+      await updateToolConfig(configId, updatedConfig, workspaceId);
       
       // Update local state immediately for better UX
       const newToolsData = {...toolsData};
@@ -194,11 +196,11 @@ export function useToolsConfig(workspaceId?: string) {
       setToolsData(newToolsData);
       
       // Refresh data
-      await loadTools();
+      await loadTools(workspaceId);
     } catch (err) {
       console.error('Error toggling server disabled state:', err);
     }
-  }, [loadTools, toolsData, updateToolConfig]);
+  }, [loadTools, toolsData, updateToolConfig, workspaceId]);
   
   // Handle saving server edits
   const handleSaveServerEdits = useCallback(async (serverEdit: ServerEditState) => {
@@ -214,10 +216,10 @@ export function useToolsConfig(workspaceId?: string) {
       };
       
       // Call API to update server config
-      await updateToolConfig(configId, updatedConfig);
+      await updateToolConfig(configId, updatedConfig, workspaceId);
       
       // Refresh data
-      await loadTools();
+      await loadTools(workspaceId);
       
       // Update local state
       if (toolsData) {
@@ -231,7 +233,7 @@ export function useToolsConfig(workspaceId?: string) {
     } catch (err) {
       console.error('Error saving server config:', err);
     }
-  }, [loadTools, toolsData, updateToolConfig]);
+  }, [loadTools, toolsData, updateToolConfig, workspaceId]);
   
   // Handle adding a new config
   const handleAddConfig = useCallback(async () => {
@@ -306,19 +308,10 @@ export function useToolsConfig(workspaceId?: string) {
         return;
       }
       
-      // Update local state first for immediate feedback
-      const newToolsData = {...toolsData};
-      newToolsData.configs[selectedConfigId][newServerId] = serverConfig;
-      setToolsData(newToolsData);
+      console.log('Adding server with config:', serverConfig);
       
-      // Create updated config for the API
-      const updatedConfig = {
-        ...toolsData.configs[selectedConfigId],
-        [newServerId]: serverConfig
-      };
-      
-      // Call API to update config
-      await updateToolConfig(selectedConfigId, updatedConfig);
+      // Instead of using updateToolConfig, use the new addServerConfig function to properly add the server
+      await addServerConfig(selectedConfigId, newServerId, serverConfig, workspaceId);
       
       // Select the new server
       setSelectedServerId(newServerId);
@@ -330,12 +323,21 @@ export function useToolsConfig(workspaceId?: string) {
       setServerConfigJson('');
       setServerConfigError(null);
       
-      // Refresh data
-      await loadTools();
+      // Update local state with the new server
+      const newToolsData = {...toolsData};
+      if (!newToolsData.configs[selectedConfigId]) {
+        newToolsData.configs[selectedConfigId] = {};
+      }
+      newToolsData.configs[selectedConfigId][newServerId] = serverConfig;
+      setToolsData(newToolsData);
+      
+      // Refresh data to get latest from API
+      await loadTools(workspaceId);
     } catch (err) {
       console.error('Error adding server:', err);
+      setServerConfigError(err instanceof Error ? err.message : 'Error adding server');
     }
-  }, [loadTools, newServerId, selectedConfigId, serverConfigJson, toolsData, updateToolConfig]);
+  }, [loadTools, newServerId, selectedConfigId, serverConfigJson, toolsData, updateToolConfig, workspaceId, addServerConfig]);
   
   return {
     // State
@@ -365,6 +367,9 @@ export function useToolsConfig(workspaceId?: string) {
     loadServerMethods,
     loadMethodDetails,
     invokeMethod,
+    
+    // Direct API access
+    addServerConfig,
     
     // Actions
     setSelectedConfigId,

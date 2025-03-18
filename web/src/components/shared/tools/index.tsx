@@ -2,14 +2,13 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Input } from '@/components/ui/input';
 import { PlusCircle } from 'lucide-react';
 import { ToolsComponentProps } from './types';
 import { useToolsConfig } from './hooks';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Badge } from '@/components/ui/badge';
 import ServerTabs from './ServerTabs';
 import ServerEditModal from './ServerEditModal';
 
@@ -32,8 +31,7 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
     serverConfigError,
     isLoading,
     error,
-    serverStatus,
-    loadServerStatus,
+    addServerConfig,
     
     setIsEditingServer,
     setIsCreatingConfig,
@@ -50,7 +48,6 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
     handleToggleServerDisabled,
     handleSaveServerEdits,
     handleAddConfig,
-    handleAddServer,
     
     loadTools,
     loadActiveTools
@@ -200,10 +197,22 @@ export default function ToolsConfig({ isWorkspace = false, workspaceId }: ToolsC
                     <ServerTabs
                       config={toolsData.configs[selectedConfigId]}
                       selectedServerId={selectedServerId}
+                      configId={selectedConfigId} // Pass configId
                       onSelectServer={handleSelectServer}
                       onEditServer={(serverId) => handleEditServer(selectedConfigId, serverId)}
                       onToggleServerDisabled={(serverId) => handleToggleServerDisabled(selectedConfigId, serverId)}
-                      onAddServer={handleAddServer}
+                      onAddServer={async (serverId, config) => {
+                        console.log(`[tools] Adding server ${serverId} to config ${selectedConfigId}`, config);
+                        if (selectedConfigId) {
+                          try {
+                            await addServerConfig(selectedConfigId, serverId, config, isWorkspace ? workspaceId : undefined);
+                            // Update UI after successful addition
+                            handleSelectServer(serverId);
+                          } catch (err) {
+                            console.error(`Failed to add server ${serverId}:`, err);
+                          }
+                        }
+                      }}
                       isCreatingServer={isCreatingServer}
                       setIsCreatingServer={setIsCreatingServer}
                       newServerId={newServerId}

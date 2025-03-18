@@ -2,8 +2,8 @@
 
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { RefreshCw } from 'lucide-react';
-import { ToolConfig } from './types';
+import { RefreshCw, Plus } from 'lucide-react';
+import { ToolConfig, ServerConfig } from './types';
 import { useToolsStore } from '@/stores/system/tools';
 import { useServerStatus } from '@/hooks/useServerStatus';
 import ServerListItem from './ServerListItem';
@@ -15,10 +15,11 @@ import ServerDetailsModal from './ServerDetailsModal';
 interface ServerTabsProps {
   config: ToolConfig;
   selectedServerId: string | null;
+  configId: string;
   onSelectServer: (serverId: string) => void;
   onEditServer: (serverId: string) => void;
   onToggleServerDisabled: (serverId: string) => void;
-  onAddServer: () => Promise<void>;
+  onAddServer: (serverId: string, config: ServerConfig) => Promise<void>;
   isCreatingServer: boolean;
   setIsCreatingServer: (isCreating: boolean) => void;
   newServerId: string;
@@ -37,6 +38,7 @@ interface ServerTabsProps {
 export default function ServerTabs({
   config,
   selectedServerId,
+  configId,
   onSelectServer,
   onEditServer,
   onToggleServerDisabled,
@@ -54,7 +56,7 @@ export default function ServerTabs({
 }: ServerTabsProps) {
   const serverIds = Object.keys(config);
   const selectedServer = selectedServerId && config[selectedServerId];
-  const { loadServerStatus, updateToolConfig } = useToolsStore();
+  const { loadServerStatus, updateToolConfig, startServer, stopServer } = useToolsStore();
   const { serverStatus } = useServerStatus(workspaceId);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -65,20 +67,36 @@ export default function ServerTabs({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => loadServerStatus()}
+          onClick={() => loadServerStatus(workspaceId)}
           title="Refresh server status"
         >
           <RefreshCw className="h-4 w-4 mr-1" />
           Refresh Status
         </Button>
         
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setIsCreatingServer(true)}
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          Add Server
+        </Button>
+        
         <AddServerModal
           isOpen={isCreatingServer}
           onClose={() => setIsCreatingServer(false)}
           onAdd={async (serverId, serverConfig) => {
-            setNewServerId(serverId);
-            setServerConfigJson(JSON.stringify(serverConfig, null, 2));
-            await onAddServer();
+            console.log('Adding server from modal:', serverId, serverConfig);
+            // Directly call the onAddServer with the values from the modal
+            try {
+              await onAddServer(serverId, serverConfig);
+              // Clear form values
+              setNewServerId('');
+              setServerConfigJson('');
+            } catch (error) {
+              console.error('Error adding server from modal:', error);
+            }
           }}
         />
       </div>
@@ -107,6 +125,23 @@ export default function ServerTabs({
                   if (confirm(`Are you sure you want to delete the ${serverId} server?`)) {
                     // Would call actual delete function here
                     alert('Delete server functionality coming soon');
+                  }
+                }}
+                onStart={() => {
+                  const serverConfig = config[serverId];
+                  if (serverConfig) {
+                    try {
+                      startServer(serverId, serverConfig, workspaceId);
+                    } catch (error) {
+                      console.error(`Failed to start server ${serverId}:`, error);
+                    }
+                  }
+                }}
+                onStop={() => {
+                  try {
+                    stopServer(serverId, workspaceId);
+                  } catch (error) {
+                    console.error(`Failed to stop server ${serverId}:`, error);
                   }
                 }}
               />
@@ -145,7 +180,7 @@ export default function ServerTabs({
             // Call the original edit handler with the updated config
             const updatedConfigSet = { ...config };
             updatedConfigSet[serverId] = updatedConfig;
-            await updateToolConfig(selectedConfigId, updatedConfigSet);
+            await updateToolConfig(configId, updatedConfigSet, workspaceId);
           }}
         />
       )}

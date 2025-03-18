@@ -12,19 +12,21 @@ export const tools = {
    * List all available tool configurations
    */
   list: async (workspaceId?: string) => {
-    const path = workspaceId 
+    const basePath = workspaceId 
       ? `/workspaces/${workspaceId}/tools/configs`
       : '/system/tools/configs';
       
     try {
       // Get the list of configuration IDs
-      const configIds = await apiClient.fetchJson(path);
+      console.log(`[api] Fetching tools config list from ${basePath}`);
+      const configIds = await apiClient.fetchJson(basePath);
       console.log('Config IDs:', configIds);
       
       // Get the active config ID
       const activePath = workspaceId
         ? `/workspaces/${workspaceId}/tools/configs/active`
         : '/system/tools/configs/active';
+      console.log(`[api] Fetching active config from ${activePath}`);
       const activeResult = await apiClient.fetchJson(activePath);
       const activeId = activeResult.active;
       console.log('Active config ID:', activeId);
@@ -36,6 +38,7 @@ export const tools = {
           const configPath = workspaceId
             ? `/workspaces/${workspaceId}/tools/configs/${id}`
             : `/system/tools/configs/${id}`;
+          console.log(`[api] Fetching config details from ${configPath}`);
           const configDetails = await apiClient.fetchJson(configPath);
           configs[id] = configDetails;
         } catch (err) {
@@ -132,6 +135,38 @@ export const tools = {
     return apiClient.fetchJson(path, {
       method: 'PUT',
       body: { id }
+    });
+  },
+  
+  /**
+   * Start a server with configuration
+   */
+  startServer: async (serverId: string, config: any, workspaceId?: string) => {
+    const path = workspaceId
+      ? `/workspaces/${workspaceId}/tools/servers`
+      : '/system/tools/servers';
+
+    console.log(`[api] Starting server ${serverId} at ${path}`);
+    return apiClient.fetchJson(path, {
+      method: 'POST',
+      body: {
+        type: serverId,
+        config: config
+      }
+    });
+  },
+
+  /**
+   * Stop a running server
+   */
+  stopServer: async (serverId: string, workspaceId?: string) => {
+    const path = workspaceId
+      ? `/workspaces/${workspaceId}/tools/servers/${serverId}`
+      : `/system/tools/servers/${serverId}`;
+      
+    console.log(`[api] Stopping server ${serverId} at ${path}`);
+    return apiClient.fetchJson(path, {
+      method: 'DELETE'
     });
   },
   

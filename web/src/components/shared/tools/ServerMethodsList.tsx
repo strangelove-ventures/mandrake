@@ -71,11 +71,11 @@ export default function ServerMethodsList({
   }
   
   return (
-    <div className="mt-4">
-      <div className="flex justify-between items-center mb-3">
+    <div className="mt-4 overflow-y-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-3 sticky top-0 bg-background z-10 py-2 gap-2">
         <h3 className="text-lg font-medium">Available Methods - {serverId}</h3>
         
-        <div className="flex space-x-2">
+        <div className="flex flex-wrap space-x-2 mt-2 sm:mt-0">
           {/* Method refresh button */}
           <Button
             variant="outline"
@@ -103,8 +103,9 @@ export default function ServerMethodsList({
       </div>
       
       {methods.length > 0 ? (
-        <ul className="space-y-2">
-          {methods.map(method => (
+        <div className="overflow-y-auto max-h-[60vh] pr-1">
+          <ul className="space-y-2">
+            {methods.map(method => (
             <li 
               key={method.name}
               className="p-3 border rounded-md flex justify-between items-center hover:bg-gray-50 dark:hover:bg-gray-800 cursor-pointer"
@@ -121,7 +122,8 @@ export default function ServerMethodsList({
               </div>
             </li>
           ))}
-        </ul>
+          </ul>
+        </div>
       ) : (
         <div className="text-center p-6 border rounded-lg bg-gray-50 dark:bg-gray-800">
           <p className="text-gray-500 dark:text-gray-400">
