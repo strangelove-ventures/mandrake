@@ -21,6 +21,7 @@ export default function ServerStatusIndicator({
   } else {
     switch (status?.toLowerCase()) {
       case 'running':
+      case 'started':
         color = 'bg-green-500';
         break;
       case 'error':

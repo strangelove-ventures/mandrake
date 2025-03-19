@@ -293,15 +293,55 @@ export function toolsOperationRoutes(mcpManager: MCPManager) {
   app.get('/server/:serverId', async (c) => {
     const serverId = c.req.param('serverId');
     try {
+      // First, verify the server exists
       const server = await mcpManager.getServer(serverId);
       if (!server) {
-        return c.json({ error: `Server ${serverId} not found` }, 404);
+        console.error(`Server ${serverId} not found when trying to list tools`);
+        return c.json({ 
+          error: `Server ${serverId} not found`,
+          status: 'not_found'
+        }, 404);
       }
-      const tools = await server.listTools();
-      return c.json(tools);
+      
+      // Get the server state to check if it's running properly
+      const state = server.getState();
+      if (state.error) {
+        console.warn(`Server ${serverId} has errors: ${state.error}`);
+      }
+      
+      try {
+        // Try to list tools, but handle errors specifically
+        console.log(`Listing tools for server ${serverId}...`);
+        const tools = await server.listTools();
+        
+        // If we got no tools, indicate this in the response
+        if (!tools || tools.length === 0) {
+          console.warn(`No tools found for server ${serverId}`);
+          return c.json({ 
+            tools: [],
+            warning: 'No tools available for this server',
+            status: 'empty'
+          });
+        }
+        
+        return c.json(tools);
+      } catch (toolsError) {
+        // Specific error for tool listing failure
+        console.error(`Error listing tools for server ${serverId}:`, toolsError);
+        return c.json({ 
+          error: toolsError instanceof Error ? toolsError.message : String(toolsError),
+          status: 'tools_error',
+          serverRunning: true,
+          logs: state.logs?.slice(-10) || []
+        }, 500);
+      }
     } catch (error) {
-      console.error(`Error listing tools for server ${serverId}:`, error);
-      return c.json({ error: `Failed to list tools for server ${serverId}` }, 500);
+      // General error for server access issues
+      console.error(`General error with server ${serverId}:`, error);
+      return c.json({ 
+        error: error instanceof Error ? error.message : String(error),
+        status: 'server_error'
+      }, 500);
     }
   });
   

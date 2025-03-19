@@ -11,6 +11,8 @@ interface ServerMethodsListProps {
   refreshStatus?: () => void;
   isRefreshing?: boolean;
   workspaceId?: string;
+  onLoadError?: (error: any, details?: any) => void;
+  onLoadSuccess?: () => void;
 }
 
 export default function ServerMethodsList({ 
@@ -18,41 +20,131 @@ export default function ServerMethodsList({
   onSelectMethod, 
   refreshStatus, 
   isRefreshing,
-  workspaceId
+  workspaceId,
+  onLoadError,
+  onLoadSuccess
 }: ServerMethodsListProps) {
   // Use local state only for methods
   const [methods, setMethods] = useState<any[]>([]);
   const [loadingState, setLoadingState] = useState<'idle' | 'loading' | 'error' | 'success'>('idle');
   
+  // State for server logs (when there's an error)
+  const [serverLogs, setServerLogs] = useState<string[]>([]);
+  const [errorDetails, setErrorDetails] = useState<{ message: string, status: string } | null>(null);
+
   // Load methods for the server - only on initial mount
   useEffect(() => {
     const fetchMethods = async () => {
       setLoadingState('loading');
+      setErrorDetails(null);
+      setServerLogs([]);
+      
       try {
         // Fetch directly from API to avoid any store-based side effects
-        const methodList = await api.tools.getServerMethods(serverId, workspaceId);
-        setMethods(methodList);
+        console.log(`Fetching methods for server ${serverId}...`);
+        const response = await api.tools.getServerMethods(serverId, workspaceId);
+        
+        // Check if the response has an error property (API-level error)
+        if ('error' in response) {
+          console.error(`API returned error for server ${serverId}:`, response.error);
+          setLoadingState('error');
+          setErrorDetails({
+            message: response.error,
+            status: response.status || 'unknown_error'
+          });
+          
+          // If logs are available, show them
+          if (response.logs && Array.isArray(response.logs)) {
+            setServerLogs(response.logs);
+          }
+          
+          onLoadError?.(new Error(response.error), response);
+          return;
+        }
+        
+        // Check if we got an empty tools array with a warning
+        if ('warning' in response) {
+          console.warn(`Warning for server ${serverId}:`, response.warning);
+          setLoadingState('success'); // Still mark as success but with empty methods
+          setMethods([]);
+          setErrorDetails({
+            message: response.warning,
+            status: response.status || 'warning'
+          });
+          return;
+        }
+        
+        // Normal case - we got an array of methods
+        setMethods(Array.isArray(response) ? response : []);
         setLoadingState('success');
+        onLoadSuccess?.();
       } catch (err) {
         console.error('Error loading methods:', err);
         setLoadingState('error');
+        setErrorDetails({
+          message: err instanceof Error ? err.message : String(err),
+          status: 'network_error'
+        });
+        onLoadError?.(err, { status: 'network_error' });
       }
     };
     
     fetchMethods();
-  }, [serverId]);
+  }, [serverId, workspaceId, onLoadError, onLoadSuccess]);
   
   // Function to refresh methods
   const handleRefreshMethods = async () => {
     setLoadingState('loading');
+    setErrorDetails(null);
+    setServerLogs([]);
+    
     try {
       // Fetch directly from API to avoid any store-based side effects
-      const methodList = await api.tools.getServerMethods(serverId, workspaceId);
-      setMethods(methodList);
+      console.log(`Refreshing methods for server ${serverId}...`);
+      const response = await api.tools.getServerMethods(serverId, workspaceId);
+      
+      // Check if the response has an error property (API-level error)
+      if ('error' in response) {
+        console.error(`API returned error when refreshing methods for server ${serverId}:`, response.error);
+        setLoadingState('error');
+        setErrorDetails({
+          message: response.error,
+          status: response.status || 'unknown_error'
+        });
+        
+        // If logs are available, show them
+        if (response.logs && Array.isArray(response.logs)) {
+          setServerLogs(response.logs);
+        }
+        
+        onLoadError?.(new Error(response.error));
+        return;
+      }
+      
+      // Check if we got an empty tools array with a warning
+      if ('warning' in response) {
+        console.warn(`Warning for server ${serverId}:`, response.warning);
+        setLoadingState('success'); // Still mark as success but with empty methods
+        setMethods([]);
+        setErrorDetails({
+          message: response.warning,
+          status: response.status || 'warning'
+        });
+        return;
+      }
+      
+      // Normal case - we got an array of methods
+      setMethods(Array.isArray(response) ? response : []);
       setLoadingState('success');
+      onLoadSuccess?.();
     } catch (err) {
       console.error('Error refreshing methods:', err);
       setLoadingState('error');
+      setErrorDetails({
+        message: err instanceof Error ? err.message : String(err),
+        status: 'network_error'
+      });
+      onLoadError?.(err);
     }
   };
   
@@ -126,16 +218,52 @@ export default function ServerMethodsList({
         </div>
       ) : (
         <div className="text-center p-6 border rounded-lg bg-gray-50 dark:bg-gray-800">
-          <p className="text-gray-500 dark:text-gray-400">
-            {loadingState === 'loading' ? 'Loading methods...' : 'No methods found for this server'}
-          </p>
-          {loadingState === 'error' && (
-            <button 
-              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-              onClick={handleRefreshMethods}
-            >
-              Retry
-            </button>
+          {/* Different messages based on state */}
+          {loadingState === 'loading' ? (
+            <p className="text-gray-500 dark:text-gray-400">
+              Loading methods...
+            </p>
+          ) : errorDetails ? (
+            <div className="space-y-4">
+              <p className="text-red-500 dark:text-red-400 font-medium">
+                {errorDetails.message}
+              </p>
+              <p className="text-gray-500 dark:text-gray-400 text-sm">
+                {errorDetails.status === 'empty' ? (
+                  'This server is running but has no available methods. It may not be properly implementing the MCP protocol.'
+                ) : errorDetails.status === 'tools_error' ? (
+                  'The server is running but encountered an error when trying to list its methods.'
+                ) : errorDetails.status === 'server_error' ? (
+                  'There was a problem communicating with the server.'
+                ) : (
+                  'There was a problem loading methods from this server.'
+                )}
+              </p>
+              
+              {/* Show server logs if available */}
+              {serverLogs.length > 0 && (
+                <div className="mt-4">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Server Logs:</p>
+                  <div className="bg-gray-800 text-gray-200 p-2 rounded-md text-xs font-mono max-h-32 overflow-y-auto text-left">
+                    {serverLogs.map((log, index) => (
+                      <div key={index} className="py-1">{log}</div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              
+              <Button
+                className="mt-4"
+                onClick={handleRefreshMethods}
+              >
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Retry Loading Methods
+              </Button>
+            </div>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400">
+              No methods found for this server
+            </p>
           )}
         </div>
       )}

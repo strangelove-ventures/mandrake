@@ -3,6 +3,7 @@
 
 import { useEffect, useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
+import { AlertCircle } from 'lucide-react';
 import { ServerConfig } from './types';
 import ServerMethodsList from './ServerMethodsList';
 import MethodExecutionPanel from './MethodExecutionPanel';
@@ -29,6 +30,9 @@ export default function ServerDetailsModal({
   const [methodDetails, setMethodDetails] = useState<any | null>(null);
   const [refreshing] = useState(false);
   const [showExecutionPanel, setShowExecutionPanel] = useState(false);
+  const [methodsLoadError, setMethodsLoadError] = useState<string | null>(null);
+  const [methodsLoadErrorDetail, setMethodsLoadErrorDetail] = useState<any>(null);
+  const [isRetryingLoad, setIsRetryingLoad] = useState(false);
   const isMounted = useRef(true);
   
   useEffect(() => {
@@ -46,6 +50,7 @@ export default function ServerDetailsModal({
       setShowExecutionPanel(false);
       setCurrentMethodName(null);
       setMethodDetails(null);
+      setMethodsLoadError(null);
     }
   }, [isOpen]);
   
@@ -79,12 +84,46 @@ export default function ServerDetailsModal({
       <div className="space-y-4 overflow-y-auto">
         {!showExecutionPanel ? (
           // Methods List when not showing execution panel
-          <ServerMethodsList 
-            serverId={serverId} 
-            onSelectMethod={handleSelectMethod} 
-            isRefreshing={refreshing}
-            workspaceId={workspaceId}
-          />
+          <>
+            <ServerMethodsList 
+              serverId={serverId} 
+              onSelectMethod={handleSelectMethod} 
+              isRefreshing={refreshing}
+              workspaceId={workspaceId}
+              onLoadError={(err, details) => {
+                console.error(`Error loading methods for ${serverId}:`, err, details);
+                setMethodsLoadError(err instanceof Error ? err.message : String(err));
+                setMethodsLoadErrorDetail(details || null);
+              }}
+              onLoadSuccess={() => setMethodsLoadError(null)}
+            />
+
+            {methodsLoadError && (
+              <div className="mt-4 p-3 border border-red-200 rounded-md bg-red-50 text-red-700 dark:border-red-800 dark:bg-red-900/20 dark:text-red-400">
+                <div className="flex items-start">
+                  <AlertCircle className="h-5 w-5 mr-2 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-medium">Error loading methods</p>
+                    <p className="text-sm mt-1">{methodsLoadError}</p>
+                    <p className="text-sm mt-2">This could be because the server is not running or there are connectivity issues.</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-2"
+                      disabled={isRetryingLoad}
+                      onClick={() => {
+                        setIsRetryingLoad(true);
+                        // Force a reload of the methods list
+                        setTimeout(() => setIsRetryingLoad(false), 1000);
+                      }}
+                    >
+                      Retry Loading Methods
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           // Show execution panel when method is selected
           <>

@@ -67,7 +67,10 @@ export default function ServerTabs({
         <Button
           variant="outline"
           size="sm"
-          onClick={() => loadServerStatus(workspaceId)}
+          onClick={() => {
+            console.log('Refreshing server status...');
+            loadServerStatus(workspaceId);
+          }}
           title="Refresh server status"
         >
           <RefreshCw className="h-4 w-4 mr-1" />

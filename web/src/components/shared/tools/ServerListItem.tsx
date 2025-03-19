@@ -58,7 +58,7 @@ export default function ServerListItem({
         {/* Start/Stop buttons */}
         {!config.disabled && (
           <>
-            {status?.status === 'running' ? (
+            {status?.status === 'running' || status?.status === 'started' ? (
               <Button
                 variant="ghost"
                 size="icon"
