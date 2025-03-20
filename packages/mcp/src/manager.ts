@@ -1,8 +1,7 @@
 import { MCPServerImpl } from './server'
 import { createLogger } from '@mandrake/utils'
-import type { ServerConfig, ServerState } from './types'
+import type { ServerConfig, ServerState, ToolWithServerIdentifier } from './types'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
-import type { ToolWithServerIdentifier } from '@mandrake/utils/src/types/mcp'
 
 /**
  * MCP Manager

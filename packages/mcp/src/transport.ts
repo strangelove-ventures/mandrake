@@ -1,7 +1,7 @@
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
-import type { ServerConfig } from './types'
+import type { ServerConfig, TransportType } from './types'
 import { createLogger } from '@mandrake/utils'
 
 /**

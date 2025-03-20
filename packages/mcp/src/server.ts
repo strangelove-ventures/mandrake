@@ -7,8 +7,7 @@ import type { Stream } from 'node:stream'
 import { TransportFactory } from './transport'
 import { MCPProxy } from './proxy'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
-import type { ServerConfig, ServerState } from './types'
-import type { MCPServer as IMCPServer } from '@mandrake/utils/src/types/mcp'
+import type { MCPServer, ServerConfig, ServerState } from './types'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 
 // Default client config 
@@ -32,7 +31,7 @@ const CLIENT_CONFIG = {
  * - Enhanced logging
  * - Better status tracking
  */
-export class MCPServerImpl implements IMCPServer {
+export class MCPServerImpl implements MCPServer {
   private client?: Client
   private transport?: ReturnType<typeof TransportFactory.create>
   private proxy?: MCPProxy
