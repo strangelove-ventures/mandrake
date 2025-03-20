@@ -1,7 +1,8 @@
 import { createLogger } from '@mandrake/utils'
 import { LogBuffer } from '../logger'
-import type { ServerConfig, ServerState } from '../types'
+import type { ServerConfig, ServerState, HealthMetrics } from '../types'
 import { MCPError, ServerDisabledError } from '../errors'
+import { ServerHealthManager } from './health'
 
 /**
  * Handles server lifecycle operations
@@ -16,6 +17,7 @@ import { MCPError, ServerDisabledError } from '../errors'
 export class ServerLifecycle {
   private logBuffer: LogBuffer
   private state: ServerState
+  private healthManager?: ServerHealthManager
   private logger = createLogger('mcp').child({ 
     meta: { component: 'lifecycle', id: this.id }
   })
@@ -30,20 +32,58 @@ export class ServerLifecycle {
       logs: []
     }
   }
+  
+  /**
+   * Initialize the health manager with a reference to the server
+   * This must be called after the server is fully constructed
+   */
+  initHealthManager(server: any): void {
+    this.healthManager = new ServerHealthManager(this.id, server, this.config)
+  }
+  
+  /**
+   * Start health monitoring
+   */
+  startHealthMonitoring(): void {
+    if (this.healthManager) {
+      this.healthManager.startMonitoring()
+    }
+  }
+  
+  /**
+   * Stop health monitoring
+   */
+  stopHealthMonitoring(): void {
+    if (this.healthManager) {
+      this.healthManager.stopMonitoring()
+    }
+  }
 
   getId(): string {
     return this.id
   }
 
   /**
-   * Get the current server state with status
+   * Get the current server state with status and health metrics
    */
   getState(hasClient: boolean): ServerState & { status: string } {
     return {
       ...this.state,
       logs: this.logBuffer.getLogs(),
-      status: this.getStatus(hasClient)
+      status: this.getStatus(hasClient),
+      health: this.healthManager?.getMetrics()
     }
+  }
+  
+  /**
+   * Run a manual health check
+   * Returns true if healthy, false otherwise
+   */
+  async checkHealth(): Promise<boolean> {
+    if (this.healthManager) {
+      return await this.healthManager.checkHealth()
+    }
+    return false
   }
 
   /**
@@ -87,6 +127,9 @@ export class ServerLifecycle {
     
     this.logBuffer.append('Connected successfully')
     this.logger.info('Server started successfully', { id: this.id })
+    
+    // Start health monitoring
+    this.startHealthMonitoring()
   }
 
   /**
@@ -135,6 +178,9 @@ export class ServerLifecycle {
   logServerStopped(): void {
     this.logBuffer.append('Server stopped')
     this.logger.info('Server stopped successfully', { id: this.id })
+    
+    // Stop health monitoring
+    this.stopHealthMonitoring()
   }
 
   /**

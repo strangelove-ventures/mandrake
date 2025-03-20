@@ -34,6 +34,10 @@ export class MCPServerImpl implements MCPServer {
     )
     this.clientManager = new ClientManager(id)
     this.proxyManager = new ProxyManager(id)
+    
+    // Initialize health manager with a reference to this server
+    // This needs to happen after the server instance is constructed
+    this.lifecycle.initHealthManager(this)
   }
 
   getId(): string {
@@ -194,5 +198,14 @@ export class MCPServerImpl implements MCPServer {
    */
   getConfig(): ServerConfig {
     return this.lifecycle.getConfig()
+  }
+  
+  /**
+   * Run a health check on the server
+   * 
+   * @returns Promise that resolves to true if server is healthy, false otherwise
+   */
+  async checkHealth(): Promise<boolean> {
+    return this.lifecycle.checkHealth()
   }
 }

@@ -397,9 +397,10 @@ export class MCPManager {
         continue
       }
       
-      const healthPromise = server.listTools()
-        .then(() => {
-          healthStatus.set(id, true)
+      // Use the new dedicated health check method
+      const healthPromise = server.checkHealth()
+        .then((isHealthy) => {
+          healthStatus.set(id, isHealthy)
         })
         .catch(() => {
           healthStatus.set(id, false)
@@ -412,6 +413,34 @@ export class MCPManager {
     await Promise.all(healthPromises)
     
     return healthStatus
+  }
+  
+  /**
+   * Get detailed health metrics for all servers
+   * 
+   * @returns Map of server identifiers to health metrics
+   */
+  getHealthMetrics(): Map<string, any> {
+    this.logger.info('Getting health metrics for all servers')
+    
+    const healthMetrics = new Map<string, any>()
+    
+    for (const [id, server] of this.servers) {
+      const state = server.getState()
+      healthMetrics.set(id, {
+        status: state.status,
+        health: state.health || {
+          isHealthy: state.status === 'connected',
+          checkCount: 0,
+          lastCheckTime: 0,
+          failureCount: 0,
+          consecutiveFailures: 0,
+          checkHistory: []
+        }
+      })
+    }
+    
+    return healthMetrics
   }
 
   /**
@@ -432,10 +461,19 @@ export class MCPManager {
         this.logger.debug('Running scheduled health check')
         const healthStatus = await this.checkServerHealth()
         
-        // Log any unhealthy servers
+        // Log any unhealthy servers (with more details)
         for (const [id, healthy] of healthStatus) {
           if (!healthy) {
-            this.logger.warn('Server health check failed', { id })
+            // Get detailed health metrics for better reporting
+            const metrics = this.getHealthMetrics().get(id)
+            this.logger.warn('Server health check failed', { 
+              id,
+              status: metrics?.status,
+              checkCount: metrics?.health?.checkCount,
+              failureCount: metrics?.health?.failureCount,
+              consecutiveFailures: metrics?.health?.consecutiveFailures,
+              lastError: metrics?.health?.lastError
+            })
           }
         }
       } catch (error) {

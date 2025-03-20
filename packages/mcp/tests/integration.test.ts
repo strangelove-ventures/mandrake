@@ -261,5 +261,85 @@ describe('MCP Integration', () => {
             expect(updatedHealth.get('health1')).toBe(true)
             expect(updatedHealth.get('disabled-server')).toBe(false) // Disabled servers are considered unhealthy
         })
+        
+        test('enhanced health metrics are available', async () => {
+            // Configure a server with custom health check settings
+            const healthConfig: ServerConfig = {
+                ...filesystemConfig,
+                healthCheck: {
+                    strategy: 'tool_listing',
+                    intervalMs: 10000,
+                    timeoutMs: 3000,
+                    retries: 2
+                }
+            }
+            
+            await manager.startServer('metrics-test', healthConfig)
+            
+            // Get the server instance
+            const server = manager.getServer('metrics-test')
+            expect(server).toBeDefined()
+            
+            // Trigger a health check
+            await server!.checkHealth()
+            
+            // Get the health metrics
+            const metrics = manager.getHealthMetrics()
+            const serverMetrics = metrics.get('metrics-test')
+            
+            // Verify basic metrics structure
+            expect(serverMetrics).toBeDefined()
+            expect(serverMetrics.status).toBe('connected')
+            expect(serverMetrics.health).toBeDefined()
+            expect(serverMetrics.health.isHealthy).toBe(true)
+            expect(serverMetrics.health.checkCount).toBeGreaterThan(0)
+            expect(serverMetrics.health.lastCheckTime).toBeGreaterThan(0)
+            expect(serverMetrics.health.checkHistory).toBeInstanceOf(Array)
+            
+            // Detailed check on a history entry
+            const historyEntry = serverMetrics.health.checkHistory[0]
+            expect(historyEntry).toBeDefined()
+            expect(historyEntry.timestamp).toBeGreaterThan(0)
+            expect(historyEntry.success).toBe(true)
+            expect(historyEntry.responseTimeMs).toBeGreaterThan(0)
+        })
+        
+        test('server can use specific tool health check strategy', async () => {
+            // Configure a server with specific tool health check
+            const specificToolConfig: ServerConfig = {
+                ...filesystemConfig,
+                healthCheck: {
+                    strategy: 'specific_tool',
+                    specificTool: {
+                        name: 'read_file',
+                        args: { path: '/projects/tmp/integration-test.txt' }
+                    },
+                    intervalMs: 5000
+                }
+            }
+            
+            // Write a file first that the health check will use
+            await manager.startServer('tool-writer', filesystemConfig)
+            await manager.invokeTool('tool-writer', 'write_file', { 
+                path: '/projects/tmp/integration-test.txt', 
+                content: 'Health check test file' 
+            })
+            
+            // Start server with specific tool check
+            await manager.startServer('specific-tool-check', specificToolConfig)
+            
+            // Run a health check
+            const healthStatus = await manager.checkServerHealth()
+            expect(healthStatus.get('specific-tool-check')).toBe(true)
+            
+            // Get detailed metrics
+            const metrics = manager.getHealthMetrics()
+            const serverMetrics = metrics.get('specific-tool-check')
+            
+            expect(serverMetrics.health.isHealthy).toBe(true)
+            
+            // Clean up
+            await manager.stopServer('tool-writer')
+        })
     })
 })

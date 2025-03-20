@@ -26,10 +26,11 @@ This document outlines potential improvements and simplifications for the MCP pa
      - `ProxyManager`: Handles proxy setup and teardown
    - Extracted retry logic into the lifecycle component
 
-5. **Enhance Health Checks**:
-   - Current implementation uses a basic polling mechanism
-   - Add configurable health check strategies
-   - Include more detailed health metrics beyond binary healthy/unhealthy
+5. **Enhance Health Checks**: DONE
+   - Added ServerHealthManager component for focused health monitoring
+   - Implemented configurable health check strategies (TOOL_LISTING, SPECIFIC_TOOL, PING, CUSTOM)
+   - Added detailed health metrics with history tracking
+   - Integrated health metrics into server state
 
 ## Infrastructure Improvements
 
