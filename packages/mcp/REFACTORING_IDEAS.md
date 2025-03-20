@@ -4,24 +4,27 @@ This document outlines potential improvements and simplifications for the MCP pa
 
 ## Type System Improvements
 
-1. **Consolidate Type Definitions**:
+1. **Consolidate Type Definitions**: DONE
    - Eliminate circular dependency by moving types from utils package
    - Create proper local type definitions in the MCP package
    - Only export interfaces that are essential for consumers
 
 ## Error Handling
 
-2. **Streamline Error Handling**:
+2. **Streamline Error Handling**: DONE
    - Implement a dedicated `MCPError` class with error codes
    - Replace generic error handling with structured error types
    - Consolidate similar error handling patterns across classes
 
 ## Architecture Improvements
 
-3. **Simplify Server Implementation**:
-   - The `MCPServerImpl` class has many responsibilities (transport, client, and proxy management)
-   - Consider splitting into smaller, focused classes
-   - Extract the retry logic into a dedicated utility class
+3. **Simplify Server Implementation**: DONE
+   - Split the `MCPServerImpl` class into smaller, focused classes:
+     - `ServerLifecycle`: Manages server lifecycle and state
+     - `TransportManager`: Handles transport creation and management
+     - `ClientManager`: Manages client creation and tool operations
+     - `ProxyManager`: Handles proxy setup and teardown
+   - Extracted retry logic into the lifecycle component
 
 5. **Enhance Health Checks**:
    - Current implementation uses a basic polling mechanism

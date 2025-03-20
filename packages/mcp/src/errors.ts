@@ -170,12 +170,12 @@ export class ToolInvocationError extends MCPError {
  */
 export class TransportError extends MCPError {
   constructor(
-    message: string,
+    serverId: string,
     errorCode: MCPErrorCode = MCPErrorCode.TRANSPORT_CONNECTION_FAILED,
-    serverId?: string,
     cause?: Error,
     details?: Record<string, any>
   ) {
+    const message = `Transport error on server '${serverId}'`
     super(
       message,
       errorCode,

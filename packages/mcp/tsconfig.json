@@ -9,6 +9,7 @@
     "types": ["bun-types"]
   },
   "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"],
   "references": [
     { "path": "../utils" }
   ]

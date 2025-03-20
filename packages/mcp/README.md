@@ -51,13 +51,45 @@ The MCP package consists of these key components:
 
 ### MCPServerImpl
 
-Manages an individual MCP server instance:
+Coordinates the components that manage a single MCP server instance:
 
-- Handles server lifecycle (start/stop)
-- Establishes and maintains transport
-- Provides tool discovery and invocation
-- Manages error handling and retry logic
-- Buffers server logs
+- Uses a composition pattern to delegate responsibilities to specialized components
+- Manages component lifecycle and interactions
+- Provides consistent error handling and robust logging
+
+### ServerLifecycle
+
+Manages server lifecycle and state:
+
+- Handles server start/stop operations
+- Manages retry logic with exponential backoff
+- Tracks server state and status
+- Maintains server logs
+
+### TransportManager
+
+Handles transport creation and management:
+
+- Creates the appropriate transport based on configuration
+- Sets up error and log handling
+- Manages transport connections and cleanup
+
+### ClientManager
+
+Manages MCP client operations:
+
+- Creates and connects clients to transports
+- Handles tool discovery and invocation
+- Manages completions and parameter suggestions
+- Provides structured error handling
+
+### ProxyManager
+
+Handles bidirectional proxies between transports:
+
+- Sets up communication channels
+- Manages message routing
+- Handles connection errors
 
 ### MCPManager
 
@@ -67,14 +99,6 @@ Provides top-level management of multiple MCP servers:
 - Provides access to tools across all servers
 - Enables tool invocation by server name
 - Handles cleanup and resource management
-
-### Transport Layer
-
-Abstracts the communication mechanism:
-
-- **TransportFactory**: Creates appropriate transport based on configuration
-- **StdioClientTransport**: Communicates via stdin/stdout with child processes
-- **SSEClientTransport**: Communicates via HTTP Server-Sent Events
 
 ### LogBuffer
 
