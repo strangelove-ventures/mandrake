@@ -7,6 +7,9 @@
 // Export core types
 export * from './types'
 
+// Export error types
+export * from './errors'
+
 // Export utility classes
 export * from './logger'
 

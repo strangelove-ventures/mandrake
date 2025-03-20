@@ -139,7 +139,7 @@ describe('MCP Integration', () => {
                 path: '/projects/tmp/integration-test.txt' 
             }))
                 .rejects
-                .toThrow('Server is disabled')
+                .toThrow(`Server 'disabled' is disabled`)
             
             await disabledServer.stop() // Should clean up properly
         })

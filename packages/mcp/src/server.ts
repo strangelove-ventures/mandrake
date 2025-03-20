@@ -9,6 +9,16 @@ import { MCPProxy } from './proxy'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import type { MCPServer, ServerConfig, ServerState } from './types'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
+import { 
+  MCPError, 
+  MCPErrorCode, 
+  ServerDisabledError, 
+  ServerNotConnectedError,
+  ToolInvocationError,
+  ToolNotFoundError,
+  TransportError,
+  convertToMCPError
+} from './errors'
 
 // Default client config 
 const CLIENT_CONFIG = {
@@ -205,15 +215,15 @@ export class MCPServerImpl implements MCPServer {
     this.logger.info('Invoking tool', { id: this.id, method, args })
     
     if (this.config.disabled) {
-      const msg = 'Server is disabled'
-      this.logBuffer.append(msg)
-      throw new Error(msg)
+      const error = new ServerDisabledError(this.id)
+      this.logBuffer.append(error.message)
+      throw error
     }
 
     if (!this.client) {
-      const msg = 'Server not connected'
-      this.logBuffer.append(msg)
-      throw new Error(msg)
+      const error = new ServerNotConnectedError(this.id)
+      this.logBuffer.append(error.message)
+      throw error
     }
 
     try {
@@ -229,23 +239,53 @@ export class MCPServerImpl implements MCPServer {
         // result.content is [{type: 'text', text: 'Test error'}]  
         const errorText = (result.content as any)[0]?.text || 'Unknown error from tool'
         this.logBuffer.append(`Tool error: ${errorText}`)
-        throw new Error(errorText)
+        
+        const toolError = new ToolInvocationError(
+          this.id,
+          method,
+          errorText,
+          undefined,
+          { args, result }
+        )
+        throw toolError
       }
 
       this.logBuffer.append(`Tool call successful: ${method}`)
       this.logger.info('Tool invocation successful', { id: this.id, method })
       return result
     } catch (error) {
+      // If it's already a MCPError, just pass it through
+      if (error instanceof MCPError) {
+        this.logBuffer.append(`Tool error: ${error.message}`)
+        
+        this.logger.error('Tool invocation failed', {
+          id: this.id,
+          method,
+          error: error.toJSON()
+        })
+        
+        throw error
+      }
+      
+      // Convert to ToolInvocationError
       const errorMsg = error instanceof Error ? error.message : String(error)
       this.logBuffer.append(`Tool error: ${errorMsg}`)
+      
+      const toolError = new ToolInvocationError(
+        this.id,
+        method,
+        errorMsg,
+        error instanceof Error ? error : undefined,
+        { args }
+      )
       
       this.logger.error('Tool invocation failed', {
         id: this.id,
         method,
-        error: errorMsg
+        error: toolError.toJSON()
       })
       
-      throw new Error(`Error invoking ${method}: ${errorMsg}`)
+      throw toolError
     }
   }
 
@@ -309,8 +349,9 @@ export class MCPServerImpl implements MCPServer {
     }
 
     if (!this.client) {
-      this.logBuffer.append('Cannot get completions: server not connected')
-      throw new Error('Server not connected')
+      const error = new ServerNotConnectedError(this.id)
+      this.logBuffer.append(`Cannot get completions: ${error.message}`)
+      throw error
     }
 
     try {
@@ -364,17 +405,40 @@ export class MCPServerImpl implements MCPServer {
         throw error
       }
     } catch (error) {
+      // If it's already a MCPError, just pass it through
+      if (error instanceof MCPError) {
+        this.logBuffer.append(`Error getting completions for ${methodName}.${argName}: ${error.message}`)
+        
+        this.logger.error('Failed to get completions', { 
+          id: this.id, 
+          methodName, 
+          argName, 
+          error: error.toJSON() 
+        })
+        
+        throw error
+      }
+      
+      // Convert to MCPError
       const errorMsg = error instanceof Error ? error.message : String(error)
+      
+      const mcpError = convertToMCPError(
+        error,
+        MCPErrorCode.COMPLETIONS_FAILED,
+        `Failed to get completions for ${methodName}.${argName}`,
+        this.id,
+        { methodName, argName, value }
+      )
       
       this.logger.error('Failed to get completions', { 
         id: this.id, 
         methodName, 
         argName, 
-        error: errorMsg 
+        error: mcpError.toJSON() 
       })
       
       this.logBuffer.append(`Error getting completions for ${methodName}.${argName}: ${errorMsg}`)
-      throw new Error(`Error getting completions: ${errorMsg}`)
+      throw mcpError
     }
   }
 

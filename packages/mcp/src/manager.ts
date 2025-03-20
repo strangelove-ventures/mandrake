@@ -2,6 +2,14 @@ import { MCPServerImpl } from './server'
 import { createLogger } from '@mandrake/utils'
 import type { ServerConfig, ServerState, ToolWithServerIdentifier } from './types'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
+import { 
+  MCPError, 
+  MCPErrorCode, 
+  ServerAlreadyExistsError, 
+  ServerNotFoundError, 
+  ToolInvocationError,
+  convertToMCPError
+} from './errors'
 
 /**
  * MCP Manager
@@ -32,9 +40,9 @@ export class MCPManager {
     this.logger.info('Starting server', { id, config })
     
     if (this.servers.has(id)) {
-      const msg = `Server ${id} already exists`
-      this.logger.warn(msg, { id })
-      throw new Error(msg)
+      const error = new ServerAlreadyExistsError(id)
+      this.logger.warn(error.message, { id, error: error.toJSON() })
+      throw error
     }
 
     try {
@@ -43,9 +51,18 @@ export class MCPManager {
       this.servers.set(id, server)
       this.logger.info('Server started successfully', { id })
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      this.logger.error('Failed to start server', { id, error: errorMsg })
-      throw error
+      const mcpError = convertToMCPError(
+        error, 
+        MCPErrorCode.SERVER_START_FAILED,
+        `Failed to start server ${id}`,
+        id,
+        { config }
+      )
+      this.logger.error('Failed to start server', { 
+        id, 
+        error: mcpError.toJSON() 
+      })
+      throw mcpError
     }
   }
 
@@ -59,9 +76,9 @@ export class MCPManager {
     
     const server = this.servers.get(id)
     if (!server) {
-      const msg = `Server ${id} not found`
-      this.logger.warn(msg, { id })
-      throw new Error(msg)
+      const error = new ServerNotFoundError(id)
+      this.logger.warn(error.message, { id, error: error.toJSON() })
+      throw error
     }
     
     try {
@@ -69,9 +86,17 @@ export class MCPManager {
       this.servers.delete(id)
       this.logger.info('Server stopped successfully', { id })
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      this.logger.error('Error stopping server', { id, error: errorMsg })
-      throw error
+      const mcpError = convertToMCPError(
+        error,
+        MCPErrorCode.SERVER_STOP_FAILED,
+        `Failed to stop server ${id}`,
+        id
+      )
+      this.logger.error('Error stopping server', { 
+        id, 
+        error: mcpError.toJSON() 
+      })
+      throw mcpError
     }
   }
 
@@ -86,9 +111,9 @@ export class MCPManager {
     
     const server = this.servers.get(id)
     if (!server) {
-      const msg = `Server ${id} not found`
-      this.logger.warn(msg, { id })
-      throw new Error(msg)
+      const error = new ServerNotFoundError(id)
+      this.logger.warn(error.message, { id, error: error.toJSON() })
+      throw error
     }
 
     try {
@@ -96,9 +121,28 @@ export class MCPManager {
       await this.startServer(id, config)
       this.logger.info('Server updated successfully', { id })
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      this.logger.error('Error updating server', { id, error: errorMsg })
-      throw error
+      // Don't wrap MCPError instances again
+      if (error instanceof MCPError) {
+        this.logger.error('Error updating server', { 
+          id, 
+          error: error.toJSON(), 
+          phase: error.code === MCPErrorCode.SERVER_STOP_FAILED ? 'stop' : 'start' 
+        })
+        throw error
+      }
+      
+      const mcpError = convertToMCPError(
+        error,
+        MCPErrorCode.UNKNOWN_ERROR,
+        `Failed to update server ${id}`,
+        id,
+        { config }
+      )
+      this.logger.error('Error updating server', { 
+        id, 
+        error: mcpError.toJSON() 
+      })
+      throw mcpError
     }
   }
 
@@ -183,9 +227,9 @@ export class MCPManager {
     
     const server = this.servers.get(id)
     if (!server) {
-      const msg = `Server ${id} not found`
-      this.logger.warn(msg, { id })
-      throw new Error(msg)
+      const error = new ServerNotFoundError(id)
+      this.logger.warn(error.message, { id, error: error.toJSON() })
+      throw error
     }
 
     try {
@@ -193,9 +237,32 @@ export class MCPManager {
       this.logger.info('Tool invoked successfully', { id, method })
       return result
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
-      this.logger.error('Error invoking tool', { id, method, error: errorMsg })
-      throw error
+      // If it's already a MCPError, just pass it through
+      if (error instanceof MCPError) {
+        this.logger.error('Error invoking tool', { 
+          id, 
+          method, 
+          error: error.toJSON() 
+        })
+        throw error
+      }
+      
+      // Convert generic errors to ToolInvocationError
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      const toolError = new ToolInvocationError(
+        id,
+        method,
+        errorMessage,
+        error instanceof Error ? error : undefined,
+        { args }
+      )
+      
+      this.logger.error('Error invoking tool', { 
+        id, 
+        method, 
+        error: toolError.toJSON() 
+      })
+      throw toolError
     }
   }
 
@@ -218,9 +285,9 @@ export class MCPManager {
     
     const server = this.servers.get(id)
     if (!server) {
-      const msg = `Server ${id} not found`
-      this.logger.warn(msg, { id })
-      throw new Error(msg)
+      const error = new ServerNotFoundError(id)
+      this.logger.warn(error.message, { id, error: error.toJSON() })
+      throw error
     }
 
     try {
@@ -233,14 +300,33 @@ export class MCPManager {
       })
       return completions
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : String(error)
+      // If it's already a MCPError, just pass it through
+      if (error instanceof MCPError) {
+        this.logger.error('Error getting completions', { 
+          id, 
+          methodName, 
+          argName, 
+          error: error.toJSON() 
+        })
+        throw error
+      }
+      
+      // Convert error to MCPError
+      const mcpError = convertToMCPError(
+        error,
+        MCPErrorCode.COMPLETIONS_FAILED,
+        `Failed to get completions for ${methodName}.${argName}`,
+        id,
+        { methodName, argName, value }
+      )
+      
       this.logger.error('Error getting completions', { 
         id, 
         methodName, 
         argName, 
-        error: errorMsg 
+        error: mcpError.toJSON() 
       })
-      throw error
+      throw mcpError
     }
   }
 

@@ -146,7 +146,7 @@ describe('MCPProxy Integration Tests', () => {
       manager.invokeTool('disabled-server', 'read_file', { 
         path: '/projects/tmp/doesnt-matter.txt'
       })
-    ).rejects.toThrow('Server is disabled')
+    ).rejects.toThrow(`Server 'disabled-server' is disabled`)
   })
   
   test('multiple servers can run concurrently', async () => {
