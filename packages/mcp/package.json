@@ -12,7 +12,8 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@mandrake/utils": "workspace:*"
+    "@mandrake/utils": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.7.0"
   },
   "devDependencies": {
     "typescript": "^5.0.0"
