@@ -162,7 +162,7 @@ export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager
     }
   });
   
-  // Get status for a specific server
+  // Get enhanced status for a specific server
   app.get('/status/:serverId', async (c) => {
     const serverId = c.req.param('serverId');
     try {
@@ -170,15 +170,136 @@ export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager
       if (!serverState) {
         return c.json({ status: 'stopped' });
       }
-      return c.json({ 
-        status: 'running',
-        state: serverState
+      
+      // Enhanced status response with more details
+      return c.json({
+        id: serverId,
+        status: serverState.status || 'unknown',
+        error: serverState.error,
+        retryCount: serverState.retryCount,
+        lastRetryTimestamp: serverState.lastRetryTimestamp,
+        logTail: serverState.logs.slice(-10), // Last 10 log lines
+        health: serverState.health || null, // Health metrics if available
+        proxy: serverState.proxy || null // Proxy state if available
       });
     } catch (error) {
       console.error(`Error getting status for server ${serverId}:`, error);
       return c.json({ 
         status: 'error',
         error: error instanceof Error ? error.message : String(error) 
+      }, 500);
+    }
+  });
+  
+  // Get detailed logs for a server
+  app.get('/:serverId/logs', async (c) => {
+    const serverId = c.req.param('serverId');
+    const limit = parseInt(c.req.query('limit') || '100');
+    
+    try {
+      const serverState = mcpManager.getServerState(serverId);
+      
+      if (!serverState) {
+        return c.json({ 
+          error: `Server ${serverId} not found or not running`,
+          status: 'not_found'
+        }, 404);
+      }
+      
+      return c.json({
+        id: serverId,
+        logs: serverState.logs.slice(-limit),
+        totalLogs: serverState.logs.length
+      });
+    } catch (error) {
+      console.error(`Error getting logs for server ${serverId}:`, error);
+      return c.json({ 
+        error: error instanceof Error ? error.message : String(error),
+        status: 'error'
+      }, 500);
+    }
+  });
+  
+  // Get health metrics for a server
+  app.get('/:serverId/health', async (c) => {
+    const serverId = c.req.param('serverId');
+    
+    try {
+      const server = mcpManager.getServer(serverId);
+      
+      if (!server) {
+        return c.json({ 
+          error: `Server ${serverId} not found`,
+          status: 'not_found'
+        }, 404);
+      }
+      
+      // Get current server state to access health metrics
+      const state = server.getState();
+      
+      // Trigger an immediate health check
+      let isCurrentlyHealthy;
+      try {
+        isCurrentlyHealthy = await server.checkHealth();
+      } catch (healthError) {
+        isCurrentlyHealthy = false;
+      }
+      
+      return c.json({
+        id: serverId,
+        status: state.status || 'unknown',
+        isHealthy: isCurrentlyHealthy,
+        healthMetrics: state.health || null,
+        lastError: state.error || null
+      });
+    } catch (error) {
+      console.error(`Error getting health metrics for server ${serverId}:`, error);
+      return c.json({ 
+        error: error instanceof Error ? error.message : String(error),
+        status: 'error'
+      }, 500);
+    }
+  });
+  
+  // Restart a server
+  app.post('/:serverId/restart', async (c) => {
+    const serverId = c.req.param('serverId');
+    
+    try {
+      // Check if the server exists
+      const server = mcpManager.getServer(serverId);
+      
+      if (!server) {
+        return c.json({ 
+          error: `Server ${serverId} not found`,
+          status: 'not_found'
+        }, 404);
+      }
+      
+      try {
+        // Use the MCPManager's restartServer method
+        await mcpManager.restartServer(serverId);
+        
+        // Get updated state after restart
+        const updatedState = mcpManager.getServerState(serverId);
+        
+        return c.json({
+          id: serverId,
+          message: `Server ${serverId} restarted successfully`,
+          status: updatedState?.status || 'unknown'
+        });
+      } catch (restartError) {
+        console.error(`Error restarting server ${serverId}:`, restartError);
+        return c.json({ 
+          error: restartError instanceof Error ? restartError.message : String(restartError),
+          status: 'restart_failed'
+        }, 500);
+      }
+    } catch (error) {
+      console.error(`Error handling restart for server ${serverId}:`, error);
+      return c.json({ 
+        error: error instanceof Error ? error.message : String(error),
+        status: 'error'
       }, 500);
     }
   });
@@ -254,27 +375,64 @@ export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager
 export function toolsOperationRoutes(mcpManager: MCPManager) {
   const app = new Hono();
   
-  // Get details for a specific method from a server
+  // Get enhanced details for a specific method from a server
   app.get('/server/:serverId/method/:methodName', async (c) => {
     const serverId = c.req.param('serverId');
     const methodName = c.req.param('methodName');
     try {
       const server = mcpManager.getServer(serverId);
       if (!server) {
-        return c.json({ error: `Server ${serverId} not found` }, 404);
+        return c.json({ 
+          error: `Server ${serverId} not found`,
+          status: 'server_not_found'
+        }, 404);
       }
       
-      const tools = await server.listTools();
-      const method = tools.find(tool => tool.name === methodName);
-      
-      if (!method) {
-        return c.json({ error: `Method ${methodName} not found on server ${serverId}` }, 404);
+      // Get server state to check status
+      const state = server.getState();
+      if (state.error) {
+        console.warn(`Server ${serverId} has errors when getting method details: ${state.error}`);
       }
       
-      return c.json(method);
+      try {
+        const tools = await server.listTools();
+        const method = tools.find(tool => tool.name === methodName);
+        
+        if (!method) {
+          return c.json({ 
+            error: `Method ${methodName} not found on server ${serverId}`,
+            status: 'method_not_found'
+          }, 404);
+        }
+        
+        // Enhanced response with more details and better formatting
+        return c.json({
+          name: method.name,
+          description: method.description,
+          parameters: method.parameters,
+          returns: method.returns,
+          examples: method.examples || [],
+          serverName: serverId,
+          serverStatus: state.status || 'unknown',
+          // Add support for detecting if completions are available
+          supportsCompletions: true // Assume support - server handles graceful fallback
+        });
+      } catch (toolsError) {
+        // Specific error for tool listing failure
+        console.error(`Error getting tools list for method details ${serverId}:`, toolsError);
+        return c.json({ 
+          error: toolsError instanceof Error ? toolsError.message : String(toolsError),
+          status: 'tools_error',
+          serverRunning: true,
+          logs: state.logs?.slice(-5) || [] // Include some logs for debugging
+        }, 500);
+      }
     } catch (error) {
       console.error(`Error getting method ${methodName} from server ${serverId}:`, error);
-      return c.json({ error: `Failed to get method details` }, 500);
+      return c.json({ 
+        error: error instanceof Error ? error.message : String(error),
+        status: 'general_error'
+      }, 500);
     }
   });
   
@@ -356,7 +514,94 @@ export function toolsOperationRoutes(mcpManager: MCPManager) {
       return c.json(result);
     } catch (error) {
       console.error('Error invoking tool:', error);
-      return c.json({ error: 'Failed to invoke tool' }, 500);
+      return c.json({ 
+        error: error instanceof Error ? error.message : 'Failed to invoke tool',
+        status: 'invoke_failed'
+      }, 500);
+    }
+  });
+  
+  // Get completions for a tool argument
+  app.post('/complete', async (c) => {
+    try {
+      const { serverId, methodName, argName, value } = await c.req.json();
+      
+      // Validate required fields
+      if (!serverId || !methodName || !argName) {
+        return c.json({ 
+          error: 'Missing required fields. serverId, methodName, and argName are required',
+          status: 'invalid_request' 
+        }, 400);
+      }
+      
+      // Normalize value to empty string if not provided
+      const normalizedValue = value || '';
+      
+      try {
+        // Get completions from the MCP manager
+        const completions = await mcpManager.getCompletions(
+          serverId,
+          methodName,
+          argName,
+          normalizedValue
+        );
+        
+        return c.json({
+          completions: {
+            values: completions,
+            count: completions.length
+          },
+          request: {
+            serverId,
+            methodName,
+            argName,
+            value: normalizedValue
+          }
+        });
+      } catch (completionsError) {
+        // If the error is that the tool wasn't found, or the server doesn't support completions,
+        // return an empty array instead of an error
+        if (completionsError instanceof Error) {
+          const errorMessage = completionsError.message.toLowerCase();
+          if (errorMessage.includes('not found') || 
+              errorMessage.includes('not supported') || 
+              errorMessage.includes('method not found')) {
+            console.log(`Completions not available for ${methodName}.${argName} on server ${serverId}`);
+            return c.json({
+              completions: {
+                values: [],
+                count: 0
+              },
+              request: {
+                serverId,
+                methodName,
+                argName,
+                value: normalizedValue
+              },
+              message: 'Completions not supported for this tool'
+            });
+          }
+        }
+        
+        // For other errors, return proper error response
+        console.error('Error getting completions:', completionsError);
+        return c.json({ 
+          error: completionsError instanceof Error ? completionsError.message : String(completionsError),
+          status: 'completions_error',
+          request: {
+            serverId,
+            methodName,
+            argName,
+            value: normalizedValue
+          }
+        }, 500);
+      }
+    } catch (error) {
+      console.error('Error processing completions request:', error);
+      return c.json({ 
+        error: error instanceof Error ? error.message : String(error),
+        status: 'general_error'
+      }, 500);
     }
   });
   
