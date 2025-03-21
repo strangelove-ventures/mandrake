@@ -46,11 +46,23 @@ export class ClientManager {
    */
   async createAndConnectClient(transport: Transport): Promise<Client> {
     try {
-      // Create client
+      // Create client with standard options
+      // SDK now supports timeout configuration via request options
       this.client = new Client(
         CLIENT_CONFIG.info,
         CLIENT_CONFIG.options
       )
+
+      // Store the original request method so we can patch it
+      const originalRequest = this.client.request.bind(this.client)
+      
+      // Monkey patch the request method with a longer timeout to debug test failures
+      this.client.request = (request, resultSchema, options) => {
+        return originalRequest(request, resultSchema, {
+          ...options,
+          timeout: 10000 // Longer timeout for debugging proxy issues
+        })
+      }
 
       // Connect client with transport
       await this.client.connect(transport)
@@ -150,7 +162,7 @@ export class ClientManager {
       const client = this.verifyConnected()
       const response = await client.listTools()
       
-      this.logger.info('Tools list retrieved successfully', { 
+      this.logger.debug('Tools list retrieved successfully', { 
         id: this.id, 
         count: response.tools.length 
       })

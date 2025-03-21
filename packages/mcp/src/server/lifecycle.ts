@@ -3,6 +3,10 @@ import { LogBuffer } from '../logger'
 import type { ServerConfig, ServerState, HealthMetrics } from '../types'
 import { MCPError, ServerDisabledError } from '../errors'
 import { ServerHealthManager } from './health'
+import type { ProxyManager } from './proxy-manager'
+import type { ProxyMetrics, ProxyState } from '../proxy'
+import { ConfigManager } from '../config'
+import type { ValidatedServerConfig } from '../config'
 
 /**
  * Handles server lifecycle operations
@@ -18,15 +22,23 @@ export class ServerLifecycle {
   private logBuffer: LogBuffer
   private state: ServerState
   private healthManager?: ServerHealthManager
+  private proxyManager?: ProxyManager
   private logger = createLogger('mcp').child({ 
     meta: { component: 'lifecycle', id: this.id }
   })
   
   constructor(
     private id: string,
-    private config: ServerConfig
+    private config: ValidatedServerConfig
   ) {
-    this.logBuffer = new LogBuffer()
+    // Initialize with enhanced options
+    this.logBuffer = new LogBuffer({
+      includeTimestamp: true,
+      logToConsole: false,  // We'll use our logger for console output
+      maxLogs: 150,         // Increased log capacity
+      maxLogLength: 1500    // Longer max log length
+    })
+    
     this.state = {
       retryCount: 0,
       logs: []
@@ -39,6 +51,14 @@ export class ServerLifecycle {
    */
   initHealthManager(server: any): void {
     this.healthManager = new ServerHealthManager(this.id, server, this.config)
+  }
+  
+  /**
+   * Set the proxy manager for this server lifecycle
+   * This allows us to include proxy metrics in the server state
+   */
+  setProxyManager(proxyManager: ProxyManager): void {
+    this.proxyManager = proxyManager
   }
   
   /**
@@ -64,14 +84,43 @@ export class ServerLifecycle {
   }
 
   /**
-   * Get the current server state with status and health metrics
+   * Get the current server state with status, health metrics, and proxy information
    */
   getState(hasClient: boolean): ServerState & { status: string } {
+    // Get logs as strings (with timestamps)
+    const logs = this.logBuffer.getLogs(true) as string[];
+    
+    // If we have a proxy manager, get proxy metrics
+    let proxyState = undefined;
+    
+    if (this.proxyManager) {
+      const proxyMetrics = this.proxyManager.getProxyMetrics();
+      const isHealthy = this.proxyManager.isProxyHealthy();
+      const lastStateChange = this.proxyManager.getLastStateChange();
+      const lastError = this.proxyManager.getLastError();
+      
+      proxyState = {
+        state: proxyMetrics?.state || 'unknown',
+        isHealthy,
+        metrics: proxyMetrics,
+        lastStateChange: lastStateChange && {
+          oldState: lastStateChange.oldState,
+          newState: lastStateChange.newState,
+          time: lastStateChange.time.toISOString()
+        },
+        lastError: lastError && {
+          message: lastError.message,
+          time: new Date().toISOString() // We don't have the time from the error
+        }
+      };
+    }
+    
     return {
       ...this.state,
-      logs: this.logBuffer.getLogs(),
+      logs,
       status: this.getStatus(hasClient),
-      health: this.healthManager?.getMetrics()
+      health: this.healthManager?.getMetrics(),
+      proxy: proxyState
     }
   }
   
@@ -89,15 +138,15 @@ export class ServerLifecycle {
   /**
    * Get the server configuration
    */
-  getConfig(): ServerConfig {
+  getConfig(): ValidatedServerConfig {
     return { ...this.config }
   }
 
   /**
    * Update the server configuration
    */
-  updateConfig(config: Partial<ServerConfig>) {
-    this.config = { ...this.config, ...config }
+  updateConfig(updates: Partial<ValidatedServerConfig>) {
+    this.config = ConfigManager.update(this.config, updates)
     this.logger.info('Updated server configuration', { id: this.id, config: this.config })
   }
 
@@ -125,8 +174,8 @@ export class ServerLifecycle {
     this.state.error = undefined
     this.state.lastRetryTimestamp = undefined
     
-    this.logBuffer.append('Connected successfully')
-    this.logger.info('Server started successfully', { id: this.id })
+    this.logBuffer.info('Connected successfully', { id: this.id })
+    this.logger.debug('Server started successfully', { id: this.id })
     
     // Start health monitoring
     this.startHealthMonitoring()
@@ -140,18 +189,20 @@ export class ServerLifecycle {
     
     this.state.error = errorMsg
     this.state.lastRetryTimestamp = Date.now()
-    this.logBuffer.append(`Start error: ${errorMsg}`)
     
-    this.logger.error('Failed to start server', {
+    const errorMetadata = {
       id: this.id,
       error: errorMsg,
       retryCount: this.state.retryCount
-    })
+    }
+    
+    this.logBuffer.error(`Start error: ${errorMsg}`, errorMetadata)
+    this.logger.error('Failed to start server', errorMetadata)
     
     // Check if should retry
     if (this.state.retryCount >= 3) {
       const msg = 'Max retry attempts reached'
-      this.logBuffer.append(msg)
+      this.logBuffer.warn(msg, { id: this.id })
       this.logger.warn(msg, { id: this.id })
       return false // Don't retry
     }
@@ -160,12 +211,14 @@ export class ServerLifecycle {
     const delay = Math.pow(2, this.state.retryCount) * 1000 // Exponential backoff in ms
     this.state.retryCount++
     
-    this.logBuffer.append(`Retrying in ${delay}ms (attempt ${this.state.retryCount}/3)`)
-    this.logger.info('Scheduling retry', { 
+    const retryMetadata = { 
       id: this.id, 
       delay, 
       attempt: this.state.retryCount 
-    })
+    }
+    
+    this.logBuffer.info(`Retrying in ${delay}ms (attempt ${this.state.retryCount}/3)`, retryMetadata)
+    this.logger.info('Scheduling retry', retryMetadata)
     
     // Wait for backoff delay
     await new Promise(resolve => setTimeout(resolve, delay))
@@ -176,8 +229,8 @@ export class ServerLifecycle {
    * Log server stop event
    */
   logServerStopped(): void {
-    this.logBuffer.append('Server stopped')
-    this.logger.info('Server stopped successfully', { id: this.id })
+    this.logBuffer.info('Server stopped', { id: this.id })
+    this.logger.debug('Server stopped successfully', { id: this.id })
     
     // Stop health monitoring
     this.stopHealthMonitoring()
@@ -187,50 +240,76 @@ export class ServerLifecycle {
    * Log server stop error
    */
   logServerStopError(error: any): void {
-    const msg = `Error stopping server: ${(error as Error).message}`
-    this.logger.error('Failed to stop server', {
+    const errorMsg = error instanceof Error ? error.message : String(error)
+    const msg = `Error stopping server: ${errorMsg}`
+    
+    const metadata = {
       id: this.id,
-      error: error instanceof Error ? error.message : String(error)
-    })
+      error: errorMsg
+    }
+    
+    this.logger.error('Failed to stop server', metadata)
     
     this.state.error = msg
-    this.logBuffer.append(this.state.error)
+    this.logBuffer.error(this.state.error, metadata)
   }
 
   /**
    * Log tool invocation
    */
   logToolInvocation(method: string, args: Record<string, any>): void {
-    this.logger.info('Invoking tool', { id: this.id, method, args })
-    this.logBuffer.append(`Invoking tool: ${method}`)
+    const metadata = { id: this.id, method, args }
+    this.logger.debug('Invoking tool', metadata)
+    this.logBuffer.info(`Invoking tool: ${method}`, metadata)
   }
 
   /**
    * Log tool invocation success
    */
   logToolInvocationSuccess(method: string): void {
-    this.logBuffer.append(`Tool call successful: ${method}`)
-    this.logger.info('Tool invocation successful', { id: this.id, method })
+    const metadata = { id: this.id, method }
+    this.logBuffer.info(`Tool call successful: ${method}`, metadata)
+    this.logger.debug('Tool invocation successful', metadata)
   }
 
   /**
    * Log tool invocation error
    */
   logToolInvocationError(method: string, error: MCPError): void {
-    this.logBuffer.append(`Tool error: ${error.message}`)
-    
-    this.logger.error('Tool invocation failed', {
+    const metadata = {
       id: this.id,
       method,
       error: error.toJSON()
-    })
+    }
+    
+    this.logBuffer.error(`Tool error: ${error.message}`, metadata)
+    this.logger.error('Tool invocation failed', metadata)
   }
 
   /**
    * Log general operation
+   * 
+   * @param message The log message
+   * @param level Optional log level
+   * @param metadata Optional metadata
    */
-  log(message: string): void {
-    this.logBuffer.append(message)
+  log(message: string, level: 'debug' | 'info' | 'warning' | 'error' = 'info', metadata?: Record<string, any>): void {
+    switch(level) {
+      case 'debug':
+        this.logBuffer.debug(message, metadata)
+        break
+      case 'info':
+        this.logBuffer.info(message, metadata)
+        break
+      case 'warning':
+        this.logBuffer.warn(message, metadata)
+        break
+      case 'error':
+        this.logBuffer.error(message, metadata)
+        break
+      default:
+        this.logBuffer.info(message, metadata)
+    }
   }
 
   /**

@@ -5,6 +5,7 @@ import { ServerLifecycle } from './lifecycle'
 import { TransportManager } from './transport-manager'
 import { ClientManager } from './client-manager'
 import { ProxyManager } from './proxy-manager'
+import { ConfigManager } from '../config'
 
 /**
  * Enhanced MCP Server implementation using composition pattern
@@ -26,14 +27,20 @@ export class MCPServerImpl implements MCPServer {
   
   constructor(
     private id: string,
-    private config: ServerConfig
+    userConfig: ServerConfig
   ) {
+    // Validate and normalize the config
+    const config = ConfigManager.validate(userConfig)
+    
     this.lifecycle = new ServerLifecycle(id, config)
     this.transportManager = new TransportManager(id, 
-      (output) => this.lifecycle.log(output)
+      (output, level, metadata) => this.lifecycle.log(output, level, metadata)
     )
     this.clientManager = new ClientManager(id)
     this.proxyManager = new ProxyManager(id)
+    
+    // Connect the proxy manager to the lifecycle
+    this.lifecycle.setProxyManager(this.proxyManager)
     
     // Initialize health manager with a reference to this server
     // This needs to happen after the server instance is constructed
@@ -52,11 +59,12 @@ export class MCPServerImpl implements MCPServer {
    */
   async start() {
     try {
-      this.logger.info('Starting MCP server', { 
+      const config = this.getConfig()
+      this.logger.debug('Starting MCP server', { 
         id: this.id, 
-        command: this.config.command,
-        args: this.config.args,
-        disabled: this.config.disabled 
+        command: config.command,
+        args: config.args,
+        disabled: config.disabled 
       })
       
       // If server is disabled, don't attempt to start
@@ -68,10 +76,32 @@ export class MCPServerImpl implements MCPServer {
       }
       
       // Create transport
-      const transport = this.transportManager.createTransport(this.config)
+      const transport = this.transportManager.createTransport(this.getConfig())
       
       // Create and connect client
       await this.clientManager.createAndConnectClient(transport)
+      
+      // Create a proxy using the shared transport
+      // This is a special case where we use the same transport for both client and server sides
+      // The proxy implementation detects this case and handles it appropriately
+      this.proxyManager.createProxy(
+        transport,  // Client side
+        transport,  // Server side (same object as client - proxy will detect this)
+        {
+          // Additional configuration options
+          enableReconnection: false,  // We don't need reconnection for shared transport
+          onError: (error, source) => {
+            // Log errors for better troubleshooting
+            this.logger.error(`Proxy error (${source}): ${error.message}`, {
+              error: error.stack,
+              source
+            })
+          },
+          onStateChange: (oldState, newState) => {
+            this.logger.debug(`Proxy state changed from ${oldState} to ${newState}`)
+          }
+        }
+      )
       
       // Update lifecycle state
       this.lifecycle.handleConnectionSuccess()
@@ -93,7 +123,7 @@ export class MCPServerImpl implements MCPServer {
    * Closes all connections and transports cleanly.
    */
   async stop() {
-    this.logger.info('Stopping server', { id: this.id })
+    this.logger.debug('Stopping server', { id: this.id })
     
     try {
       // Clean up in reverse order of creation
@@ -142,7 +172,7 @@ export class MCPServerImpl implements MCPServer {
    * @returns Array of available tools
    */
   async listTools(): Promise<Tool[]> {
-    this.logger.info('Listing tools', { id: this.id })
+    this.logger.debug('Listing tools', { id: this.id })
     
     if (this.lifecycle.isDisabled()) {
       this.logger.info('Server is disabled, returning empty tools list', { id: this.id })

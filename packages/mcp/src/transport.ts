@@ -16,7 +16,7 @@ export class TransportFactory {
    * Creates an appropriate transport based on server configuration
    */
   static create(config: ServerConfig): StdioClientTransport | SSEClientTransport {
-    this.logger.info('Creating transport for config', { 
+    this.logger.debug('Creating transport for config', { 
       command: config.command, 
       disabled: config.disabled 
     })
@@ -57,7 +57,7 @@ export class TransportFactory {
     }
     
     // Default to STDIO transport for command-based servers
-    this.logger.info('Creating STDIO transport', { command: config.command })
+    this.logger.debug('Creating STDIO transport', { command: config.command })
     return new StdioClientTransport({
       command: config.command,
       args: config.args || [],

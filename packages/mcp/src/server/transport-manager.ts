@@ -22,7 +22,7 @@ export class TransportManager {
   
   constructor(
     private id: string,
-    private onStderrOutput: (output: string) => void
+    private onStderrOutput: (output: string, level?: 'debug' | 'info' | 'warning' | 'error', metadata?: Record<string, any>) => void
   ) {}
 
   /**
@@ -88,14 +88,32 @@ export class TransportManager {
 
     stream.on('data', (data: Buffer) => {
       const output = data.toString()
-      this.onStderrOutput(output)
-
-      // Check for error indicators in the output
-      if (output.toLowerCase().includes('error')) {
+      
+      // Determine log level based on content
+      const hasError = output.toLowerCase().includes('error');
+      const hasWarning = output.toLowerCase().includes('warn');
+      
+      const metadata = { 
+        id: this.id,
+        source: 'stderr',
+        content: output
+      };
+      
+      // Log to the buffer with appropriate level
+      if (hasError) {
+        this.onStderrOutput(output, 'error', metadata);
         this.logger.error('Error from server stderr', { 
           id: this.id, 
           error: output 
-        })
+        });
+      } else if (hasWarning) {
+        this.onStderrOutput(output, 'warning', metadata);
+        this.logger.warn('Warning from server stderr', { 
+          id: this.id, 
+          warning: output 
+        });
+      } else {
+        this.onStderrOutput(output, 'info', metadata);
       }
     })
   }

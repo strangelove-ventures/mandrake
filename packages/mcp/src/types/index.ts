@@ -76,6 +76,20 @@ export interface ServerState {
   retryCount: number;
   logs: string[];
   health?: HealthMetrics;  // Health metrics tracked by the server
+  proxy?: {              // Proxy-related state information
+    state: string;       // Current state of the proxy (connected, disconnected, etc.)
+    isHealthy: boolean;  // Whether the proxy is healthy
+    metrics?: any;       // Detailed proxy metrics
+    lastStateChange?: { // Information about the last state change
+      oldState: string;
+      newState: string;
+      time: string;     // ISO string of timestamp
+    };
+    lastError?: {       // Information about the last error
+      message: string;
+      time: string;     // ISO string of timestamp
+    };
+  };
 }
 
 /**

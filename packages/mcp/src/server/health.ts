@@ -6,6 +6,8 @@ import type {
   HealthMetrics,
   ServerConfig
 } from '../types'
+import { ConfigManager } from '../config'
+import type { ValidatedServerConfig, ValidatedHealthCheckConfig } from '../config'
 
 /**
  * Default health check history size
@@ -30,7 +32,7 @@ const DEFAULT_HEALTH_CHECK_CONFIG: HealthCheckConfig = {
  */
 export class ServerHealthManager {
   private metrics: HealthMetrics
-  private config: HealthCheckConfig
+  private config: ValidatedHealthCheckConfig
   private checkInterval?: NodeJS.Timer
   private server: MCPServer
   private logger = createLogger('mcp').child({ 
@@ -40,7 +42,7 @@ export class ServerHealthManager {
   constructor(
     private serverId: string,
     server: MCPServer,
-    serverConfig: ServerConfig
+    serverConfig: ValidatedServerConfig
   ) {
     this.server = server
     
@@ -54,13 +56,10 @@ export class ServerHealthManager {
       checkHistory: []
     }
     
-    // Merge provided config with defaults
-    this.config = {
-      ...DEFAULT_HEALTH_CHECK_CONFIG,
-      ...serverConfig.healthCheck
-    }
+    // Use validated health check config
+    this.config = serverConfig.healthCheck
     
-    this.logger.info('Health manager initialized', { 
+    this.logger.debug('Health manager initialized', { 
       id: this.serverId,
       strategy: this.config.strategy 
     })
@@ -85,7 +84,7 @@ export class ServerHealthManager {
       }
     }, this.config.intervalMs)
     
-    this.logger.info('Started health monitoring', { 
+    this.logger.debug('Started health monitoring', { 
       id: this.serverId,
       intervalMs: this.config.intervalMs 
     })
@@ -98,7 +97,7 @@ export class ServerHealthManager {
     if (this.checkInterval) {
       clearInterval(this.checkInterval)
       this.checkInterval = undefined
-      this.logger.info('Stopped health monitoring', { id: this.serverId })
+      this.logger.debug('Stopped health monitoring', { id: this.serverId })
     }
   }
   

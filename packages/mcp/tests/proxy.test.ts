@@ -77,14 +77,19 @@ describe('MCPProxy Integration Tests', () => {
   })
   
   test('server connects and disconnects properly', async () => {
-    // Start server using our enhanced implementation
-    await manager.startServer('test-server', filesystemConfig)
-    const server = manager.getServer('test-server')
-    expect(server).toBeDefined()
-    
-    // Check server state
-    const state = server!.getState()
-    expect(state.status).toBe('connected')
+    // Start server
+    try {
+      await manager.startServer('test-server', filesystemConfig)
+      const server = manager.getServer('test-server')
+      expect(server).toBeDefined()
+      
+      // Check server state
+      const state = server!.getState()
+      expect(state.status).toBe('connected')
+    } catch (error) {
+      console.error('Error starting server:', error)
+      throw error
+    }
     
     // Stop server and check state is cleaned up
     await manager.stopServer('test-server')

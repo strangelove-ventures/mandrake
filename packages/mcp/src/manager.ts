@@ -1,6 +1,7 @@
 import { MCPServerImpl } from './server'
 import { createLogger } from '@mandrake/utils'
 import type { ServerConfig, ServerState, ToolWithServerIdentifier } from './types'
+import { ConfigManager } from './config'
 import type { Tool } from '@modelcontextprotocol/sdk/types.js'
 import { 
   MCPError, 
@@ -46,7 +47,10 @@ export class MCPManager {
     }
 
     try {
-      const server = new MCPServerImpl(id, config)
+      // Validate config before creating server instance
+      const validatedConfig = ConfigManager.validate(config)
+      
+      const server = new MCPServerImpl(id, validatedConfig)
       await server.start()
       this.servers.set(id, server)
       this.logger.info('Server started successfully', { id })
@@ -117,8 +121,20 @@ export class MCPManager {
     }
 
     try {
+      // Validate new config
+      const validatedConfig = ConfigManager.validate(config)
+      
+      // If the server exists, we can use update instead
+      const currentConfig = server.getConfig()
+      // Create a new merged config using the existing and new configs
+      // We can safely cast these to the validated types since we know they have been validated
+      const mergedConfig = ConfigManager.create(
+        validatedConfig as any,  // Cast to any to avoid type issues
+        currentConfig as any     // Cast to any to avoid type issues
+      )
+      
       await this.stopServer(id)
-      await this.startServer(id, config)
+      await this.startServer(id, mergedConfig)
       this.logger.info('Server updated successfully', { id })
     } catch (error) {
       // Don't wrap MCPError instances again
@@ -179,7 +195,7 @@ export class MCPManager {
    * @returns Array of tools with server identifiers
    */
   async listAllTools(): Promise<ToolWithServerIdentifier[]> {
-    this.logger.info('Listing all tools from all servers')
+    this.logger.debug('Listing all tools')
     
     const allTools: ToolWithServerIdentifier[] = []
     const listPromises: Promise<void>[] = []
@@ -210,7 +226,7 @@ export class MCPManager {
     // Wait for all list operations to complete
     await Promise.all(listPromises)
     
-    this.logger.info('Retrieved all tools', { count: allTools.length })
+    this.logger.debug('Retrieved all tools', { count: allTools.length })
     return allTools
   }
 
@@ -234,7 +250,7 @@ export class MCPManager {
 
     try {
       const result = await server.invokeTool(method, args)
-      this.logger.info('Tool invoked successfully', { id, method })
+      this.logger.debug('Tool invoked successfully', { id, method })
       return result
     } catch (error) {
       // If it's already a MCPError, just pass it through

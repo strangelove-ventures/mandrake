@@ -24,3 +24,6 @@ export * from './transport'
 
 // Export proxy implementation
 export * from './proxy'
+
+// Export configuration utilities
+export * from './config'
