@@ -33,48 +33,108 @@ The MCP package supports multiple transport mechanisms:
 
 ### Server Configuration
 
-Servers are configured with:
+Servers are configured with validated configurations using the ConfigManager:
+
+```typescript
+import { ConfigManager } from '@mandrake/mcp/config';
+
+// Create minimal validated configuration
+const config = ConfigManager.create({
+  command: 'node',
+  args: ['server.js'],
+  env: { NODE_ENV: 'production' },
+  autoApprove: ['readFile'],
+  healthCheck: {
+    strategy: 'tool_listing',
+    intervalMs: 30000
+  }
+});
+
+// Update an existing configuration
+const updatedConfig = ConfigManager.update(existingConfig, {
+  disabled: false,
+  healthCheck: { timeoutMs: 10000 }
+});
+```
+
+Configuration includes:
 
 ```typescript
 interface ServerConfig {
-  command: string;              // Command to execute
-  args?: string[];              // Command arguments
-  env?: Record<string, string>; // Environment variables
-  autoApprove?: string[];       // Methods to auto-approve
-  disabled?: boolean;           // Whether server is disabled
+  command: string;                // Command to execute
+  args?: string[];                // Command arguments
+  env?: Record<string, string>;   // Environment variables
+  autoApprove?: string[];         // Methods to auto-approve
+  disabled?: boolean;             // Whether server is disabled
+  healthCheck?: HealthCheckConfig; // Health check configuration
+}
+
+interface HealthCheckConfig {
+  strategy: 'tool_listing' | 'ping' | 'specific_tool' | 'custom';
+  intervalMs?: number;            // Check interval (default: 30000)
+  timeoutMs?: number;             // Timeout for checks (default: 5000)
+  retries?: number;               // Failed check retries (default: 1)
+  specificTool?: {                // For specific_tool strategy
+    name: string;                 // Tool to invoke
+    args: Record<string, any>;    // Arguments to pass
+  };
 }
 ```
 
 ## Architecture
 
-The MCP package consists of these key components:
+The MCP package follows a modular architecture with clear separation of concerns:
 
-### MCPServerImpl
+### MCPManager (`src/manager.ts`)
 
-Coordinates the components that manage a single MCP server instance:
+Provides top-level management of multiple MCP servers:
 
-- Uses a composition pattern to delegate responsibilities to specialized components
-- Manages component lifecycle and interactions
-- Provides consistent error handling and robust logging
+- Creates and manages server instances
+- Provides access to tools across all servers
+- Enables tool invocation by server name
+- Performs health checks across all servers
+- Handles cleanup and resource management
 
-### ServerLifecycle
+### Server Implementation (`src/server/`)
+
+The server implementation uses a composition pattern for better separation of concerns:
+
+#### MCPServerImpl (`src/server/impl.ts`)
+
+Core server implementation that coordinates all components:
+
+- Uses composition to delegate responsibilities to specialized components
+- Orchestrates interactions between components
+- Provides a unified interface to the MCPManager
+- Handles error propagation and logging
+
+#### ServerLifecycle (`src/server/lifecycle.ts`)
 
 Manages server lifecycle and state:
 
 - Handles server start/stop operations
 - Manages retry logic with exponential backoff
 - Tracks server state and status
-- Maintains server logs
+- Maintains server logs using LogBuffer
 
-### TransportManager
+#### ServerHealthManager (`src/server/health.ts`)
+
+Dedicated health monitoring component:
+
+- Implements configurable health check strategies
+- Tracks health metrics and history
+- Performs periodic health checks
+- Provides detailed health reporting
+
+#### TransportManager (`src/server/transport-manager.ts`)
 
 Handles transport creation and management:
 
-- Creates the appropriate transport based on configuration
+- Creates appropriate transport based on configuration
 - Sets up error and log handling
 - Manages transport connections and cleanup
 
-### ClientManager
+#### ClientManager (`src/server/client-manager.ts`)
 
 Manages MCP client operations:
 
@@ -83,7 +143,7 @@ Manages MCP client operations:
 - Manages completions and parameter suggestions
 - Provides structured error handling
 
-### ProxyManager
+#### ProxyManager (`src/server/proxy-manager.ts`)
 
 Handles bidirectional proxies between transports:
 
@@ -91,22 +151,22 @@ Handles bidirectional proxies between transports:
 - Manages message routing
 - Handles connection errors
 
-### MCPManager
+### Configuration System (`src/config/`)
 
-Provides top-level management of multiple MCP servers:
+Manages server configuration validation and creation:
 
-- Creates and manages server instances
-- Provides access to tools across all servers
-- Enables tool invocation by server name
-- Handles cleanup and resource management
+#### ConfigManager (`src/config/manager.ts`)
 
-### LogBuffer
+- Validates configurations against schema with Zod
+- Provides type-safe configuration objects with defaults
+- Supports deep merging of configuration objects
+- Enables configuration inheritance and updates
 
-Manages server logs with size limits:
+#### Schema Definitions (`src/config/schema.ts`)
 
-- Maintains a rolling buffer of recent logs
-- Truncates long log entries
-- Provides access to current log state
+- Defines Zod schemas for server and health check configurations
+- Provides type inference for configuration objects
+- Creates default configurations for common scenarios
 
 ## Usage
 
@@ -114,19 +174,32 @@ Manages server logs with size limits:
 
 ```typescript
 import { MCPManager } from '@mandrake/mcp';
+import { ConfigManager } from '@mandrake/mcp/config';
 
 // Create manager
 const manager = new MCPManager();
 
-// Start a server
-await manager.startServer('filesystem', {
+// Create validated configuration
+const config = ConfigManager.create({
   command: '/path/to/mcp-fs',
-  args: ['--workspace', '/path/to/workspace']
+  args: ['--workspace', '/path/to/workspace'],
+  healthCheck: {
+    strategy: 'tool_listing',
+    intervalMs: 15000
+  }
 });
+
+// Start a server
+await manager.startServer('filesystem', config);
 
 // Get server state
 const state = manager.getServerState('filesystem');
+console.log('Server status:', state.status);
 console.log('Server logs:', state.logs);
+console.log('Health metrics:', state.health);
+
+// Check health explicitly
+await manager.checkServerHealth();
 
 // Stop a server
 await manager.stopServer('filesystem');
@@ -224,10 +297,26 @@ interface ServerConfig {
 
 ```typescript
 interface ServerState {
+  status: 'uninitialized' | 'starting' | 'connected' | 'disconnected' | 'error';
   error?: string;
   lastRetryTimestamp?: number;
   retryCount: number;
   logs: string[];
+  health?: {
+    isHealthy: boolean;
+    lastCheckTime: number;
+    responseTimeMs?: number;
+    checkCount: number;
+    failureCount: number;
+    consecutiveFailures: number;
+    lastError?: string;
+    checkHistory: Array<{
+      timestamp: number;
+      success: boolean;
+      responseTimeMs?: number;
+      error?: string;
+    }>;
+  };
 }
 ```
 
@@ -248,16 +337,46 @@ The MCP package integrates with several other components in Mandrake:
 - Uses tool configurations defined in the workspace
 - Provides tools for dynamic context execution
 - Accesses workspace files for tool operations
+- Configures server health checks based on workspace settings
 
 ### Session Package
 
 - Enables tool execution from LLM sessions
 - Provides tool capabilities to the provider
+- Uses the MCP health reporting for tool availability
 
 ### Provider Package
 
 - Uses MCP tools to enhance LLM capabilities
 - Translates between LLM tool calls and MCP tool invocations
+- Handles tool completion requests
+
+### API Package
+
+- Exposes MCP server management via REST APIs
+- Provides server health metrics to the frontend
+- Enables server administration through API endpoints
+
+## Development
+
+### Directory Structure
+
+```sh
+src/
+├── config/             # Configuration validation and management
+│   ├── schema.ts       # Zod schemas for configurations
+│   └── manager.ts      # Configuration management utilities
+├── server/             # Server implementation components
+│   ├── impl.ts         # Main server implementation
+│   ├── lifecycle.ts    # Server lifecycle management
+│   ├── health.ts       # Health check implementation
+│   ├── client-manager.ts # MCP client management
+│   └── transport-manager.ts # Transport creation and management
+├── manager.ts          # Top-level MCP manager
+├── errors.ts           # Error types and handling
+└── types/              # TypeScript type definitions
+    └── index.ts        # Core type definitions
+```
 
 ## Future Improvements
 
@@ -265,3 +384,5 @@ The MCP package integrates with several other components in Mandrake:
 - **Enhanced Transport**: Add more transport options for better performance
 - **Tool Authorization**: Implement more granular tool permission controls
 - **Improved Resilience**: Better error recovery and reconnection strategies
+- **Observability**: Enhanced metrics and monitoring for server health
+- **Test Utilities**: Simplified testing support for MCP integrations

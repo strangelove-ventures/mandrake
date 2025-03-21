@@ -41,20 +41,41 @@ describe('MCP Configuration Management', () => {
     expect(config.healthCheck.strategy).toEqual(HealthCheckStrategy.TOOL_LISTING)
   })
 
-  test('creates config with development defaults', () => {
-    // Create from development base with custom command
+  test('creates config with custom defaults', () => {
+    // Create a custom base config for testing
+    const customBase = ConfigManager.validate({
+      command: 'echo',
+      args: ['Custom server'],
+      healthCheck: {
+        strategy: HealthCheckStrategy.TOOL_LISTING,
+        intervalMs: 15000,
+        timeoutMs: 10000,
+        retries: 2
+      }
+    })
+    
+    // Create from custom base with custom command
     const config = ConfigManager.create({
       command: 'test-command'
-    }, 'development')
+    }, customBase)
 
     expect(config.command).toEqual('test-command')
-    expect(config.healthCheck.intervalMs).toEqual(15000) // Development setting
-    expect(config.healthCheck.retries).toEqual(2) // Development setting
+    expect(config.healthCheck.intervalMs).toEqual(15000) // Custom setting
+    expect(config.healthCheck.retries).toEqual(2) // Custom setting
   })
 
   test('performs deep merging of configs', () => {
-    // Start with development config
-    const base = defaultConfigs.development
+    // Create a custom base config for testing
+    const base = ConfigManager.validate({
+      command: 'echo',
+      args: ['Base server'],
+      healthCheck: {
+        strategy: HealthCheckStrategy.TOOL_LISTING,
+        intervalMs: 15000,
+        timeoutMs: 10000,
+        retries: 2
+      }
+    })
     
     // Update with partial config that includes nested healthCheck
     const config = ConfigManager.update(base, {

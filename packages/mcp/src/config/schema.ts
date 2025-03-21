@@ -4,6 +4,27 @@ import process from 'node:process'
 
 /**
  * Zod schema for health check configuration
+ * 
+ * Validates and provides defaults for health check configuration properties.
+ * Supports multiple health check strategies including tool listing, ping,
+ * specific tool invocation, and custom health checks.
+ * 
+ * @example
+ * // Basic health check with default settings
+ * const config = healthCheckConfigSchema.parse({
+ *   strategy: HealthCheckStrategy.TOOL_LISTING
+ * })
+ * 
+ * @example
+ * // Custom health check with specific tool
+ * const config = healthCheckConfigSchema.parse({
+ *   strategy: HealthCheckStrategy.SPECIFIC_TOOL,
+ *   intervalMs: 15000,
+ *   specificTool: {
+ *     name: 'ping',
+ *     args: { timeout: 2000 }
+ *   }
+ * })
  */
 export const healthCheckConfigSchema = z.object({
   strategy: z.nativeEnum(HealthCheckStrategy).default(HealthCheckStrategy.TOOL_LISTING),
@@ -18,9 +39,28 @@ export const healthCheckConfigSchema = z.object({
 })
 
 /**
- * Zod schema for server configuration
+ * Helper to create a clean environment variables object
+ * 
+ * Handles environment variable inheritance based on the execution context.
+ * In test environments, it returns an empty object by default unless 
+ * specifically configured to inherit via INHERIT_ENV=true.
+ * In non-test environments, it inherits all process environment variables.
+ * 
+ * @returns A record of string environment variables
+ * 
+ * @example
+ * // In production code
+ * const env = getProcessEnv() // Returns all process.env variables
+ * 
+ * @example
+ * // In test code with INHERIT_ENV=true
+ * process.env.INHERIT_ENV = 'true'
+ * const env = getProcessEnv() // Returns all process.env variables
+ * 
+ * @example
+ * // In test code without INHERIT_ENV set
+ * const env = getProcessEnv() // Returns empty object
  */
-// Helper to create a clean env object with all keys as string values
 function getProcessEnv(): Record<string, string> {
   // For tests, if we're in a test environment, return an empty object
   if (process.env.NODE_ENV === 'test' && process.env.INHERIT_ENV !== 'true') {
@@ -37,6 +77,33 @@ function getProcessEnv(): Record<string, string> {
   return cleanEnv;
 }
 
+/**
+ * Zod schema for MCP server configuration
+ * 
+ * Validates and provides defaults for server configuration properties including
+ * the command to execute, arguments, environment variables, and health check settings.
+ * 
+ * @example
+ * // Minimal valid configuration
+ * const config = serverConfigSchema.parse({
+ *   command: 'node',
+ *   args: ['server.js']
+ * })
+ * 
+ * @example
+ * // Full configuration with custom health check
+ * const config = serverConfigSchema.parse({
+ *   command: 'node',
+ *   args: ['server.js', '--port', '3000'],
+ *   env: { NODE_ENV: 'production', DEBUG: 'false' },
+ *   autoApprove: ['fs.readFile', 'fs.writeFile'],
+ *   healthCheck: {
+ *     strategy: HealthCheckStrategy.SPECIFIC_TOOL,
+ *     intervalMs: 10000,
+ *     specificTool: { name: 'status', args: {} }
+ *   }
+ * })
+ */
 export const serverConfigSchema = z.object({
   command: z.string().min(1),
   args: z.array(z.string()).default([]),
@@ -51,56 +118,41 @@ export const serverConfigSchema = z.object({
   })
 })
 
-// Type inference from schema
+/**
+ * TypeScript type for validated health check configuration
+ * Inferred from the Zod schema for type safety
+ */
 export type ValidatedHealthCheckConfig = z.infer<typeof healthCheckConfigSchema>
+
+/**
+ * TypeScript type for validated server configuration
+ * Inferred from the Zod schema for type safety
+ */
 export type ValidatedServerConfig = z.infer<typeof serverConfigSchema>
 
 /**
  * Default configurations for common scenarios
+ * 
+ * Pre-validated configuration objects that can be used as starting points
+ * for creating server configurations. These configs provide sensible defaults
+ * for different use cases.
+ * 
+ * @example
+ * // Using minimal config as a base
+ * const serverConfig = ConfigManager.create({
+ *   command: 'node',
+ *   args: ['my-server.js'] 
+ * }, 'minimal')
  */
 export const defaultConfigs = {
   /**
    * Minimal config with default values for health and disabled=false
+   * 
+   * Provides a baseline configuration with only required fields.
+   * Use this as a starting point for simple server configurations.
    */
   minimal: serverConfigSchema.parse({
     command: 'echo',
     args: ['Server not configured']
-  }),
-
-  /**
-   * Development config with more frequent health checks and debug logging
-   */
-  development: serverConfigSchema.parse({
-    command: 'echo',
-    args: ['Development server'],
-    healthCheck: {
-      strategy: HealthCheckStrategy.TOOL_LISTING,
-      intervalMs: 15000, // More frequent checks
-      timeoutMs: 10000,  // Longer timeout for debugging
-      retries: 2         // More retries
-    }
-  }),
-
-  /**
-   * Production config with standard health check settings
-   */
-  production: serverConfigSchema.parse({
-    command: 'echo',
-    args: ['Production server'],
-    healthCheck: {
-      strategy: HealthCheckStrategy.TOOL_LISTING,
-      intervalMs: 30000, // Standard interval
-      timeoutMs: 5000,   // Short timeout
-      retries: 1         // Minimal retries
-    }
-  }),
-
-  /**
-   * Disabled server config
-   */
-  disabled: serverConfigSchema.parse({
-    command: 'echo',
-    args: ['Server is disabled'],
-    disabled: true
   })
 }

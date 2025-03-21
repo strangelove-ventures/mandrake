@@ -462,7 +462,12 @@ export class MCPManager {
   /**
    * Start periodic health checks
    * 
+   * Initializes a background timer to periodically check the health of all
+   * managed servers. The health check runs every intervalMs milliseconds
+   * and logs warnings for any unhealthy servers.
+   * 
    * @param intervalMs Interval between health checks in milliseconds
+   * @private
    */
   private startHealthChecks(intervalMs = 30000) {
     // Clear any existing interval
@@ -471,13 +476,12 @@ export class MCPManager {
     }
     
     // Set up new interval
-    // Use a different approach to avoid the Symbol.dispose TypeScript issue
     const interval = setInterval(async () => {
       try {
         this.logger.debug('Running scheduled health check')
         const healthStatus = await this.checkServerHealth()
         
-        // Log any unhealthy servers (with more details)
+        // Log any unhealthy servers with detailed metrics
         for (const [id, healthy] of healthStatus) {
           if (!healthy) {
             // Get detailed health metrics for better reporting
