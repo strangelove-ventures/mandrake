@@ -1,9 +1,13 @@
 /**
- * Example demonstrating how to use the WorkspaceManagerAdapter with the ServiceRegistry
+ * Example demonstrating how to use service adapters with the ServiceRegistry
  */
 import { ServiceRegistryImpl } from '../../../src/services/registry';
-import { WorkspaceManagerAdapter, MCPManagerAdapter } from '../../../src/services/registry/adapters';
-import { WorkspaceManager } from '@mandrake/workspace';
+import { 
+  WorkspaceManagerAdapter, 
+  MCPManagerAdapter,
+  MandrakeManagerAdapter
+} from '../../../src/services/registry/adapters';
+import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { ConsoleLogger } from '@mandrake/utils';
 
@@ -14,10 +18,29 @@ async function main() {
   // Create the service registry
   const registry = new ServiceRegistryImpl({ logger });
   
-  // Generate IDs for services
+  // Define paths for MandrakeManager and WorkspaceManager
+  const mandrakeRoot = '/path/to/mandrake';
   const workspaceId = 'example-workspace-id';
   const workspaceName = 'example-workspace';
-  const workspaceRoot = '/path/to/workspace';
+  const workspaceRoot = `${mandrakeRoot}/workspaces/${workspaceName}`;
+  
+  // Initialize MandrakeManager
+  const mandrakeManager = new MandrakeManager(mandrakeRoot);
+  
+  // Create the MandrakeManagerAdapter
+  const mandrakeAdapter = new MandrakeManagerAdapter(mandrakeManager, {
+    logger: new ConsoleLogger({ meta: { service: 'MandrakeManagerAdapter' } })
+  });
+  
+  // Register the MandrakeManager service with the registry
+  registry.registerService(
+    'mandrake-manager',            // Service type
+    mandrakeAdapter,               // Service instance
+    {
+      dependencies: [],
+      initializationPriority: 100  // Highest priority - initialize first
+    }
+  );
   
   // Initialize WorkspaceManager
   const workspaceManager = new WorkspaceManager(workspaceRoot, workspaceName, workspaceId);
@@ -33,8 +56,8 @@ async function main() {
     'workspace-manager',       // Service type
     workspaceAdapter,          // Service instance
     {
-      // Dependencies - add any services this depends on
-      dependencies: [],
+      // Workspace manager depends on Mandrake manager being initialized
+      dependencies: ['mandrake-manager'],
       // Higher priority means it will be initialized earlier
       initializationPriority: 10
     }
@@ -87,7 +110,21 @@ async function main() {
     statuses: Object.fromEntries(statuses.entries())
   });
   
-  // Get a specific service
+  // Get global services
+  const mdManager = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+  
+  if (mdManager) {
+    logger.info('Got mandrake manager service', {
+      rootPath: mdManager.getManager().paths.root,
+      initialized: mdManager.isInitialized()
+    });
+    
+    // List all workspaces (after initialization)
+    const workspaces = mdManager.listWorkspaces();
+    logger.info('Workspaces', { count: workspaces.length });
+  }
+  
+  // Get workspace-specific services
   const wsManager = registry.getWorkspaceService<WorkspaceManagerAdapter>(
     workspaceId, 
     'workspace-manager'
@@ -113,14 +150,18 @@ async function main() {
  * This example demonstrates:
  * 
  * 1. Creating a ServiceRegistry
- * 2. Registering WorkspaceManagerAdapter with the registry
- * 3. Registering MCPManagerAdapter with dependency on WorkspaceManager
- * 4. Initializing all services in dependency order
- * 5. Getting service status information
- * 6. Retrieving a specific service from the registry
- * 7. Cleaning up all services in the correct order
+ * 2. Registering MandrakeManagerAdapter as a global service
+ * 3. Registering WorkspaceManagerAdapter with dependency on MandrakeManager
+ * 4. Registering MCPManagerAdapter with dependency on WorkspaceManager
+ * 5. Initializing all services in dependency order
+ * 6. Getting service status information
+ * 7. Retrieving global and workspace-specific services from the registry
+ * 8. Managing workspaces through the MandrakeManager service
+ * 9. Cleaning up all services in the correct order
  * 
- * The key benefit is that the ServiceRegistry handles dependency ordering
- * and lifecycle management, ensuring that services are initialized and
- * cleaned up in the correct order.
+ * The key benefits include:
+ * - The ServiceRegistry handles dependency ordering and lifecycle management
+ * - Clear separation between global and workspace-specific services
+ * - Consistent initialization and cleanup procedures across all services
+ * - Health status reporting and monitoring for all services
  */

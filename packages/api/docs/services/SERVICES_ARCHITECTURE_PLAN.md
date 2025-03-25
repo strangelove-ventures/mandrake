@@ -2,6 +2,17 @@
 
 This document outlines the refined plan for improving the services architecture in the Mandrake API package, with a focus on centralized service lifecycle management through a Service Registry.
 
+## Implementation Status
+
+As of March 2025:
+
+- ✅ **ServiceRegistry Implementation**: Completed with dependency ordering and lifecycle management
+- ✅ **Core Service Adapters**: Implemented MandrakeManagerAdapter, WorkspaceManagerAdapter, MCPManagerAdapter, and SessionCoordinatorAdapter
+- ⏳ **Additional Adapters**: Planned for ToolsManager and ModelsManager
+- ⏳ **API Route Integration**: Update routes to use ServiceRegistry for service access
+
+See [SERVICE_ADAPTER_APPROACH.md](./SERVICE_ADAPTER_APPROACH.md) for details on the adapter implementation approach.
+
 ## Current Architecture Overview
 
 The Mandrake API manages several types of stateful services with specific considerations for lifecycle management:
