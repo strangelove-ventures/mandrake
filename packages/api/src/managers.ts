@@ -66,6 +66,8 @@ export async function initializeManagers(mandrakeHome?: string): Promise<{ manag
     
     // Load existing workspaces - errors are handled internally
     try {
+      // registry is not passed here because it's not available at this point
+      // registry services are handled through the updated index.ts
       await loadWorkspaces(mandrakeManager, workspaceManagers, mcpManagers, sessionCoordinators);
     } catch (error) {
       console.error('Failed to load workspaces, but continuing with startup:', error);
@@ -120,12 +122,14 @@ export async function initializeManagers(mandrakeHome?: string): Promise<{ manag
 
 /**
  * Load existing workspaces into memory
+ * @param registry Optional ServiceRegistry for registering workspace services
  */
 async function loadWorkspaces(
   mandrakeManager: MandrakeManager,
   workspaceManagers: Map<string, WorkspaceManager>,
   mcpManagers: Map<string, MCPManager>,
-  sessionCoordinators: Map<string, Map<string, SessionCoordinator>>
+  sessionCoordinators: Map<string, Map<string, SessionCoordinator>>,
+  registry?: any
 ): Promise<void> {
   try {
     // Get workspace registry from MandrakeManager
@@ -134,7 +138,15 @@ async function loadWorkspaces(
     // Load each workspace in parallel
     await Promise.all(
       workspaces.map(workspace => 
-        loadWorkspace(workspace.id, workspace.path, workspaceManagers, mcpManagers, sessionCoordinators, mandrakeManager)
+        loadWorkspace(
+          workspace.id, 
+          workspace.path, 
+          workspaceManagers, 
+          mcpManagers, 
+          sessionCoordinators, 
+          mandrakeManager,
+          registry
+        )
       )
     );
   } catch (error) {

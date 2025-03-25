@@ -1,5 +1,4 @@
 import { Hono, type Context } from 'hono';
-import type { Managers, ManagerAccessors } from '../types';
 import { allToolRoutes } from './tools';
 import { modelsRoutes, providersRoutes } from './models';
 import { promptRoutes } from './prompt';
@@ -11,17 +10,18 @@ import { workspaceSessionStreamingRoutes } from './streaming';
 import { WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { workspaceManagementRoutes } from './workspace';
+import { ServiceRegistry } from '../services/registry';
+import { WorkspaceManagerAdapter, MCPManagerAdapter } from '../services/registry/adapters';
 
 /**
  * Create workspace-level routes for the Mandrake API
- * @param managers All available managers
- * @param accessors Functions to access specific managers
+ * @param registry Service registry for accessing all managed services
  */
-export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors) {
+export function workspaceRoutes(registry: ServiceRegistry) {
   const app = new Hono();
   
   // Mount the workspace management routes
-  app.route('/', workspaceManagementRoutes(managers, accessors));
+  app.route('/', workspaceManagementRoutes(registry));
   
   // Create a shared workspace router for specific workspace resources
   const workspaceRouter = new Hono();
@@ -29,106 +29,110 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
   // Add middleware to inject workspace resources
   workspaceRouter.use('*', async (c: Context, next) => {
     const workspaceId = c.req.param('workspaceId');
-    const workspace = accessors.getWorkspaceManager((workspaceId as string));
-    const mcpManager = accessors.getMcpManager((workspaceId as string));
+    
+    try {
+      // Try to get workspace manager from registry
+      const wsAdapter = registry.getWorkspaceService<WorkspaceManagerAdapter>(
+        workspaceId as string, 
+        'workspace-manager'
+      );
       
-    if (!workspace) {
-      return c.json({ error: 'Workspace not found' }, 404);
+      if (!wsAdapter) {
+        return c.json({ 
+          error: 'Workspace not found',
+          message: `No workspace with ID ${workspaceId} found in service registry`
+        }, 404);
+      }
+      
+      const workspace = wsAdapter.getManager();
+      
+      // Try to get MCP manager from registry
+      const mcpAdapter = registry.getWorkspaceService<MCPManagerAdapter>(
+        workspaceId as string,
+        'mcp-manager'
+      );
+      
+      // MCP manager might not be available yet
+      const mcpManager = mcpAdapter ? mcpAdapter.getManager() : null;
+      
+      // Make these available to all subroutes
+      (c as any).set('workspace', workspace);
+      (c as any).set('mcpManager', mcpManager);
+      (c as any).set('workspaceId', workspaceId);
+      (c as any).set('registry', registry);
+      
+      await next();
+    } catch (error) {
+      console.error(`Error accessing workspace ${workspaceId}:`, error);
+      return c.json({ 
+        error: 'Error accessing workspace',
+        message: error instanceof Error ? error.message : String(error)
+      }, 500);
     }
-    
-    // Make these available to all subroutes)
-    (c as any).set('workspace', workspace);
-    (c as any).set('mcpManager', mcpManager);
-    (c as any).set('workspaceId', workspaceId);
-    
-    await next();
   });
-  
-  // Create wrapper routes that extract necessary managers from context
-  function createConfigRouter(c: any) {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    return workspaceConfigRoutes(workspace.config);
-  }
-  
-  function createToolsRouter(c: any) {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const mcpManager = c.get('mcpManager') as MCPManager;
-    return allToolRoutes(workspace.tools, mcpManager);
-  }
-  
-  function createModelsRouter(c: any) {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    return modelsRoutes(workspace.models);
-  }
-  
-  function createProvidersRouter(c: any) {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    return providersRoutes(workspace.models);
-  }
-  
-  function createPromptRouter(c: any) {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    return promptRoutes(workspace.prompt);
-  }
-  
-  function createFilesRouter(c: any) {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    return filesRoutes(workspace.files);
-  }
-  
-  function createDynamicRouter(c: any) {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    return dynamicContextRoutes(workspace.dynamic);
-  }
-  
-  function createSessionsRouter(c: any) {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const workspaceId = c.get('workspaceId') as string;
-    return workspaceSessionDatabaseRoutes(managers, accessors, workspaceId, workspace);
-  }
-  
-  function createStreamingRouter(c: any) {
-    const workspaceId = c.get('workspaceId') as string;
-    return workspaceSessionStreamingRoutes(managers, accessors, workspaceId);
-  }
   
   // Mount resource routes as direct route handlers 
   workspaceRouter.get('/config', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    return c.json(await workspace.config.getConfig());
+    try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      return c.json(await workspace.config.getConfig());
+    } catch (error) {
+      console.error('Error getting workspace config:', error);
+      return c.json({ error: 'Failed to get workspace configuration' }, 500);
+    }
   });
   
   workspaceRouter.put('/config', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const config = await c.req.json();
-    await workspace.config.updateConfig(config);
-    return c.json({ success: true });
+    try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const config = await c.req.json();
+      await workspace.config.updateConfig(config);
+      return c.json({ success: true });
+    } catch (error) {
+      console.error('Error updating workspace config:', error);
+      return c.json({ error: 'Failed to update workspace configuration' }, 500);
+    }
   });
   
   // Route for all nested tool routes
   workspaceRouter.all('/tools/*', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const mcpManager = c.get('mcpManager') as MCPManager;
-    const toolsApp = allToolRoutes(workspace.tools, mcpManager);
-    // Create a new request with the path modified to strip the /tools prefix
-    const url = new URL(c.req.url);
-    const pathParts = url.pathname.split('/');
-    // Find 'tools' in the path and remove everything up to and including it
-    const toolsIndex = pathParts.findIndex(part => part === 'tools');
-    if (toolsIndex !== -1) {
-      const newPathParts = pathParts.slice(toolsIndex + 1);
-      url.pathname = '/' + newPathParts.join('/');
-      const newRequest = new Request(url.toString(), c.req.raw);
-      return toolsApp.fetch(newRequest, c.env);
+    try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const mcpManager = c.get('mcpManager') as MCPManager;
+      
+      if (!mcpManager) {
+        return c.json({ error: 'MCP manager not available for this workspace' }, 503);
+      }
+      
+      const toolsApp = allToolRoutes(workspace.tools, mcpManager);
+      
+      // Create a new request with the path modified to strip the /tools prefix
+      const url = new URL(c.req.url);
+      const pathParts = url.pathname.split('/');
+      // Find 'tools' in the path and remove everything up to and including it
+      const toolsIndex = pathParts.findIndex(part => part === 'tools');
+      if (toolsIndex !== -1) {
+        const newPathParts = pathParts.slice(toolsIndex + 1);
+        url.pathname = '/' + newPathParts.join('/');
+        const newRequest = new Request(url.toString(), c.req.raw);
+        return toolsApp.fetch(newRequest, c.env);
+      }
+      return c.json({ error: 'Invalid tools path' }, 404);
+    } catch (error) {
+      console.error('Error handling tools route:', error);
+      return c.json({ error: 'Failed to handle tools request' }, 500);
     }
-    return c.json({ error: 'Invalid tools path' }, 404);
   });
   
   // Define all the endpoints for tool operations
   workspaceRouter.get('/tools/operations', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const mcpManager = c.get('mcpManager') as MCPManager;
     try {
+      const mcpManager = c.get('mcpManager') as MCPManager;
+      
+      if (!mcpManager) {
+        return c.json({ error: 'MCP manager not available for this workspace' }, 503);
+      }
+      
       const tools = await mcpManager.listAllTools();
       return c.json(tools);
     } catch (error) {
@@ -139,8 +143,8 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
   
   // Define specific endpoints for tool configs
   workspaceRouter.get('/tools/configs', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
     try {
+      const workspace = c.get('workspace') as WorkspaceManager;
       const configSets = await workspace.tools.listConfigSets();
       return c.json(configSets);
     } catch (error) {
@@ -150,8 +154,8 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
   });
   
   workspaceRouter.post('/tools/configs', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
     try {
+      const workspace = c.get('workspace') as WorkspaceManager;
       const config = await c.req.json();
       if (!config.id) {
         return c.json({ error: 'Tool ID is required' }, 400);
@@ -179,111 +183,136 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
   
   // Handle specific tool config operations
   workspaceRouter.get('/tools/configs/:toolId', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const toolId = c.req.param('toolId');
     try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const toolId = c.req.param('toolId');
       const configSet = await workspace.tools.getConfigSet(toolId);
       if (!configSet) {
         return c.json({ error: 'Tool configuration not found' }, 404);
       }
       return c.json(configSet);
     } catch (error) {
-      console.error(`Error getting tool configuration ${toolId}:`, error);
-      return c.json({ error: `Failed to get tool configuration ${toolId}` }, 500);
+      console.error(`Error getting tool configuration:`, error);
+      return c.json({ error: 'Failed to get tool configuration' }, 500);
     }
   });
   
   // Models routes
   workspaceRouter.all('/models/*', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const modelsApp = modelsRoutes(workspace.models);
-    
-    const url = new URL(c.req.url);
-    const pathParts = url.pathname.split('/');
-    const modelsIndex = pathParts.findIndex(part => part === 'models');
-    if (modelsIndex !== -1) {
-      const newPathParts = pathParts.slice(modelsIndex + 1);
-      url.pathname = '/' + newPathParts.join('/');
-      const newRequest = new Request(url.toString(), c.req.raw);
-      return modelsApp.fetch(newRequest, c.env);
+    try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const modelsApp = modelsRoutes(workspace.models);
+      
+      const url = new URL(c.req.url);
+      const pathParts = url.pathname.split('/');
+      const modelsIndex = pathParts.findIndex(part => part === 'models');
+      if (modelsIndex !== -1) {
+        const newPathParts = pathParts.slice(modelsIndex + 1);
+        url.pathname = '/' + newPathParts.join('/');
+        const newRequest = new Request(url.toString(), c.req.raw);
+        return modelsApp.fetch(newRequest, c.env);
+      }
+      return c.json({ error: 'Invalid models path' }, 404);
+    } catch (error) {
+      console.error('Error handling models route:', error);
+      return c.json({ error: 'Failed to handle models request' }, 500);
     }
-    return c.json({ error: 'Invalid models path' }, 404);
   });
   
   // Providers routes
   workspaceRouter.all('/providers/*', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const providersApp = providersRoutes(workspace.models);
-    
-    const url = new URL(c.req.url);
-    const pathParts = url.pathname.split('/');
-    const index = pathParts.findIndex(part => part === 'providers');
-    if (index !== -1) {
-      const newPathParts = pathParts.slice(index + 1);
-      url.pathname = '/' + newPathParts.join('/');
-      const newRequest = new Request(url.toString(), c.req.raw);
-      return providersApp.fetch(newRequest, c.env);
+    try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const providersApp = providersRoutes(workspace.models);
+      
+      const url = new URL(c.req.url);
+      const pathParts = url.pathname.split('/');
+      const index = pathParts.findIndex(part => part === 'providers');
+      if (index !== -1) {
+        const newPathParts = pathParts.slice(index + 1);
+        url.pathname = '/' + newPathParts.join('/');
+        const newRequest = new Request(url.toString(), c.req.raw);
+        return providersApp.fetch(newRequest, c.env);
+      }
+      return c.json({ error: 'Invalid providers path' }, 404);
+    } catch (error) {
+      console.error('Error handling providers route:', error);
+      return c.json({ error: 'Failed to handle providers request' }, 500);
     }
-    return c.json({ error: 'Invalid providers path' }, 404);
   });
   
   // Prompt routes
   workspaceRouter.all('/prompt/*', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const promptApp = promptRoutes(workspace.prompt);
-    
-    const url = new URL(c.req.url);
-    const pathParts = url.pathname.split('/');
-    const index = pathParts.findIndex(part => part === 'prompt');
-    if (index !== -1) {
-      const newPathParts = pathParts.slice(index + 1);
-      url.pathname = '/' + newPathParts.join('/');
-      const newRequest = new Request(url.toString(), c.req.raw);
-      return promptApp.fetch(newRequest, c.env);
+    try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const promptApp = promptRoutes(workspace.prompt);
+      
+      const url = new URL(c.req.url);
+      const pathParts = url.pathname.split('/');
+      const index = pathParts.findIndex(part => part === 'prompt');
+      if (index !== -1) {
+        const newPathParts = pathParts.slice(index + 1);
+        url.pathname = '/' + newPathParts.join('/');
+        const newRequest = new Request(url.toString(), c.req.raw);
+        return promptApp.fetch(newRequest, c.env);
+      }
+      return c.json({ error: 'Invalid prompt path' }, 404);
+    } catch (error) {
+      console.error('Error handling prompt route:', error);
+      return c.json({ error: 'Failed to handle prompt request' }, 500);
     }
-    return c.json({ error: 'Invalid prompt path' }, 404);
   });
   
   // Files routes
   workspaceRouter.all('/files/*', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const filesApp = filesRoutes(workspace.files);
-    
-    const url = new URL(c.req.url);
-    const pathParts = url.pathname.split('/');
-    const index = pathParts.findIndex(part => part === 'files');
-    if (index !== -1) {
-      const newPathParts = pathParts.slice(index + 1);
-      url.pathname = '/' + newPathParts.join('/');
-      const newRequest = new Request(url.toString(), c.req.raw);
-      return filesApp.fetch(newRequest, c.env);
+    try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const filesApp = filesRoutes(workspace.files);
+      
+      const url = new URL(c.req.url);
+      const pathParts = url.pathname.split('/');
+      const index = pathParts.findIndex(part => part === 'files');
+      if (index !== -1) {
+        const newPathParts = pathParts.slice(index + 1);
+        url.pathname = '/' + newPathParts.join('/');
+        const newRequest = new Request(url.toString(), c.req.raw);
+        return filesApp.fetch(newRequest, c.env);
+      }
+      return c.json({ error: 'Invalid files path' }, 404);
+    } catch (error) {
+      console.error('Error handling files route:', error);
+      return c.json({ error: 'Failed to handle files request' }, 500);
     }
-    return c.json({ error: 'Invalid files path' }, 404);
   });
   
   // Dynamic routes
   workspaceRouter.all('/dynamic/*', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const dynamicApp = dynamicContextRoutes(workspace.dynamic);
-    
-    const url = new URL(c.req.url);
-    const pathParts = url.pathname.split('/');
-    const index = pathParts.findIndex(part => part === 'dynamic');
-    if (index !== -1) {
-      const newPathParts = pathParts.slice(index + 1);
-      url.pathname = '/' + newPathParts.join('/');
-      const newRequest = new Request(url.toString(), c.req.raw);
-      return dynamicApp.fetch(newRequest, c.env);
+    try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const dynamicApp = dynamicContextRoutes(workspace.dynamic);
+      
+      const url = new URL(c.req.url);
+      const pathParts = url.pathname.split('/');
+      const index = pathParts.findIndex(part => part === 'dynamic');
+      if (index !== -1) {
+        const newPathParts = pathParts.slice(index + 1);
+        url.pathname = '/' + newPathParts.join('/');
+        const newRequest = new Request(url.toString(), c.req.raw);
+        return dynamicApp.fetch(newRequest, c.env);
+      }
+      return c.json({ error: 'Invalid dynamic path' }, 404);
+    } catch (error) {
+      console.error('Error handling dynamic route:', error);
+      return c.json({ error: 'Failed to handle dynamic request' }, 500);
     }
-    return c.json({ error: 'Invalid dynamic path' }, 404);
   });
   
   // Sessions routes
   workspaceRouter.post('/sessions', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const workspaceId = c.get('workspaceId') as string;
-    
     try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const workspaceId = c.get('workspaceId') as string;
+      
       const { title, description, metadata } = await c.req.json();
       const session = await workspace.sessions.createSession({ 
         title: title || 'Untitled Session',
@@ -308,46 +337,56 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
     }
   });
   
+  // Session routes - needs a SessionManagerAdapter to be implemented
   workspaceRouter.all('/sessions/*', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const workspaceId = c.get('workspaceId') as string;
-    const sessionsApp = workspaceSessionDatabaseRoutes(managers, accessors, workspaceId, workspace);
-    
-    const url = new URL(c.req.url);
-    const pathParts = url.pathname.split('/');
-    const index = pathParts.findIndex(part => part === 'sessions');
-    if (index !== -1) {
-      const newPathParts = pathParts.slice(index + 1);
-      url.pathname = '/' + newPathParts.join('/');
-      const newRequest = new Request(url.toString(), c.req.raw);
-      return sessionsApp.fetch(newRequest, c.env);
-    }
-    return c.json({ error: 'Invalid sessions path' }, 404);
+    return c.json({
+      error: 'Not implemented yet',
+      message: 'The SessionManagerAdapter needs to be implemented before using this route through the ServiceRegistry'
+    }, 501);
   });
   
-  // Streaming routes
+  // Streaming routes - needs a SessionCoordinatorAdapter to be implemented
   workspaceRouter.all('/streaming/*', async (c) => {
-    const workspaceId = c.get('workspaceId') as string;
-    const streamingApp = workspaceSessionStreamingRoutes(managers, accessors, workspaceId);
-    
-    const url = new URL(c.req.url);
-    const pathParts = url.pathname.split('/');
-    const index = pathParts.findIndex(part => part === 'streaming');
-    if (index !== -1) {
-      const newPathParts = pathParts.slice(index + 1);
-      url.pathname = '/' + newPathParts.join('/');
-      const newRequest = new Request(url.toString(), c.req.raw);
-      return streamingApp.fetch(newRequest, c.env);
+    return c.json({
+      error: 'Not implemented yet',
+      message: 'The SessionCoordinatorAdapter needs to be fully integrated before using this route through the ServiceRegistry'
+    }, 501);
+  });
+  
+  // Service status route specific to this workspace
+  workspaceRouter.get('/services/status', async (c) => {
+    try {
+      const workspaceId = c.get('workspaceId') as string;
+      
+      // Get all workspace services for this workspace
+      const statuses = {};
+      
+      for (const [key, status] of registry.getAllServiceStatuses().entries()) {
+        // Only include services for this workspace
+        if (key.startsWith(`${workspaceId}:`)) {
+          // Extract the service type from the key (after the workspace ID)
+          const serviceType = key.split(':')[1];
+          statuses[serviceType] = status;
+        }
+      }
+      
+      return c.json(statuses);
+    } catch (error) {
+      console.error('Error getting service status:', error);
+      return c.json({ error: 'Failed to get service status' }, 500);
     }
-    return c.json({ error: 'Invalid streaming path' }, 404);
   });
   
   // Server status routes - these need to be explicit since the nested routing doesn't always work
   workspaceRouter.get('/tools/servers/status', async (c) => {
-    const workspace = c.get('workspace') as WorkspaceManager;
-    const mcpManager = c.get('mcpManager') as MCPManager;
-
     try {
+      const workspace = c.get('workspace') as WorkspaceManager;
+      const mcpManager = c.get('mcpManager') as MCPManager;
+      
+      if (!mcpManager) {
+        return c.json({ error: 'MCP manager not available for this workspace' }, 503);
+      }
+
       const serverStatuses = {};
 
       // Get active tool configuration
@@ -383,10 +422,14 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
   });
 
   workspaceRouter.get('/tools/servers/status/:serverId', async (c) => {
-    const serverId = c.req.param('serverId');
-    const mcpManager = c.get('mcpManager') as MCPManager;
-
     try {
+      const serverId = c.req.param('serverId');
+      const mcpManager = c.get('mcpManager') as MCPManager;
+      
+      if (!mcpManager) {
+        return c.json({ error: 'MCP manager not available for this workspace' }, 503);
+      }
+
       const serverState = mcpManager.getServerState(serverId);
       if (!serverState) {
         return c.json({ status: 'stopped' });
@@ -396,14 +439,13 @@ export function workspaceRoutes(managers: Managers, accessors: ManagerAccessors)
         state: serverState
       });
     } catch (error) {
-      console.error(`Error getting status for server ${serverId}:`, error);
+      console.error(`Error getting status for server:`, error);
       return c.json({
         status: 'error',
         error: error instanceof Error ? error.message : String(error)
       }, 500);
     }
   });
-
   
   // Mount the workspace router
   app.route('/:workspaceId', workspaceRouter);

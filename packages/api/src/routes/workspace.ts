@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import type { Managers, ManagerAccessors } from '../types';
 import { WorkspaceManager, MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { join, dirname } from 'path';
@@ -10,17 +9,29 @@ import type {
   WorkspaceListResponse, 
   CreateWorkspaceRequest 
 } from '@mandrake/utils/src/types/api';
+import { ServiceRegistry } from '../services/registry';
+import { MandrakeManagerAdapter, WorkspaceManagerAdapter, MCPManagerAdapter } from '../services/registry/adapters';
+import { ConsoleLogger } from '@mandrake/utils';
 
 /**
  * Create routes for workspace management (CRUD operations on workspaces)
+ * @param registry Service registry for accessing all managed services
  */
-export function workspaceManagementRoutes(managers: Managers, accessors: ManagerAccessors)  {
+export function workspaceManagementRoutes(registry: ServiceRegistry) {
   const app = new Hono();
   
   // List all workspaces
   app.get('/', async (c) => {
     try {
-      const workspaces = await managers.mandrakeManager.listWorkspaces();
+      // Get MandrakeManager from registry
+      const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+      if (!mandrakeAdapter) {
+        return c.json({ error: 'MandrakeManager service not available' }, 503);
+      }
+      
+      const mandrakeManager = mandrakeAdapter.getManager();
+      const workspaces = mandrakeManager.listWorkspaces();
+      
       // Ensure we return objects with id, name, description, path
       const workspaceList: WorkspaceListResponse = workspaces.map(ws => ({
         id: ws.id,
@@ -28,6 +39,7 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
         description: ws.description || null,
         path: ws.path
       }));
+      
       return c.json(workspaceList);
     } catch (error) {
       return sendError(c, error, 'Failed to list workspaces');
@@ -37,6 +49,13 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
   // Create a new workspace
   app.post('/', async (c) => {
     try {
+      // Get MandrakeManager from registry
+      const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+      if (!mandrakeAdapter) {
+        return c.json({ error: 'MandrakeManager service not available' }, 503);
+      }
+      
+      const mandrakeManager = mandrakeAdapter.getManager();
       const data = await c.req.json() as CreateWorkspaceRequest;
       const { name, description, path } = data;
       
@@ -44,13 +63,29 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
         return c.json({ error: 'Name is required' }, 400);
       }
       
-      // Path is optional - createWorkspace will use default if not provided
-      
       // This returns a WorkspaceManager instance that's already initialized
-      const workspace = await managers.mandrakeManager.createWorkspace(name, description, path);
+      const workspace = await mandrakeManager.createWorkspace(name, description, path);
       
-      // Add it to the managers map
-      managers.workspaceManagers.set(workspace.id, workspace);
+      // Create and register the WorkspaceManagerAdapter
+      const wsAdapter = new WorkspaceManagerAdapter(
+        workspace,
+        {
+          logger: new ConsoleLogger({ 
+            meta: { service: 'WorkspaceManagerAdapter', workspaceId: workspace.id } 
+          })
+        }
+      );
+      
+      // Register the workspace with the registry
+      registry.registerWorkspaceService(
+        workspace.id,
+        'workspace-manager',
+        wsAdapter,
+        {
+          dependencies: ['mandrake-manager'],
+          initializationPriority: 10
+        }
+      );
       
       // Initialize an MCPManager for this workspace and set up tools
       const mcpManager = new MCPManager();
@@ -60,6 +95,30 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
         // Get workspace tool configuration and set up servers
         const active = await workspace.tools.getActive();
         const toolConfigs = await workspace.tools.getConfigSet(active);
+        
+        // Create and register the MCPManagerAdapter
+        const mcpAdapter = new MCPManagerAdapter(
+          mcpManager,
+          toolConfigs,
+          active,
+          {
+            logger: new ConsoleLogger({ 
+              meta: { service: 'MCPManagerAdapter', workspaceId: workspace.id } 
+            }),
+            workspaceId: workspace.id
+          }
+        );
+        
+        // Register the MCP manager with the registry
+        registry.registerWorkspaceService(
+          workspace.id,
+          'mcp-manager',
+          mcpAdapter,
+          {
+            dependencies: ['workspace-manager'],
+            initializationPriority: 5
+          }
+        );
         
         // For each tool config, potentially start an MCP server
         for (const [toolName, config] of Object.entries(toolConfigs)) {
@@ -74,13 +133,8 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
         console.warn(`Error loading tools for workspace ${workspace.id}:`, toolsError);
       }
       
-      managers.mcpManagers.set(workspace.id, mcpManager);
-      
-      // Initialize empty session coordinators map
-      managers.sessionCoordinators.set(workspace.id, new Map());
-      
       // Get registered workspace data for the response
-      const workspaceData = await managers.mandrakeManager.getWorkspace(workspace.id);
+      const workspaceData = await mandrakeManager.getWorkspace(workspace.id);
       const des = (await workspaceData.config.getConfig()).description;
       
       if (!workspaceData) {
@@ -106,7 +160,14 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
       const workspaceId = c.req.param('workspaceId');
       
       try {
-        const workspaceData = await managers.mandrakeManager.getWorkspace(workspaceId);
+        // Get MandrakeManager from registry
+        const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+        if (!mandrakeAdapter) {
+          return c.json({ error: 'MandrakeManager service not available' }, 503);
+        }
+        
+        const mandrakeManager = mandrakeAdapter.getManager();
+        const workspaceData = await mandrakeManager.getWorkspace(workspaceId);
         const description = (await workspaceData.config.getConfig()).description;
         
         const response: WorkspaceResponse = {
@@ -128,110 +189,63 @@ export function workspaceManagementRoutes(managers: Managers, accessors: Manager
       return sendError(c, error, 'Failed to get workspace');
     }
   });
+  
+  // Delete a workspace
+  app.delete('/:workspaceId', async (c) => {
+    try {
+      const workspaceId = c.req.param('workspaceId');
+      
+      // Get workspace service and clean it up first
+      const wsAdapter = registry.getWorkspaceService<WorkspaceManagerAdapter>(
+        workspaceId, 
+        'workspace-manager'
+      );
+      
+      if (wsAdapter) {
+        await wsAdapter.cleanup();
+      }
+      
+      // Get MCP manager and clean it up
+      const mcpAdapter = registry.getWorkspaceService<MCPManagerAdapter>(
+        workspaceId,
+        'mcp-manager'
+      );
+      
+      if (mcpAdapter) {
+        await mcpAdapter.cleanup();
+      }
+      
+      // Now delete from registry
+      const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+      if (!mandrakeAdapter) {
+        return c.json({ error: 'MandrakeManager service not available' }, 503);
+      }
+      
+      const mandrakeManager = mandrakeAdapter.getManager();
+      await mandrakeManager.deleteWorkspace(workspaceId);
+      
+      return c.json({ success: true });
+    } catch (error) {
+      return sendError(c, error, 'Failed to delete workspace');
+    }
+  });
+  
   return app;
 }
 
 /**
- * Helper function to create a middleware that injects workspace resources into the context
+ * Helper function to resolve workspace paths
  */
-export function createWorkspaceMiddleware(accessors: ManagerAccessors) {
-  return async (c: any, next: () => Promise<void>) => {
-    const workspaceId = c.req.param('workspaceId');
-    const workspace = accessors.getWorkspaceManager(workspaceId);
-    const mcpManager = accessors.getMcpManager(workspaceId);
-      
-    if (!workspace) {
-      return c.json({ error: 'Workspace not found' }, 404);
-    }
-    
-    // Make these available to all subroutes
-    c.set('workspace', workspace);
-    c.set('mcpManager', mcpManager);
-    c.set('workspaceId', workspaceId);
-    
-    await next();
-  };
-}
-
-/**
- * Load a single workspace into memory
- */
-export async function loadWorkspace(
-  id: string,
-  path: string,
-  workspaceManagers: Map<string, WorkspaceManager>,
-  mcpManagers: Map<string, MCPManager>,
-  sessionCoordinators: Map<string, Map<string, any>>,
-  mandrakeManager?: MandrakeManager
-): Promise<void> {
-  try {
-    let workspaceName = id;
-    if (mandrakeManager) {
-      try {
-        const workspaceData = await mandrakeManager.getWorkspace(id);
-        if (workspaceData) {
-          workspaceName = workspaceData.name;
-        }
-      } catch (error) {
-        console.warn(`Error loading workspace ${id} from Mandrake manager:`, error);
-        // Continue with the workspace ID as the name if we can't get the workspace data
-      }
-    }
-    
-    // Verify path exists before trying to create workspace manager
-    if (!path) {
-      console.error(`Error loading workspace ${id}: Invalid path`);
-      return;
-    }
-    
-    // Resolve tilde in path if present
-    let resolvedPath = path;
-    if (path.startsWith('~')) {
-      resolvedPath = join(process.env.HOME || os.homedir(), path.substring(1));
-    }
-    
-    // Determine if we need to get the parent directory
-    const isFullWorkspacePath = resolvedPath.endsWith(`/${workspaceName}`);
-    const workspaceParentDir = isFullWorkspacePath 
-      ? dirname(resolvedPath)
-      : resolvedPath;
-    
-    console.log(`Loading workspace: ${workspaceName}`, {
-      id,
-      originalPath: path,
-      resolvedPath,
-      workspaceParentDir,
-      isFullWorkspacePath
-    });
-    
-    const ws = new WorkspaceManager(workspaceParentDir, workspaceName, id);
-    await ws.init();
-    workspaceManagers.set(ws.id, ws);
-    
-    const mcpManager = new MCPManager();
-    
-    try {
-      const active = await ws.tools.getActive();
-      const toolConfigs = await ws.tools.getConfigSet(active);
-      
-      for (const [name, config] of Object.entries(toolConfigs)) {
-        if (!config) continue;
-        try {
-          await mcpManager.startServer(name, config);
-        } catch (serverError) {
-          console.warn(`Failed to start server for tool ${name}:`, serverError);
-        }
-      }
-    } catch (toolsError) {
-      console.warn(`Error loading tools for workspace ${id}:`, toolsError);
-    }
-    
-    mcpManagers.set(ws.id, mcpManager);
-    
-    sessionCoordinators.set(ws.id, new Map());
-    
-  } catch (error) {
-    console.error(`Error loading workspace ${id}:`, error);
-    // Don't rethrow the error to prevent the entire workspace loading process from failing
+export function resolveWorkspacePath(path: string, name: string): string {
+  // Resolve tilde in path if present
+  let resolvedPath = path;
+  if (path.startsWith('~')) {
+    resolvedPath = join(process.env.HOME || os.homedir(), path.substring(1));
   }
+  
+  // Determine if we need to get the parent directory
+  const isFullWorkspacePath = resolvedPath.endsWith(`/${name}`);
+  return isFullWorkspacePath 
+    ? dirname(resolvedPath)
+    : resolvedPath;
 }
