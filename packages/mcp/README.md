@@ -31,6 +31,18 @@ The MCP package supports multiple transport mechanisms:
 - **Stdio Transport**: Communication via standard input/output with spawned processes
 - **SSE Transport**: Communication via Server-Sent Events over HTTP
 
+#### Environment Variable Handling
+
+When using Stdio Transport, the MCP package ensures critical environment variables (such as PATH) are properly passed to child processes. This is particularly important for Docker-based tools that need access to system binaries.
+
+The TransportFactory automatically includes important environment variables like:
+
+- PATH: Required for finding executables like Docker
+- DOCKER_HOST, DOCKER_CONFIG, DOCKER_CERT_PATH: For Docker configuration
+- HOME, USER, TERM, SHELL: Common system variables
+
+This implementation eliminates the need for global environment flags like INHERIT_ENV while maintaining security by only passing necessary variables.
+
 ### Server Configuration
 
 Servers are configured with validated configurations using the ConfigManager:

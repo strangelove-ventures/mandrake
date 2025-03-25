@@ -6,11 +6,56 @@ import { createLogger } from '@mandrake/utils'
 
 /**
  * Factory for creating transport instances for MCP connections
+ *
+ * This factory ensures that critical environment variables (like PATH)
+ * are properly passed to child processes, which is especially important
+ * for Docker-based tool servers that need access to system binaries.
  */
+
 export class TransportFactory {
   private static logger = createLogger('mcp').child({
     meta: { component: 'transport' }
   })
+
+  /**
+   * Gets an enhanced environment object that ensures critical variables are included
+   * This is especially important for Docker commands that need PATH and other system variables
+   * 
+   * Note: This replaces the previous approach of using a global INHERIT_ENV flag by
+   * selectively including only the critical environment variables needed for proper operation.
+   * This approach is more secure and explicit than inheriting the entire environment.
+   */
+  private static getEnhancedEnvironment(configEnv?: Record<string, string>): Record<string, string> {
+    // Start with the provided config env or an empty object
+    const env = configEnv ? { ...configEnv } : {};
+    
+    // Critical environment variables that should always be included
+    const criticalEnvVars = [
+      'PATH',              // Required for finding binaries like docker
+      'DOCKER_HOST',       // For custom Docker socket
+      'DOCKER_CONFIG',     // For Docker config directory
+      'DOCKER_CERT_PATH',  // For TLS certificates
+      'HOME',              // Often needed by tools
+      'USER',              // User identity
+      'TERM',              // Terminal type
+      'SHELL'              // User's shell
+    ];
+    
+    // Add critical variables from process.env if not already defined
+    for (const key of criticalEnvVars) {
+      if (!env[key] && process.env[key]) {
+        env[key] = process.env[key];
+      }
+    }
+    
+    // Log what we're doing
+    this.logger.debug('Enhanced environment for transport', { 
+      originalKeys: configEnv ? Object.keys(configEnv).length : 0,
+      enhancedKeys: Object.keys(env).length
+    });
+    
+    return env;
+  }
 
   /**
    * Creates an appropriate transport based on server configuration
@@ -58,10 +103,14 @@ export class TransportFactory {
     
     // Default to STDIO transport for command-based servers
     this.logger.debug('Creating STDIO transport', { command: config.command })
+    
+    // Use enhanced environment for STDIO transport to ensure critical variables are included
+    const enhancedEnv = this.getEnhancedEnvironment(config.env);
+    
     return new StdioClientTransport({
       command: config.command,
       args: config.args || [],
-      env: config.env
+      env: enhancedEnv
     })
   }
 }
