@@ -204,7 +204,7 @@ export class MCPManagerAdapter implements ManagedService {
    */
   async getStatus(): Promise<ServiceStatus> {
     // Get servers
-    const servers = this.getServers();
+    const servers = await this.getServers();
     
     // Build server status map
     const serverStatuses: Record<string, any> = {};
@@ -213,7 +213,7 @@ export class MCPManagerAdapter implements ManagedService {
       const serverId = server.getId();
       try {
         // Get server state
-        const state = server.getState();
+        const state = await server.getState();
         
         // Server is considered running if its status is 'running' or 'connected'
         // In our test environment, servers often show as 'connected' but are functional
@@ -302,19 +302,19 @@ export class MCPManagerAdapter implements ManagedService {
    * Helper method to get all servers from the MCPManager
    * @private
    */
-  private getServers(): MCPServerImpl[] {
+  private async getServers(): Promise<MCPServerImpl[]> {
     try {
       // Get all server IDs from the MCPManager
-      const serverIds = this.mcpManager.getServerIds();
+      const serverIds = await this.mcpManager.getServerIds();
       if (!serverIds || serverIds.length === 0) {
         return [];
       }
       
       // Collect all servers
       const servers: MCPServerImpl[] = [];
-      serverIds.forEach(id => {
+      for (const id of serverIds) {
         try {
-          const server = this.mcpManager.getServer(id);
+          const server = await this.mcpManager.getServer(id);
           if (server) {
             servers.push(server);
           }
@@ -323,7 +323,7 @@ export class MCPManagerAdapter implements ManagedService {
             error: error instanceof Error ? error.message : String(error)
           });
         }
-      });
+      }
       
       return servers;
     } catch (error) {

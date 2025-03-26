@@ -269,7 +269,7 @@ export class WorkspaceManagerAdapter implements ManagedService {
       // If manager has a getStatus method, use it
       else if (typeof manager.getStatus === 'function') {
         try {
-          managerStatus = manager.getStatus();
+          managerStatus = await manager.getStatus();
         } catch (error) {
           managerStatus = { 
             isHealthy: false
