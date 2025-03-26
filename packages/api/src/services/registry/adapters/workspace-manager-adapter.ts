@@ -295,6 +295,21 @@ export class WorkspaceManagerAdapter implements ManagedService {
   /**
    * Get the underlying WorkspaceManager
    * This will throw an error if the adapter is not initialized
+   * 
+   * This is the recommended way to access the WorkspaceManager functionality.
+   * The adapter implements the ManagedService interface for lifecycle management,
+   * but actual workspace operations should be performed through the underlying manager.
+   * 
+   * Example usage:
+   * ```typescript
+   * // Get the WorkspaceManager from the adapter
+   * const workspaceManager = workspaceManagerAdapter.getManager();
+   * 
+   * // Now use the WorkspaceManager methods directly
+   * const config = await workspaceManager.config.getConfig();
+   * const sessions = await workspaceManager.sessions.listSessions();
+   * const models = await workspaceManager.models.listModels();
+   * ```
    */
   getManager(): WorkspaceManager {
     if (!this.workspaceManager) {

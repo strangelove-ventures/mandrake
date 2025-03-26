@@ -216,6 +216,21 @@ export class MandrakeManagerAdapter implements ManagedService {
   
   /**
    * Get the underlying MandrakeManager
+   * 
+   * This is the recommended way to access the MandrakeManager functionality.
+   * The adapter implements the ManagedService interface for lifecycle management,
+   * but actual workspace operations should be performed through the underlying manager.
+   * 
+   * Example usage:
+   * ```typescript
+   * // Get the MandrakeManager from the adapter
+   * const mandrakeManager = mandrakeManagerAdapter.getManager();
+   * 
+   * // Now use the MandrakeManager methods directly
+   * await mandrakeManager.createWorkspace(name, description, path);
+   * const workspace = await mandrakeManager.getWorkspace(id);
+   * const workspaces = await mandrakeManager.listWorkspaces();
+   * ```
    */
   getManager(): MandrakeManager {
     return this.mandrakeManager;

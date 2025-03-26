@@ -150,7 +150,7 @@ export class MCPManagerAdapter implements ManagedService {
     });
     
     // Get all server IDs
-    const servers = this.getServers();
+    const servers = await this.getServers();
     
     // Track errors to collect them but continue cleanup for all servers
     const errors: Error[] = [];
@@ -293,6 +293,22 @@ export class MCPManagerAdapter implements ManagedService {
   
   /**
    * Get the underlying MCPManager
+   * 
+   * This is the recommended way to access the MCPManager functionality.
+   * The adapter implements the ManagedService interface for lifecycle management,
+   * but actual tool operations should be performed through the underlying manager.
+   * 
+   * Example usage:
+   * ```typescript
+   * // Get the MCPManager from the adapter
+   * const mcpManager = mcpManagerAdapter.getManager();
+   * 
+   * // Now use the MCPManager methods directly
+   * await mcpManager.invokeTool(serverId, toolName, params);
+   * const tools = await mcpManager.listTools(serverId);
+   * const allTools = await mcpManager.listAllTools();
+   * const serverState = await mcpManager.getServer(serverId).getState();
+   * ```
    */
   getManager(): MCPManager {
     return this.mcpManager;
