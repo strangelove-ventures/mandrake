@@ -106,7 +106,7 @@ export class MandrakeManagerAdapter implements ManagedService {
       const manager = (this.mandrakeManager as any)[managerName];
       if (manager && typeof manager.cleanup === 'function') {
         cleanupPromises.push(
-          manager.cleanup().catch(error => {
+          manager.cleanup().catch((error: Error) => {
             this.logger.error(`Error cleaning up ${managerName} manager`, {
               error: error instanceof Error ? error.message : String(error)
             });
@@ -138,7 +138,7 @@ export class MandrakeManagerAdapter implements ManagedService {
    * Get the status of the MandrakeManager
    * Includes details on all sub-managers and workspaces
    */
-  getStatus(): ServiceStatus {
+  async getStatus(): Promise<ServiceStatus> {
     const statusDetails: Record<string, any> = {
       rootPath: this.mandrakeManager.paths.root,
       initialized: this.initialized,
@@ -148,7 +148,7 @@ export class MandrakeManagerAdapter implements ManagedService {
     // Check directory structure health
     const rootExists = existsSync(this.mandrakeManager.paths.root);
     const configExists = existsSync(this.mandrakeManager.paths.config);
-    const workspacesPathExists = existsSync(this.mandrakeManager.paths.workspaces);
+    const workspacesPathExists = existsSync(this.mandrakeManager.paths.root + '/workspaces');
     
     statusDetails.fileSystem = {
       rootExists,
@@ -178,8 +178,7 @@ export class MandrakeManagerAdapter implements ManagedService {
           managerStatus = manager.getStatus();
         } catch (error) {
           managerStatus = { 
-            isHealthy: false,
-            error: error instanceof Error ? error.message : String(error)
+            isHealthy: false
           };
           allSubManagersHealthy = false;
         }
@@ -192,7 +191,7 @@ export class MandrakeManagerAdapter implements ManagedService {
     try {
       const workspaces = this.mandrakeManager.listWorkspaces();
       statusDetails.workspaces = {
-        count: workspaces.length,
+        count: (await workspaces).length,
         isHealthy: true
       };
     } catch (error) {
@@ -285,7 +284,7 @@ export class MandrakeManagerAdapter implements ManagedService {
    * List all workspaces registered in the MandrakeManager
    * This is a convenience method that delegates to the underlying manager
    */
-  listWorkspaces(): any[] {
+  async listWorkspaces(): Promise<any[]> {
     this.logger.debug('Listing workspaces from MandrakeManager');
     return this.mandrakeManager.listWorkspaces();
   }

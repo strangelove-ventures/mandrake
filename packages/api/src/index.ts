@@ -31,7 +31,7 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
   app.use(cors());
   app.use(logger());
   
-  // Initialize service registry
+  // Initialize enhanced service registry
   const serviceRegistry = new ServiceRegistryImpl({
     logger: new ConsoleLogger({ meta: { component: 'ServiceRegistry' } })
   });
@@ -58,66 +58,51 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
     mkdirSync(home, { recursive: true });
   }
   
-  // Initialize and register MandrakeManager
-  const mandrakeManager = new MandrakeManager(home);
-  const mandrakeAdapter = new MandrakeManagerAdapter(mandrakeManager, {
-    logger: new ConsoleLogger({ meta: { service: 'MandrakeManagerAdapter' } })
-  });
+  // Register standard services (factories for lazy initialization)
+  serviceRegistry.registerStandardServices(home, new ConsoleLogger({ 
+    meta: { component: 'ServiceRegistration' }
+  }));
   
-  serviceRegistry.registerService(
-    'mandrake-manager',
-    mandrakeAdapter,
-    {
-      dependencies: [],
-      initializationPriority: 100  // Highest priority - initialize first
-    }
-  );
-  
-  // Initialize system MCP manager and register with registry
-  const systemMcpManager = new MCPManager();
-  const mcpAdapter = new MCPManagerAdapter(
-    systemMcpManager,
-    {}, // No initial config needed
-    'default',
-    {
-      logger: new ConsoleLogger({ meta: { service: 'SystemMCPManagerAdapter' } })
-    }
-  );
-  
-  serviceRegistry.registerService(
-    'mcp-manager',
-    mcpAdapter,
-    {
-      dependencies: ['mandrake-manager'],
-      initializationPriority: 50
-    }
-  );
-  
-  // Initialize registry services (this will initialize MandrakeManager)
+  // Initialize registry services (this will initialize initially registered services)
   await serviceRegistry.initializeServices();
   
-  // Get system tool configs and initialize MCP servers
+  // Get access to the MandrakeManager and MCPManager in a way that doesn't throw if they're not initialized yet
+  // This is important for testing where the factories might be registered but not initialized
   try {
-    // Get system tool configurations and set up servers
-    const active = await mandrakeManager.tools.getActive();
-    const toolConfigs = await mandrakeManager.tools.getConfigSet(active);
+    const mandrakeAdapter = serviceRegistry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    const mcpAdapter = serviceRegistry.getService<MCPManagerAdapter>('mcp-manager');
     
-    // For each tool config, potentially start an MCP server
-    for (const [toolName, config] of Object.entries(toolConfigs)) {
-      if (!config) continue;
+    if (mandrakeAdapter && mcpAdapter) {
+      const mandrakeManager = mandrakeAdapter.getManager();
+      const systemMcpManager = mcpAdapter.getManager();
+      
+      // Get system tool configs and initialize MCP servers
       try {
-        console.log(`Starting system tool server: ${toolName}`);
-        await systemMcpManager.startServer(toolName, config);
-      } catch (serverError) {
-        console.warn(`Failed to start server for system tool ${toolName}:`, serverError);
+        // Get system tool configurations and set up servers
+        const active = await mandrakeManager.tools.getActive();
+        const toolConfigs = await mandrakeManager.tools.getConfigSet(active);
+        
+        // For each tool config, potentially start an MCP server
+        for (const [toolName, config] of Object.entries(toolConfigs)) {
+          if (!config) continue;
+          try {
+            console.log(`Starting system tool server: ${toolName}`);
+            await systemMcpManager.startServer(toolName, config);
+          } catch (serverError) {
+            console.warn(`Failed to start server for system tool ${toolName}:`, serverError);
+          }
+        }
+      } catch (toolsError) {
+        console.warn('Error loading system tools:', toolsError);
       }
+    } else {
+      console.warn('Core services not initialized during startup, waiting for lazy initialization');
     }
-  } catch (toolsError) {
-    console.warn('Error loading system tools:', toolsError);
+  } catch (error) {
+    console.warn('Error initializing core services:', error);
   }
   
-  // Load existing workspaces
-  await loadWorkspaces(mandrakeManager, serviceRegistry);
+  // Workspace loading is handled by the registry now via factories
   
   // API status endpoint
   app.get('/', (c) => c.json({ status: 'Mandrake API is running' }));
@@ -231,104 +216,16 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
 
 /**
  * Load existing workspaces into memory and register with ServiceRegistry
+ * 
+ * Note: This function is now deprecated and replaced with the enhanced registry's
+ * lazy loading functionality via service factories. It is kept here for reference.
  */
 async function loadWorkspaces(
   mandrakeManager: MandrakeManager,
   registry: ServiceRegistryImpl
 ): Promise<void> {
-  try {
-    // Get workspace registry from MandrakeManager
-    const workspaces = mandrakeManager.listWorkspaces();
-    
-    for (const workspace of workspaces) {
-      try {
-        // Get details for this workspace
-        let workspaceData;
-        try {
-          workspaceData = await mandrakeManager.getWorkspace(workspace.id);
-        } catch (error) {
-          console.warn(`Error getting workspace data for ${workspace.id}:`, error);
-          // Skip this workspace if we can't load it properly
-          continue;
-        }
-        
-        const resolvedPath = resolveWorkspacePath(workspace.path, workspaceData.name);
-        
-        // Create and register WorkspaceManager
-        const wsManager = workspaceData;
-        
-        // Create and register the WorkspaceManagerAdapter
-        const wsAdapter = new WorkspaceManagerAdapter(wsManager, {
-          logger: new ConsoleLogger({ 
-            meta: { service: 'WorkspaceManagerAdapter', workspaceId: workspace.id } 
-          })
-        });
-        
-        registry.registerWorkspaceService(
-          workspace.id,
-          'workspace-manager',
-          wsAdapter,
-          {
-            dependencies: ['mandrake-manager'],
-            initializationPriority: 10
-          }
-        );
-        
-        // Create and register MCPManager
-        const mcpManager = new MCPManager();
-        
-        // Get tool config for this workspace
-        let active;
-        let toolConfigs = {};
-        
-        try {
-          active = await wsManager.tools.getActive();
-          toolConfigs = await wsManager.tools.getConfigSet(active);
-        } catch (error) {
-          console.warn(`Error getting tool configs for workspace ${workspace.id}:`, error);
-          active = 'default';
-        }
-        
-        // Create adapter for MCP Manager
-        const mcpAdapter = new MCPManagerAdapter(
-          mcpManager,
-          toolConfigs,
-          active,
-          {
-            logger: new ConsoleLogger({ 
-              meta: { service: 'MCPManagerAdapter', workspaceId: workspace.id } 
-            }),
-            workspaceId: workspace.id
-          }
-        );
-        
-        registry.registerWorkspaceService(
-          workspace.id,
-          'mcp-manager',
-          mcpAdapter,
-          {
-            dependencies: [`${workspace.id}:workspace-manager`],
-            initializationPriority: 5
-          }
-        );
-        
-        // Start tool servers for this workspace
-        for (const [name, config] of Object.entries(toolConfigs)) {
-          if (!config) continue;
-          try {
-            await mcpManager.startServer(name, config);
-          } catch (serverError) {
-            console.warn(`Failed to start server for tool ${name} in workspace ${workspace.id}:`, serverError);
-          }
-        }
-      } catch (error) {
-        console.error(`Error loading workspace ${workspace.id}:`, error);
-        // Continue with other workspaces
-      }
-    }
-  } catch (error) {
-    console.error('Error loading workspaces:', error);
-  }
+  console.warn('The loadWorkspaces function is deprecated - use registry.registerStandardServices instead');
+  // The functionality is now handled by the Enhanced ServiceRegistry and service factories
 }
 
 /**

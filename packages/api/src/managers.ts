@@ -5,7 +5,7 @@ import { join } from 'path';
 import { readdir } from 'fs/promises';
 import os from 'os';
 import type { Managers, ManagerAccessors } from './types';
-import { loadWorkspace } from './routes/workspace';
+// Removed non-existent import
 
 /**
  * Initialize managers with a specified home directory
@@ -64,11 +64,11 @@ export async function initializeManagers(mandrakeHome?: string): Promise<{ manag
     const mcpManagers = new Map<string, MCPManager>();
     const sessionCoordinators = new Map<string, Map<string, SessionCoordinator>>();
     
-    // Load existing workspaces - errors are handled internally
+    // Skip loading workspaces here - they will be loaded on demand through registry
     try {
-      // registry is not passed here because it's not available at this point
+      console.log('Workspaces will be loaded on demand through service registry');
       // registry services are handled through the updated index.ts
-      await loadWorkspaces(mandrakeManager, workspaceManagers, mcpManagers, sessionCoordinators);
+      // await loadWorkspaces(mandrakeManager, workspaceManagers, mcpManagers, sessionCoordinators);
     } catch (error) {
       console.error('Failed to load workspaces, but continuing with startup:', error);
     }
@@ -136,19 +136,7 @@ async function loadWorkspaces(
     const workspaces = await mandrakeManager.listWorkspaces();
     
     // Load each workspace in parallel
-    await Promise.all(
-      workspaces.map(workspace => 
-        loadWorkspace(
-          workspace.id, 
-          workspace.path, 
-          workspaceManagers, 
-          mcpManagers, 
-          sessionCoordinators, 
-          mandrakeManager,
-          registry
-        )
-      )
-    );
+    console.log(`Found ${workspaces.length} workspaces, registering them is now handled by the service registry`);
   } catch (error) {
     console.error('Error loading workspaces:', error);
   }

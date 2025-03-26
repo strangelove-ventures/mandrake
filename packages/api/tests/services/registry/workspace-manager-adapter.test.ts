@@ -56,7 +56,7 @@ describe('WorkspaceManagerAdapter', () => {
       expect(adapter.isInitialized()).toBe(true);
       
       // Verify the workspace directory structure was created
-      const wsStatus = adapter.getStatus();
+      const wsStatus = await adapter.getStatus();
       expect(wsStatus.details.fileSystem.rootExists).toBe(true);
       expect(wsStatus.details.fileSystem.wsDirExists).toBe(true);
       expect(wsStatus.details.fileSystem.configExists).toBe(true);
@@ -108,7 +108,7 @@ describe('WorkspaceManagerAdapter', () => {
     test('should report healthy status when initialized', async () => {
       await adapter.init();
       
-      const status = adapter.getStatus();
+      const status = await adapter.getStatus();
       
       expect(status.isHealthy).toBe(true);
       expect(status.statusCode).toBe(200);
@@ -119,8 +119,8 @@ describe('WorkspaceManagerAdapter', () => {
       expect(status.details.fileSystem.configExists).toBe(true);
     });
     
-    test('should report unhealthy when not initialized', () => {
-      const status = adapter.getStatus();
+    test('should report unhealthy when not initialized', async () => {
+      const status = await adapter.getStatus();
       
       expect(status.isHealthy).toBe(false);
       expect(status.statusCode).toBe(503);

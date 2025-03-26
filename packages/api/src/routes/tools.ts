@@ -117,7 +117,7 @@ export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager
   // Get status for all servers
   app.get('/status', async (c) => {
     try {
-      const serverStatuses = {};
+      const serverStatuses: Record<string, any> = {};
       
       // If we have a ToolsManager, use it to get active configuration
       if (toolsManager) {
@@ -174,11 +174,11 @@ export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager
       // Enhanced status response with more details
       return c.json({
         id: serverId,
-        status: serverState.status || 'unknown',
+        status: (serverState as any).status || 'unknown',
         error: serverState.error,
         retryCount: serverState.retryCount,
         lastRetryTimestamp: serverState.lastRetryTimestamp,
-        logTail: serverState.logs.slice(-10), // Last 10 log lines
+        logTail: serverState.logs?.slice(-10) || [], // Last 10 log lines
         health: serverState.health || null, // Health metrics if available
         proxy: serverState.proxy || null // Proxy state if available
       });
@@ -247,7 +247,7 @@ export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager
       
       return c.json({
         id: serverId,
-        status: state.status || 'unknown',
+        status: (state as any).status || 'unknown',
         isHealthy: isCurrentlyHealthy,
         healthMetrics: state.health || null,
         lastError: state.error || null
@@ -286,7 +286,7 @@ export function serverRoutes(mcpManager: MCPManager, toolsManager?: ToolsManager
         return c.json({
           id: serverId,
           message: `Server ${serverId} restarted successfully`,
-          status: updatedState?.status || 'unknown'
+          status: (updatedState as any)?.status || 'unknown'
         });
       } catch (restartError) {
         console.error(`Error restarting server ${serverId}:`, restartError);

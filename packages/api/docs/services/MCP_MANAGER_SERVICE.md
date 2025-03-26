@@ -325,6 +325,32 @@ const result = await this.mcpManager.invokeTool(serverId, methodName, args);
 4. **No Resource Limits**: No constraints on memory/CPU usage for child processes
 5. **Restart Handling**: Restart is implemented as stop+start which loses existing session context
 
+## Enhanced Registry Integration
+
+With the enhanced ServiceRegistry, MCPManager instances can be better managed:
+
+```typescript
+// Register MCPManager with the service registry
+registry.registerService('mcpManager', mcpManager);
+
+// Or use the adapter pattern for more control
+registry.registerService('mcpManager', new MCPManagerAdapter(mcpManager));
+
+// For workspace-specific MCP managers
+registry.registerWorkspaceService(workspaceId, 'mcpManager', workspaceMcpManager);
+
+// Later, retrieve the service when needed
+const mcpManager = await registry.getService('mcpManager');
+// Or for workspace-specific
+const wsMcpManager = await registry.getWorkspaceService(workspaceId, 'mcpManager');
+```
+
+This integration provides several benefits:
+- Proper cleanup of all child processes during application shutdown
+- Lifecycle management with dependency-aware initialization
+- Status monitoring and health checking
+- Consistent error handling patterns
+
 ## Improvement Recommendations
 
 ### 1. Enhanced Process Monitoring

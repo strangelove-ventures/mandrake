@@ -12,15 +12,23 @@ export class SessionCoordinatorAdapter implements ManagedService {
   private lastActivityTime = Date.now();
   
   /**
+   * The underlying session coordinator
+   */
+  private sessionCoordinator: SessionCoordinator;
+  
+  /**
+   * The session ID
+   */
+  private sessionId: string;
+  
+  /**
    * Create a new SessionCoordinatorAdapter
    * 
-   * @param sessionCoordinator The SessionCoordinator instance to adapt
-   * @param sessionId The ID of the session this coordinator manages
+   * @param coordinatorOrSessionId Either a SessionCoordinator instance or a session ID
    * @param options Optional configuration
    */
   constructor(
-    private readonly sessionCoordinator: SessionCoordinator,
-    private readonly sessionId: string,
+    coordinatorOrSessionId: SessionCoordinator | string,
     options?: { 
       logger?: Logger;
       isSystem?: boolean; 
@@ -28,10 +36,22 @@ export class SessionCoordinatorAdapter implements ManagedService {
       workspaceName?: string;
     }
   ) {
+    if (typeof coordinatorOrSessionId === 'string') {
+      // If the first parameter is a string, it's a session ID
+      this.sessionId = coordinatorOrSessionId;
+      
+      // The SessionCoordinator will be created during initialization
+      this.sessionCoordinator = undefined as any;
+    } else {
+      // If the first parameter is an object, it's a SessionCoordinator
+      this.sessionCoordinator = coordinatorOrSessionId;
+      this.sessionId = options?.workspaceId || 'default';
+    }
+    
     this.logger = options?.logger || new ConsoleLogger({
       meta: { 
         service: 'SessionCoordinatorAdapter',
-        sessionId,
+        sessionId: this.sessionId,
         workspaceId: options?.workspaceId,
         workspaceName: options?.workspaceName,
         isSystem: options?.isSystem || false
@@ -117,7 +137,7 @@ export class SessionCoordinatorAdapter implements ManagedService {
   /**
    * Get the status of the SessionCoordinator
    */
-  getStatus(): ServiceStatus {
+  async getStatus(): Promise<ServiceStatus> {
     const statusDetails: Record<string, any> = {
       sessionId: this.sessionId,
       initialized: this.initialized,

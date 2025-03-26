@@ -97,13 +97,15 @@ describe('MandrakeManagerAdapter', () => {
       await adapter.init();
       
       // When initialized, the adapter should report its status properly
+      const status = await adapter.getStatus();
       // Note: We don't need to check the filesystem details since they might vary
       // depending on the platform and implementation
       expect(adapter.isInitialized()).toBe(true);
+      expect(status.isHealthy).toBe(true);
     });
     
-    test('should report unhealthy when not initialized', () => {
-      const status = adapter.getStatus();
+    test('should report unhealthy when not initialized', async () => {
+      const status = await adapter.getStatus();
       
       expect(status.isHealthy).toBe(false);
       expect(status.statusCode).toBe(503);

@@ -331,6 +331,55 @@ export function createWorkspaceMiddleware(accessors: ManagerAccessors) {
    - Potential for orphaned workspace directories
    - No mechanism for workspace locking during operations
 
+## Enhanced Registry Integration
+
+With the enhanced ServiceRegistry, workspace managers can be properly managed with dependency resolution:
+
+```typescript
+// Register MandrakeManager with the service registry
+registry.registerService('mandrakeManager', mandrakeManager);
+
+// Register workspace managers by ID
+for (const [id, workspace] of workspaces.entries()) {
+  registry.registerWorkspaceService(id, 'workspaceManager', workspace);
+}
+
+// Register factory function for creating workspace managers on demand
+registry.registerWorkspaceFactoryFunction('workspaceManager', async (registry, workspaceId) => {
+  // Get the mandrake manager to find workspace data
+  const mandrakeManager = await registry.getService('mandrakeManager');
+  if (!mandrakeManager) {
+    throw new Error('MandrakeManager not available');
+  }
+  
+  // Get workspace data
+  const workspaceData = await mandrakeManager.getWorkspace(workspaceId);
+  if (!workspaceData) {
+    throw new Error(`Workspace ${workspaceId} not found`);
+  }
+  
+  // Create and initialize workspace manager
+  const workspace = new WorkspaceManager(
+    workspaceData.path,
+    workspaceData.name,
+    workspaceData.id
+  );
+  
+  await workspace.init(workspaceData.description);
+  return workspace;
+});
+
+// Later, retrieve services when needed
+const mandrakeManager = await registry.getService('mandrakeManager');
+const workspace = await registry.getWorkspaceService(workspaceId, 'workspaceManager');
+```
+
+This integration provides several benefits:
+- Proper cleanup of all workspace resources during application shutdown
+- Lazy initialization of workspaces only when needed
+- Consistent access patterns for workspace services
+- Dependency-aware initialization and cleanup
+
 ## Improvement Recommendations
 
 ### 1. Implement Manager Lifecycle Methods

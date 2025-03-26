@@ -1,159 +1,253 @@
-# Service Adapter Approach
+# Service Adapter Approach for Mandrake API
 
-This document explains the approach we're taking to adapt existing services to work with the ServiceRegistry architecture, focusing on the adapters we've implemented and planned.
+## Overview
 
-## Overview of Service Registry Architecture
+The service adapter approach provides a consistent interface for accessing and managing services in the Mandrake API. This document outlines the adapter pattern implementation for integrating existing services with the enhanced service registry.
 
-The Service Registry architecture provides a consistent framework for managing service lifecycle, dependencies, and status:
+## Core Concepts
 
-1. **Centralized Management**: The ServiceRegistry manages all service initialization and cleanup
-2. **Dependency-Aware Operations**: Services initialize in dependency order, clean up in reverse
-3. **Health Monitoring**: Consistent status reporting across all services
-4. **Clean Separation**: Global services vs. workspace-specific services
-5. **Graceful Failure Handling**: Robust error handling during initialization and cleanup
+### 1. ManagedService Interface
 
-## The Adapter Pattern
-
-To incorporate existing managers (MandrakeManager, WorkspaceManager, MCPManager, etc.) into the ServiceRegistry architecture without modifying their existing implementations, we use the Adapter pattern:
-
-```
-┌────────────────┐       ┌───────────────────┐       ┌───────────────┐
-│ ServiceRegistry│───────│ *ManagerAdapter   │───────│ *Manager      │
-└────────────────┘       └───────────────────┘       └───────────────┘
-       │                        implements             (unchanged)
-       │                           │
-       │                  ┌────────────────┐
-       └──────────────────│ ManagedService │
-                          └────────────────┘
-```
-
-Each adapter:
-1. Implements the `ManagedService` interface required by ServiceRegistry
-2. Wraps an existing manager instance
-3. Delegates calls to the underlying manager
-4. Provides additional lifecycle management (initialization, cleanup)
-5. Reports status information in a consistent format
-
-## Implemented Adapters
-
-We've implemented four key adapters so far:
-
-### 1. MandrakeManagerAdapter
-
-**Purpose**: Adapt the top-level MandrakeManager, which manages global configuration and workspace registry.
-
-**Key Features**:
-- Initializes global Mandrake directory structure
-- Manages system-level managers
-- Reports overall Mandrake health status
-- Provides workspace management functionality
-
-**Dependency Position**: Highest priority, initialized first
-
-### 2. WorkspaceManagerAdapter
-
-**Purpose**: Adapt individual WorkspaceManager instances, which manage workspace-specific resources.
-
-**Key Features**:
-- Initializes workspace directory structure
-- Manages workspace-specific sub-managers
-- Reports workspace health status
-- Ensures proper resource cleanup
-
-**Dependency Position**: Depends on MandrakeManager
-
-### 3. MCPManagerAdapter
-
-**Purpose**: Adapt MCPManager instances, which manage MCP server processes.
-
-**Key Features**:
-- Starts and stops servers based on configuration
-- Handles Docker container lifecycle
-- Reports detailed server health metrics
-- Manages server error recovery
-
-**Dependency Position**: Depends on WorkspaceManager for directory structure
-
-### 4. SessionCoordinatorAdapter
-
-**Purpose**: Adapt SessionCoordinator instances, which manage streaming sessions and rounds.
-
-**Key Features**:
-- Tracks coordinator activity and idle time
-- Manages session lifecycle for streaming responses
-- Associates coordinators with specific sessions
-- Enforces proper resource management for long-running streams
-- Provides transparent proxying of underlying coordinator methods
-
-**Dependency Position**: Depends on MCPManager, WorkspaceManager, or MandrakeManager based on session type
-
-## Planned Adapters
-
-We plan to implement additional adapters to complete the service ecosystem:
-
-1. **ToolsManagerAdapter**: For tool configuration management
-2. **ModelsManagerAdapter**: For model configuration management
-
-## Integration Example
+All services in the system implement a common interface that defines their lifecycle:
 
 ```typescript
-// Create the service registry
-const registry = new ServiceRegistryImpl();
-
-// Create and register MandrakeManager (global service)
-const mandrakeManager = new MandrakeManager(mandrakeRoot);
-const mandrakeAdapter = new MandrakeManagerAdapter(mandrakeManager);
-registry.registerService('mandrake-manager', mandrakeAdapter, {
-  initializationPriority: 100
-});
-
-// Create and register WorkspaceManager (workspace-specific)
-const workspace = new WorkspaceManager(parentDir, name, id);
-const workspaceAdapter = new WorkspaceManagerAdapter(workspace);
-registry.registerWorkspaceService(id, 'workspace-manager', workspaceAdapter, {
-  dependencies: ['mandrake-manager'],
-  initializationPriority: 50
-});
-
-// Create and register MCPManager (workspace-specific)
-const mcpManager = new MCPManager();
-const mcpAdapter = new MCPManagerAdapter(mcpManager, toolConfig, configId);
-registry.registerWorkspaceService(id, 'mcp-manager', mcpAdapter, {
-  dependencies: ['workspace-manager'],
-  initializationPriority: 10
-});
-
-// Initialize all services in dependency order
-await registry.initializeServices();
-
-// Get service health information
-const statuses = registry.getAllServiceStatuses();
-
-// Clean up all services
-await registry.cleanupServices();
+interface ManagedService {
+  init(): Promise<void>;
+  isInitialized(): boolean;
+  cleanup(): Promise<void>;
+  getStatus(): ServiceStatus;
+}
 ```
 
-## Benefits of the Adapter Approach
+### 2. Service Adapters
 
-1. **Non-Invasive**: Existing manager implementations remain unchanged
-2. **Consistent Interface**: All services implement the same ManagedService interface
-3. **Graceful Cleanup**: Ensures proper resource release even during errors
-4. **Dependency Management**: Clear ordering of initialization and cleanup
-5. **Health Metrics**: Standardized status reporting across all services
-6. **Future Extensibility**: New services can be easily added to the registry
+Rather than modifying existing service implementations directly, we create adapter classes that wrap the original services:
 
-## Implementation Challenges
+```typescript
+class ServiceAdapter<T> implements ManagedService {
+  constructor(
+    private readonly service: T,
+    private readonly initFn?: (service: T) => Promise<void>,
+    private readonly cleanupFn?: (service: T) => Promise<void>,
+    private readonly statusFn?: (service: T) => ServiceStatus
+  ) {}
 
-1. **Error Propagation**: Balancing when to throw vs. collect errors
-2. **Status Reporting**: Determining appropriate health metrics for each service
-3. **Resource Management**: Ensuring all resources are properly released
-4. **Proxy Method Selection**: Deciding which methods to proxy vs. which to leave as manager-only
-5. **Test Environment Considerations**: Testing services with Docker dependencies
+  async init(): Promise<void> {
+    if (this.initFn) {
+      await this.initFn(this.service);
+    } else if ('init' in this.service && typeof this.service.init === 'function') {
+      await (this.service as any).init();
+    }
+  }
 
-## Next Steps
+  isInitialized(): boolean {
+    if ('isInitialized' in this.service && typeof this.service.isInitialized === 'function') {
+      return (this.service as any).isInitialized();
+    }
+    return true; // Assume initialized if not explicitly indicated
+  }
 
-1. Complete remaining adapters for other managers
-2. Enhance error logging and reporting
-3. Add metrics collection for performance monitoring
-4. Update API routes to use ServiceRegistry for manager access
-5. Document integration patterns for future service adapters
+  async cleanup(): Promise<void> {
+    if (this.cleanupFn) {
+      await this.cleanupFn(this.service);
+    } else if ('cleanup' in this.service && typeof this.service.cleanup === 'function') {
+      await (this.service as any).cleanup();
+    } else if ('close' in this.service && typeof this.service.close === 'function') {
+      await (this.service as any).close();
+    }
+  }
+
+  getStatus(): ServiceStatus {
+    if (this.statusFn) {
+      return this.statusFn(this.service);
+    } else if ('getStatus' in this.service && typeof this.service.getStatus === 'function') {
+      return (this.service as any).getStatus();
+    }
+    return { isHealthy: true };
+  }
+
+  // Method to access the wrapped service
+  getService(): T {
+    return this.service;
+  }
+}
+```
+
+### 3. Specialized Adapters
+
+For specific services with unique requirements, we create specialized adapter implementations:
+
+```typescript
+class MCPManagerAdapter implements ManagedService {
+  constructor(private readonly mcpManager: MCPManager) {}
+
+  async init(): Promise<void> {
+    // MCPManager doesn't require explicit initialization
+    // It starts servers when requested
+  }
+
+  isInitialized(): boolean {
+    return true; // MCPManager is always considered initialized
+  }
+
+  async cleanup(): Promise<void> {
+    // Clean up all running servers
+    await this.mcpManager.cleanup();
+  }
+
+  getStatus(): ServiceStatus {
+    // Get detailed status from all servers
+    const servers = this.mcpManager.getServers();
+    const allHealthy = servers.every(server => server.isRunning());
+    
+    return {
+      isHealthy: allHealthy,
+      details: {
+        serverCount: servers.length,
+        servers: servers.map(s => ({
+          id: s.getId(),
+          running: s.isRunning()
+        }))
+      }
+    };
+  }
+
+  // Method to access the wrapped service
+  getService(): MCPManager {
+    return this.mcpManager;
+  }
+}
+```
+
+## Service Adapter Registry Integration
+
+The service adapters integrate with the enhanced service registry:
+
+```typescript
+// Initialize the registry
+const registry = new ServiceRegistryImpl();
+
+// Register adapters for existing services
+registry.registerService('mandrakeManager', new MandrakeManagerAdapter(mandrakeManager));
+registry.registerService('mcpManager', new MCPManagerAdapter(mcpManager));
+
+// Register a workspace service adapter
+registry.registerWorkspaceService(
+  workspaceId,
+  'workspaceManager',
+  new WorkspaceManagerAdapter(workspaceManager)
+);
+
+// Use factory functions for dynamically created services
+registry.registerServiceFactory('sessionCoordinator', async (registry) => {
+  const mandrakeManager = registry.getService('mandrakeManager')?.getService();
+  const mcpManager = registry.getService('mcpManager')?.getService();
+  
+  if (!mandrakeManager || !mcpManager) {
+    throw new Error('Required dependencies not available');
+  }
+  
+  const coordinator = new SessionCoordinator({
+    metadata: { name: 'system', path: mandrakeManager.paths.root },
+    sessionManager: mandrakeManager.sessions,
+    promptManager: mandrakeManager.prompt,
+    mcpManager,
+    modelsManager: mandrakeManager.models
+  });
+  
+  return new ServiceAdapter(coordinator);
+});
+
+// Register a workspace-specific factory function
+registry.registerWorkspaceFactoryFunction('sessionCoordinator', async (registry, workspaceId) => {
+  const workspace = registry.getWorkspaceService(workspaceId, 'workspaceManager')?.getService();
+  const mcpManager = registry.getWorkspaceService(workspaceId, 'mcpManager')?.getService();
+  
+  if (!workspace || !mcpManager) {
+    throw new Error(`Required dependencies not available for workspace ${workspaceId}`);
+  }
+  
+  const coordinator = new SessionCoordinator({
+    metadata: { name: workspace.name, path: workspace.paths.root },
+    sessionManager: workspace.sessions,
+    promptManager: workspace.prompt,
+    mcpManager,
+    modelsManager: workspace.models,
+    filesManager: workspace.files,
+    dynamicContextManager: workspace.dynamic
+  });
+  
+  return new ServiceAdapter(coordinator);
+});
+```
+
+## Implementation Notes
+
+When implementing adapters for the enhanced service registry:
+
+1. **Minimal Modification**: The adapter approach minimizes changes to existing service implementations
+
+2. **Consistent Interface**: All services present a uniform interface for lifecycle management
+
+3. **Dependency Resolution**: The registry handles service dependencies through factory functions
+
+4. **Service Access**: API routes access services through the registry with consistent patterns
+
+5. **Error Handling**: Adapters provide consistent error handling for lifecycle operations
+
+## Adapter Implementation Priorities
+
+1. **Core Manager Adapters**:
+   - MandrakeManagerAdapter
+   - WorkspaceManagerAdapter
+   - MCPManagerAdapter
+   - SessionCoordinatorAdapter
+
+2. **Secondary Adapters**:
+   - ToolsManagerAdapter
+   - ModelsManagerAdapter
+   - PromptManagerAdapter
+
+3. **Helper Adapters**:
+   - FilesManagerAdapter
+   - DynamicContextManagerAdapter
+
+## Testing Approach
+
+For testing service adapters:
+
+1. Create test instances of real services in temporary directories
+
+2. Wrap them in appropriate adapters
+
+3. Register them with the service registry
+
+4. Test lifecycle methods (init, cleanup) and verify proper resource management
+
+5. Ensure adapters correctly delegate to underlying services
+
+Example test:
+
+```typescript
+test('MCPManagerAdapter should properly cleanup servers on shutdown', async () => {
+  // Create a real MCPManager instance
+  const mcpManager = new MCPManager();
+  
+  // Start some test servers
+  await mcpManager.startServer('test1', testConfig1);
+  await mcpManager.startServer('test2', testConfig2);
+  
+  // Create adapter
+  const adapter = new MCPManagerAdapter(mcpManager);
+  
+  // Call cleanup
+  await adapter.cleanup();
+  
+  // Verify all servers are stopped
+  expect(mcpManager.getServers().length).toBe(0);
+});
+```
+
+## Conclusion
+
+The service adapter approach provides a clean way to integrate existing services with the enhanced service registry, maintaining backward compatibility while enabling new features like lazy initialization and proper lifecycle management.

@@ -42,11 +42,11 @@ describe('SessionCoordinatorAdapter', () => {
     // Create the adapter
     adapter = new SessionCoordinatorAdapter(
       coordinator,
-      sessionId,
       {
         logger: new ConsoleLogger(),
         isSystem: true,
-        workspaceName: 'Test Workspace'
+        workspaceName: 'Test Workspace',
+        workspaceId: sessionId
       }
     );
   });
@@ -84,7 +84,7 @@ describe('SessionCoordinatorAdapter', () => {
 
   test('should return healthy status when initialized', async () => {
     await adapter.init();
-    const status = adapter.getStatus();
+    const status = await adapter.getStatus();
     
     expect(status.isHealthy).toBe(true);
     expect(status.statusCode).toBe(200);
@@ -97,15 +97,15 @@ describe('SessionCoordinatorAdapter', () => {
     await adapter.init();
     
     // Initially inactive
-    expect(adapter.getStatus().details.isActive).toBe(false);
+    expect((await adapter.getStatus()).details.isActive).toBe(false);
     
     // Mark as active
     adapter.markActive();
-    expect(adapter.getStatus().details.isActive).toBe(true);
+    expect((await adapter.getStatus()).details.isActive).toBe(true);
     
     // Mark as inactive
     adapter.markInactive();
-    expect(adapter.getStatus().details.isActive).toBe(false);
+    expect((await adapter.getStatus()).details.isActive).toBe(false);
   });
 
   test('should track idle time correctly', async () => {
@@ -131,7 +131,7 @@ describe('SessionCoordinatorAdapter', () => {
     await adapter.init();
     
     // Record initial activity time
-    const initialActivityTime = adapter.getStatus().details.lastActivityTime;
+    const initialActivityTime = (await adapter.getStatus()).details.lastActivityTime;
     
     // Wait a bit
     await new Promise(resolve => setTimeout(resolve, 100));
@@ -146,7 +146,7 @@ describe('SessionCoordinatorAdapter', () => {
     }
     
     // Check that activity time was updated
-    const newActivityTime = adapter.getStatus().details.lastActivityTime;
+    const newActivityTime = (await adapter.getStatus()).details.lastActivityTime;
     expect(newActivityTime).toBeGreaterThan(initialActivityTime);
   });
 });

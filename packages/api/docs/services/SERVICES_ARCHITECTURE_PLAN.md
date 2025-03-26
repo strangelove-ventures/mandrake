@@ -8,10 +8,12 @@ As of March 2025:
 
 - ✅ **ServiceRegistry Implementation**: Completed with dependency ordering and lifecycle management
 - ✅ **Core Service Adapters**: Implemented MandrakeManagerAdapter, WorkspaceManagerAdapter, MCPManagerAdapter, and SessionCoordinatorAdapter
-- ⏳ **Additional Adapters**: Planned for ToolsManager and ModelsManager
+- ✅ **Factory Function Registration**: Added support for service creation through factory functions
+- ✅ **Enhanced Documentation**: Updated documentation for all key services to reflect registry integration
 - ⏳ **API Route Integration**: Update routes to use ServiceRegistry for service access
+- ⏳ **Testing Updates**: Enhanced tests for service lifecycle management
 
-See [SERVICE_ADAPTER_APPROACH.md](./SERVICE_ADAPTER_APPROACH.md) for details on the adapter implementation approach.
+See [SERVICE_ADAPTER_APPROACH.md](./SERVICE_ADAPTER_APPROACH.md) for details on the adapter implementation approach and [REGISTRY_INTEGRATION_SUMMARY.md](./REGISTRY_INTEGRATION_SUMMARY.md) for a comprehensive integration overview.
 
 ## Current Architecture Overview
 

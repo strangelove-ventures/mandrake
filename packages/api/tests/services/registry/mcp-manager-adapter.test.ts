@@ -118,7 +118,7 @@ describe('MCPManagerAdapter', () => {
     expect(adapter.isInitialized()).toBe(true);
     
     // Get status and verify
-    const status = adapter.getStatus();
+    const status = await adapter.getStatus();
     expect(status.details.configId).toBe('init-test');
     expect(status.details.isSystem).toBe(true);
     
@@ -153,7 +153,7 @@ describe('MCPManagerAdapter', () => {
     expect(adapter.isInitialized()).toBe(true);
     
     // All servers should be running in the adapter
-    const status = adapter.getStatus();
+    const status = await adapter.getStatus();
     expect(status.details.serverCount).toBe(3);
     expect(status.details.servers).toHaveProperty('filesystem-server');
     expect(status.details.servers).toHaveProperty('fetch-server');
@@ -208,7 +208,7 @@ describe('MCPManagerAdapter', () => {
     
     // Verify adapter is initialized with servers
     expect(adapter.isInitialized()).toBe(true);
-    const beforeStatus = adapter.getStatus();
+    const beforeStatus = await adapter.getStatus();
     expect(beforeStatus.details.serverCount).toBe(2);
     
     // Clean up
@@ -218,7 +218,7 @@ describe('MCPManagerAdapter', () => {
     expect(adapter.isInitialized()).toBe(false);
     
     // Check that servers are stopped via adapter status
-    const afterStatus = adapter.getStatus();
+    const afterStatus = await adapter.getStatus();
     expect(afterStatus.details.serverCount).toBe(0);
   });
   
@@ -244,7 +244,7 @@ describe('MCPManagerAdapter', () => {
     await adapter.init();
     
     // Get adapter status
-    const status = adapter.getStatus();
+    const status = await adapter.getStatus();
     
     // Verify only the enabled server is running
     expect(status.details.serverCount).toBe(1);
@@ -263,7 +263,7 @@ describe('MCPManagerAdapter', () => {
     );
     
     // Check status before initialization
-    const beforeStatus = adapter.getStatus();
+    const beforeStatus = await adapter.getStatus();
     expect(beforeStatus.isHealthy).toBe(false);
     expect(beforeStatus.statusCode).toBe(503);
     expect(beforeStatus.message).toBe('MCP Manager not initialized');
@@ -272,7 +272,7 @@ describe('MCPManagerAdapter', () => {
     await adapter.init();
     
     // Check status after initialization
-    const afterStatus = adapter.getStatus();
+    const afterStatus = await adapter.getStatus();
     
     // Verify the server is properly initialized and running
     expect(afterStatus.details.initialized).toBe(true);
@@ -307,7 +307,7 @@ describe('MCPManagerAdapter', () => {
       expect(adapter.isInitialized()).toBe(true);
       
       // Get status - should either indicate unhealthy state or have no healthy servers
-      const status = adapter.getStatus();
+      const status = await adapter.getStatus();
       
       // Either we have no servers running, or the server is running but not healthy
       if (status.details.serverCount > 0) {

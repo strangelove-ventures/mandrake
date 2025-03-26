@@ -6,20 +6,15 @@ import { join } from 'path';
 import { MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { workspaceManagementRoutes } from '../../src/routes/workspace';
-import type { Managers, ManagerAccessors } from '../../src/types';
+import { ServiceRegistryImpl } from '../../src/services/registry';
+import { MandrakeManagerAdapter } from '../../src/services/registry/adapters';
+import { ConsoleLogger } from '@mandrake/utils';
 
 // Setup for testing
 let tempDir: string;
 let mandrakeManager: MandrakeManager;
 let workspaceApp: Hono;
-let managers: Managers;
-let accessors: ManagerAccessors;
-
-// Maps for storage
-const workspaceManagers = new Map();
-const mcpManagers = new Map();
-const sessionCoordinators = new Map();
-const systemSessionCoordinators = new Map();
+let registry: ServiceRegistryImpl;
 
 beforeAll(async () => {
   // Create temporary directory
@@ -29,48 +24,19 @@ beforeAll(async () => {
   mandrakeManager = new MandrakeManager(tempDir);
   await mandrakeManager.init();
   
-  // Create a real MCPManager
-  const systemMcpManager = new MCPManager();
+  // Create a registry and register the MandrakeManager
+  registry = new ServiceRegistryImpl();
   
-  // Set up managers object with real managers
-  managers = {
-    mandrakeManager,
-    systemMcpManager,
-    systemSessionCoordinators,
-    workspaceManagers,
-    mcpManagers,
-    sessionCoordinators
-  };
+  // Create and register MandrakeManagerAdapter
+  const mandrakeAdapter = new MandrakeManagerAdapter(mandrakeManager, {
+    logger: new ConsoleLogger({ meta: { service: 'MandrakeManagerAdapter', test: true } })
+  });
   
-  // Set up accessors object
-  accessors = {
-    getWorkspaceManager: (id: string) => workspaceManagers.get(id),
-    getMcpManager: (id: string) => mcpManagers.get(id),
-    getSessionCoordinator: (workspaceId: string, sessionId: string) => {
-      const wsCoordinators = sessionCoordinators.get(workspaceId);
-      return wsCoordinators ? wsCoordinators.get(sessionId) : undefined;
-    },
-    getSessionCoordinatorMap: (workspaceId: string) => {
-      return sessionCoordinators.get(workspaceId);
-    },
-    createSessionCoordinator: (workspaceId: string, sessionId: string, coordinator: any) => {
-      let wsCoordinators = sessionCoordinators.get(workspaceId);
-      if (!wsCoordinators) {
-        wsCoordinators = new Map();
-        sessionCoordinators.set(workspaceId, wsCoordinators);
-      }
-      wsCoordinators.set(sessionId, coordinator);
-    },
-    removeSessionCoordinator: (workspaceId: string, sessionId: string) => {
-      const wsCoordinators = sessionCoordinators.get(workspaceId);
-      if (!wsCoordinators) return false;
-      return wsCoordinators.delete(sessionId);
-    }
-  };
+  registry.registerService('mandrake-manager', mandrakeAdapter);
   
   // Create test app
   workspaceApp = new Hono();
-  workspaceApp.route('/', workspaceManagementRoutes(managers, accessors));
+  workspaceApp.route('/', workspaceManagementRoutes(registry));
 });
 
 afterAll(async () => {

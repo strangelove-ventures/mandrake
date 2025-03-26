@@ -3,9 +3,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "tsc",
     "dev": "bun --watch src/index.ts",
     "test": "bun test",
+    "test:registry": "bun test tests/services/registry/*.test.ts",
+    "test:routes": "bun test tests/routes/files.test.ts tests/routes/config.test.ts tests/routes/dynamic.test.ts tests/routes/models.test.ts tests/routes/prompt.test.ts tests/routes/sessions.test.ts tests/routes/tools.test.ts",
     "clean": "rm -rf dist"
   },
   "dependencies": {

@@ -438,6 +438,53 @@ app.get('/:sessionId/prompt', async (c) => {
 4. **No Operation Cancellation**: No way to cancel in-progress operations
 5. **Limited Error Recovery**: Basic error handling without sophisticated recovery
 
+## Enhanced Registry Integration
+
+With the new enhanced ServiceRegistry, SessionCoordinator instances can be created on-demand through factory functions:
+
+```typescript
+// Register a factory function for creating SessionCoordinators
+registry.registerServiceFactory('sessionCoordinator', async (registry) => {
+  // Get dependencies from the registry
+  const sessionManager = await registry.getService('sessionManager');
+  const promptManager = await registry.getService('promptManager');
+  const mcpManager = await registry.getService('mcpManager');
+  const modelsManager = await registry.getService('modelsManager');
+  
+  // Create and return the coordinator
+  return new SessionCoordinator({
+    metadata: { name: 'system', path: rootPath },
+    sessionManager,
+    promptManager,
+    mcpManager,
+    modelsManager
+  });
+});
+
+// For workspace-specific coordinators
+registry.registerWorkspaceFactoryFunction('sessionCoordinator', async (registry, workspaceId) => {
+  // Get workspace-specific dependencies
+  const workspace = await registry.getWorkspaceService(workspaceId, 'workspaceManager');
+  const mcpManager = await registry.getWorkspaceService(workspaceId, 'mcpManager');
+  
+  // Create and return workspace-specific coordinator
+  return new SessionCoordinator({
+    metadata: { name: workspace.name, path: workspace.paths.root },
+    sessionManager: workspace.sessions,
+    promptManager: workspace.prompt,
+    mcpManager,
+    modelsManager: workspace.models,
+    filesManager: workspace.files,
+    dynamicContextManager: workspace.dynamic
+  });
+});
+
+// Later, get the service when needed
+const sessionCoordinator = await registry.getService('sessionCoordinator');
+// Or for workspace-specific
+const wsSessionCoordinator = await registry.getWorkspaceService(workspaceId, 'sessionCoordinator');
+```
+
 ## Improvement Recommendations
 
 ### 1. Implement Coordinator Lifecycle Management

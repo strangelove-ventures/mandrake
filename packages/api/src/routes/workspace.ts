@@ -9,7 +9,7 @@ import type {
   WorkspaceListResponse, 
   CreateWorkspaceRequest 
 } from '@mandrake/utils/src/types/api';
-import { ServiceRegistry } from '../services/registry';
+import type { ServiceRegistry } from '../services/registry';
 import { MandrakeManagerAdapter, WorkspaceManagerAdapter, MCPManagerAdapter } from '../services/registry/adapters';
 import { ConsoleLogger } from '@mandrake/utils';
 
@@ -20,17 +20,31 @@ import { ConsoleLogger } from '@mandrake/utils';
 export function workspaceManagementRoutes(registry: ServiceRegistry) {
   const app = new Hono();
   
+  // Helper to get the MandrakeManager
+  const getMandrakeManager = () => {
+    const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    if (!mandrakeAdapter) {
+      throw new Error('MandrakeManager service not available');
+    }
+    return mandrakeAdapter.getManager();
+  };
+
   // List all workspaces
   app.get('/', async (c) => {
     try {
-      // Get MandrakeManager from registry
-      const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
-      if (!mandrakeAdapter) {
-        return c.json({ error: 'MandrakeManager service not available' }, 503);
-      }
+      // Get MandrakeManager from registry (will be created on-demand if factory registered)
+      const mandrakeManager = getMandrakeManager();
       
-      const mandrakeManager = mandrakeAdapter.getManager();
-      const workspaces = mandrakeManager.listWorkspaces();
+      // Get workspaces with proper error handling
+      let workspaces: any[] = [];
+      try {
+        const result = mandrakeManager.listWorkspaces();
+        // Ensure we have an array
+        workspaces = Array.isArray(result) ? result : [];
+      } catch (err) {
+        console.warn('Error listing workspaces:', err);
+        workspaces = [];
+      }
       
       // Ensure we return objects with id, name, description, path
       const workspaceList: WorkspaceListResponse = workspaces.map(ws => ({
@@ -42,20 +56,16 @@ export function workspaceManagementRoutes(registry: ServiceRegistry) {
       
       return c.json(workspaceList);
     } catch (error) {
-      return sendError(c, error, 'Failed to list workspaces');
+      // Return an empty array on error rather than failing completely
+      console.error('Failed to list workspaces:', error);
+      return c.json([]);
     }
   });
   
   // Create a new workspace
   app.post('/', async (c) => {
     try {
-      // Get MandrakeManager from registry
-      const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
-      if (!mandrakeAdapter) {
-        return c.json({ error: 'MandrakeManager service not available' }, 503);
-      }
-      
-      const mandrakeManager = mandrakeAdapter.getManager();
+      const mandrakeManager = getMandrakeManager();
       const data = await c.req.json() as CreateWorkspaceRequest;
       const { name, description, path } = data;
       
@@ -160,13 +170,7 @@ export function workspaceManagementRoutes(registry: ServiceRegistry) {
       const workspaceId = c.req.param('workspaceId');
       
       try {
-        // Get MandrakeManager from registry
-        const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
-        if (!mandrakeAdapter) {
-          return c.json({ error: 'MandrakeManager service not available' }, 503);
-        }
-        
-        const mandrakeManager = mandrakeAdapter.getManager();
+        const mandrakeManager = getMandrakeManager();
         const workspaceData = await mandrakeManager.getWorkspace(workspaceId);
         const description = (await workspaceData.config.getConfig()).description;
         
@@ -216,12 +220,7 @@ export function workspaceManagementRoutes(registry: ServiceRegistry) {
       }
       
       // Now delete from registry
-      const mandrakeAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
-      if (!mandrakeAdapter) {
-        return c.json({ error: 'MandrakeManager service not available' }, 503);
-      }
-      
-      const mandrakeManager = mandrakeAdapter.getManager();
+      const mandrakeManager = getMandrakeManager();
       await mandrakeManager.deleteWorkspace(workspaceId);
       
       return c.json({ success: true });

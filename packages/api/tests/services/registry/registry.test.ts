@@ -80,7 +80,7 @@ class TestService implements ManagedService {
     }
   }
   
-  getStatus(): ServiceStatus {
+  async getStatus(): Promise<ServiceStatus> {
     return {
       isHealthy: !this.error,
       message: this.error ? this.error.message : undefined,
@@ -357,9 +357,9 @@ describe('ServiceRegistry', () => {
     await registry.initializeServices();
     
     // Act
-    const configStatus = registry.getServiceStatus('config');
-    const errorStatus = registry.getServiceStatus('error');
-    const allStatuses = registry.getAllServiceStatuses();
+    const configStatus = await registry.getServiceStatus('config');
+    const errorStatus = await registry.getServiceStatus('error');
+    const allStatuses = await registry.getAllServiceStatuses();
     
     // Assert
     expect(configStatus?.isHealthy).toBe(true);

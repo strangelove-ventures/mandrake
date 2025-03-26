@@ -5,6 +5,32 @@
  */
 
 /**
+ * ServerState interface to define server states
+ */
+export interface ServerState {
+  /** Health information about the server */
+  health?: Record<string, any>;
+  
+  /** Recent log entries */
+  logs?: string[];
+  
+  /** Status of the server (running, stopped, error, etc.) */
+  status: string;
+  
+  /** Process ID of the server */
+  pid?: number;
+  
+  /** Unix timestamp when the server was started */
+  startTime?: number;
+  
+  /** Number of times the server has been restarted after failures */
+  retryCount?: number;
+  
+  /** Error message if the server failed */
+  error?: string;
+}
+
+/**
  * Status information for a service
  */
 export interface ServiceStatus {
@@ -19,6 +45,9 @@ export interface ServiceStatus {
   
   /** Optional details specific to the service type */
   details?: Record<string, any>;
+  
+  /** Optional error information */
+  error?: string;
 }
 
 /**
@@ -61,7 +90,7 @@ export interface ManagedService {
    * Get the current status of the service
    * @returns Status information for the service
    */
-  getStatus(): ServiceStatus;
+  getStatus(): Promise<ServiceStatus>;
 }
 
 /**
@@ -130,11 +159,11 @@ export interface ServiceRegistry {
    * @param workspaceId Optional workspace ID for workspace services
    * @returns Status information for the service
    */
-  getServiceStatus(type: string, workspaceId?: string): ServiceStatus | null;
+  getServiceStatus(type: string, workspaceId?: string): Promise<ServiceStatus | null>;
   
   /**
    * Get the status of all registered services
    * @returns Map of service type to status
    */
-  getAllServiceStatuses(): Map<string, ServiceStatus>;
+  getAllServiceStatuses(): Promise<Map<string, ServiceStatus>>;
 }

@@ -1,7 +1,7 @@
 import { MandrakeManager, WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
-import { ErrorResponse } from '@mandrake/utils/src/types/api';
+import type { ErrorResponse } from '@mandrake/utils/src/types/api';
 
 // Re-export all API types from utils
 export * from '@mandrake/utils/src/types/api';

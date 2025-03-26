@@ -202,7 +202,7 @@ export class MCPManagerAdapter implements ManagedService {
    * Get the status of the MCPManager
    * Includes details on all managed servers
    */
-  getStatus(): ServiceStatus {
+  async getStatus(): Promise<ServiceStatus> {
     // Get servers
     const servers = this.getServers();
     
@@ -306,7 +306,7 @@ export class MCPManagerAdapter implements ManagedService {
     try {
       // Get all server IDs from the MCPManager
       const serverIds = this.mcpManager.getServerIds();
-      if (!serverIds || serverIds.size === 0) {
+      if (!serverIds || serverIds.length === 0) {
         return [];
       }
       
