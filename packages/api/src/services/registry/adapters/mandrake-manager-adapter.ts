@@ -175,7 +175,7 @@ export class MandrakeManagerAdapter implements ManagedService {
       // If manager has a getStatus method, use it
       else if (typeof manager.getStatus === 'function') {
         try {
-          managerStatus = manager.getStatus();
+          managerStatus = await manager.getStatus();
         } catch (error) {
           managerStatus = { 
             isHealthy: false
@@ -189,9 +189,9 @@ export class MandrakeManagerAdapter implements ManagedService {
     
     // Check workspace registry health
     try {
-      const workspaces = this.mandrakeManager.listWorkspaces();
+      const workspaces = await this.mandrakeManager.listWorkspaces();
       statusDetails.workspaces = {
-        count: (await workspaces).length,
+        count: workspaces.length,
         isHealthy: true
       };
     } catch (error) {
@@ -286,7 +286,7 @@ export class MandrakeManagerAdapter implements ManagedService {
    */
   async listWorkspaces(): Promise<any[]> {
     this.logger.debug('Listing workspaces from MandrakeManager');
-    return this.mandrakeManager.listWorkspaces();
+    return await this.mandrakeManager.listWorkspaces();
   }
   
   /**
