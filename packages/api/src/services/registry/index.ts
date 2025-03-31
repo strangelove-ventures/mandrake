@@ -1,10 +1,23 @@
-import type { ManagedService, ServiceOptions, ServiceRegistry, ServiceStatus } from './types';
+import type { 
+  ManagedService, 
+  ServiceOptions, 
+  ServiceRegistry, 
+  ServiceStatus,
+  ServiceCreationOptions
+} from './types';
 import { ConsoleLogger, type Logger, type LogMeta } from '@mandrake/utils';
 import { 
   MandrakeManagerAdapter, 
   MCPManagerAdapter, 
-  WorkspaceManagerAdapter 
+  WorkspaceManagerAdapter,
+  SessionCoordinatorAdapter
 } from './adapters';
+import type { 
+  MandrakeManager,
+  WorkspaceManager 
+} from '@mandrake/workspace';
+import type { MCPManager } from '@mandrake/mcp';
+import type { SessionCoordinator } from '@mandrake/session';
 
 /**
  * Default logger implementation for ServiceRegistry
@@ -18,18 +31,20 @@ function createDefaultLogger(): Logger {
 /**
  * Implementation of the ServiceRegistry interface with enhanced capabilities
  */
-export class ServiceRegistryImpl implements EnhancedServiceRegistry {
-  // Factory maps for lazy service creation
-  private serviceFactories = new Map<string, () => ManagedService>();
-  private workspaceServiceFactories = new Map<string, Map<string, () => ManagedService>>();
-  private workspaceFactoryFunctions = new Map<string, (workspaceId: string) => ManagedService>();
-  private factoryOptions = new Map<string, ServiceOptions>();
+export class ServiceRegistryImpl implements ServiceRegistry {
+  // Registry state
   private services = new Map<string, ManagedService>();
   private workspaceServices = new Map<string, Map<string, ManagedService>>();
   private dependencyGraph = new Map<string, string[]>();
   private serviceOptions = new Map<string, ServiceOptions>();
   private initialized = false;
   private logger: Logger;
+
+  // Factory maps for lazy service creation
+  private serviceFactories = new Map<string, () => ManagedService>();
+  private workspaceServiceFactories = new Map<string, Map<string, () => ManagedService>>();
+  private workspaceFactoryFunctions = new Map<string, (workspaceId: string) => ManagedService>();
+  private factoryOptions = new Map<string, ServiceOptions>();
 
   /**
    * Create a new service registry
@@ -101,11 +116,12 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
     
     // Store options with a workspace-specific key
     if (options) {
-      this.serviceOptions.set(`${workspaceId}:${type}`, options);
+      const optionsKey = this.getWorkspaceServiceKey(workspaceId, type);
+      this.serviceOptions.set(optionsKey, options);
       
       // Store dependencies for initialization order
       if (options.dependencies?.length) {
-        this.dependencyGraph.set(`${workspaceId}:${type}`, options.dependencies);
+        this.dependencyGraph.set(optionsKey, options.dependencies);
       }
     }
 
@@ -144,12 +160,7 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
       
       // Initialize if the registry is already initialized
       if (this.initialized) {
-        // Non-blocking initialization
-        newService.init().catch(error => {
-          this.logger.error(`Failed to initialize service ${type}`, { 
-            error: error instanceof Error ? error.message : String(error)
-          });
-        });
+        this.initializeServiceNonBlocking(type, newService);
       }
       
       return newService;
@@ -177,40 +188,51 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
       }
     }
     
-    // Check if we have a specific factory for this workspace and service type
+    // Try to create the service using a factory
+    return this.createWorkspaceServiceFromFactory<T>(workspaceId, type);
+  }
+
+  /**
+   * Attempt to create a workspace service using a factory
+   * @param workspaceId The workspace ID
+   * @param type The service type
+   * @returns The service instance or null if no factory is found
+   * @private
+   */
+  private createWorkspaceServiceFromFactory<T extends ManagedService>(
+    workspaceId: string, 
+    type: string
+  ): T | null {
+    // Check for workspace-specific factory first
     let factory: (() => ManagedService) | undefined;
     const workspaceFactories = this.workspaceServiceFactories.get(workspaceId);
+    
     if (workspaceFactories) {
       factory = workspaceFactories.get(type);
     }
     
-    // If no specific factory is found, check if we have a generic factory function
+    // If no specific factory is found, check for generic factory function
     if (!factory) {
       const factoryFn = this.workspaceFactoryFunctions.get(type);
       if (factoryFn) {
-        // Create a factory function that uses the workspace ID
         factory = () => factoryFn(workspaceId);
       }
     }
     
-    // If we found either a specific or generic factory, use it
+    // If we found a factory, use it
     if (factory) {
       try {
         this.logger.debug(`Creating workspace service ${workspaceId}:${type} using factory`);
         const newService = factory() as T;
         
         // Register the service with any previously set options
-        const options = this.factoryOptions.get(`${workspaceId}:${type}`);
+        const optionsKey = this.getWorkspaceServiceKey(workspaceId, type);
+        const options = this.factoryOptions.get(optionsKey);
         this.registerWorkspaceService(workspaceId, type, newService, options);
         
         // Initialize if the registry is already initialized
         if (this.initialized) {
-          // Non-blocking initialization
-          newService.init().catch(error => {
-            this.logger.error(`Failed to initialize workspace service ${workspaceId}:${type}`, { 
-              error: error instanceof Error ? error.message : String(error)
-            });
-          });
+          this.initializeWorkspaceServiceNonBlocking(workspaceId, type, newService);
         }
         
         return newService;
@@ -218,11 +240,9 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
         this.logger.error(`Failed to create workspace service ${workspaceId}:${type}`, { 
           error: error instanceof Error ? error.message : String(error)
         });
-        return null;
       }
     }
     
-    // No factory available
     return null;
   }
   
@@ -309,7 +329,8 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
     workspaceFactories.set(type, factory);
     
     if (options) {
-      this.factoryOptions.set(`${workspaceId}:${type}`, options);
+      const optionsKey = this.getWorkspaceServiceKey(workspaceId, type);
+      this.factoryOptions.set(optionsKey, options);
     }
     
     this.logger.debug('Registered workspace service factory', { 
@@ -334,61 +355,141 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
     const initOrder = this.getInitializationOrder();
     this.logger.debug('Initialization order', { order: initOrder.join(', ') });
 
-    // Initialize global services first
-    for (const serviceType of initOrder) {
-      // Skip workspace services
-      if (serviceType.includes(':')) continue;
-      
-      const service = this.services.get(serviceType);
-      if (!service) continue;
-
-      try {
-        this.logger.debug('Initializing service', { serviceType });
-        await service.init();
-        this.logger.debug('Service initialized', { serviceType });
-      } catch (error) {
-        this.logger.error('Failed to initialize service', { 
-          serviceType, 
-          error: error instanceof Error ? error.message : String(error)
-        });
-        throw new Error(`Service initialization failed for ${serviceType}: ${error}`);
-      }
-    }
-
-    // Then initialize workspace services in dependency order
-    for (const [workspaceId, serviceMap] of this.workspaceServices.entries()) {
-      for (const serviceType of initOrder) {
-        // Skip global services and other workspace services
-        if (!serviceType.startsWith(`${workspaceId}:`)) continue;
-        
-        // Extract the actual service type from the prefixed string
-        const actualServiceType = serviceType.split(':')[1];
-        const service = serviceMap.get(actualServiceType);
-        if (!service) continue;
-
-        try {
-          this.logger.debug('Initializing workspace service', { 
-            workspaceId, 
-            serviceType: actualServiceType 
-          });
-          await service.init();
-          this.logger.debug('Workspace service initialized', { 
-            workspaceId, 
-            serviceType: actualServiceType 
-          });
-        } catch (error) {
-          this.logger.error('Failed to initialize workspace service', { 
-            workspaceId, 
-            serviceType: actualServiceType, 
-            error: error instanceof Error ? error.message : String(error)
-          });
-          throw new Error(`Workspace service initialization failed for ${workspaceId}.${actualServiceType}: ${error}`);
-        }
-      }
+    // Initialize services in dependency order
+    for (const serviceKey of initOrder) {
+      await this.initializeServiceByKey(serviceKey);
     }
 
     this.initialized = true;
     this.logger.info('All services initialized successfully');
+  }
+
+  /**
+   * Initialize a service by its key (either service type or workspace:type)
+   * @param serviceKey The service key
+   * @private
+   */
+  private async initializeServiceByKey(serviceKey: string): Promise<void> {
+    // Check if this is a workspace service
+    if (serviceKey.includes(':')) {
+      // Skip generic workspace factory options
+      if (serviceKey.startsWith('*:')) {
+        return;
+      }
+      
+      // Parse the workspace ID and service type
+      const [workspaceId, serviceType] = serviceKey.split(':');
+      const workspaceServiceMap = this.workspaceServices.get(workspaceId);
+      
+      if (!workspaceServiceMap) {
+        this.logger.warn(`Workspace service map not found for ${serviceKey}`);
+        return;
+      }
+      
+      const service = workspaceServiceMap.get(serviceType);
+      if (!service) {
+        this.logger.warn(`Service not found for ${serviceKey}`);
+        return;
+      }
+      
+      await this.initializeWorkspaceService(workspaceId, serviceType, service);
+    } else {
+      // Global service
+      const service = this.services.get(serviceKey);
+      if (!service) {
+        this.logger.warn(`Service not found for ${serviceKey}`);
+        return;
+      }
+      
+      await this.initializeService(serviceKey, service);
+    }
+  }
+
+  /**
+   * Initialize a global service
+   * @param serviceType The service type
+   * @param service The service instance
+   * @private
+   */
+  private async initializeService(serviceType: string, service: ManagedService): Promise<void> {
+    try {
+      this.logger.debug('Initializing service', { serviceType });
+      await service.init();
+      this.logger.debug('Service initialized', { serviceType });
+    } catch (error) {
+      this.logger.error('Failed to initialize service', { 
+        serviceType, 
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw new Error(`Service initialization failed for ${serviceType}: ${error}`);
+    }
+  }
+
+  /**
+   * Initialize a workspace service
+   * @param workspaceId The workspace ID
+   * @param serviceType The service type
+   * @param service The service instance
+   * @private
+   */
+  private async initializeWorkspaceService(
+    workspaceId: string, 
+    serviceType: string, 
+    service: ManagedService
+  ): Promise<void> {
+    try {
+      this.logger.debug('Initializing workspace service', { 
+        workspaceId, 
+        serviceType
+      });
+      await service.init();
+      this.logger.debug('Workspace service initialized', { 
+        workspaceId, 
+        serviceType 
+      });
+    } catch (error) {
+      this.logger.error('Failed to initialize workspace service', { 
+        workspaceId, 
+        serviceType, 
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw new Error(`Workspace service initialization failed for ${workspaceId}.${serviceType}: ${error}`);
+    }
+  }
+
+  /**
+   * Initialize a service in a non-blocking way
+   * Used for services created after the registry is initialized
+   * @param serviceType The service type
+   * @param service The service instance
+   * @private
+   */
+  private initializeServiceNonBlocking(serviceType: string, service: ManagedService): void {
+    service.init().catch(error => {
+      this.logger.error(`Failed to initialize service ${serviceType}`, { 
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+  }
+
+  /**
+   * Initialize a workspace service in a non-blocking way
+   * Used for services created after the registry is initialized
+   * @param workspaceId The workspace ID
+   * @param serviceType The service type
+   * @param service The service instance
+   * @private
+   */
+  private initializeWorkspaceServiceNonBlocking(
+    workspaceId: string, 
+    serviceType: string, 
+    service: ManagedService
+  ): void {
+    service.init().catch(error => {
+      this.logger.error(`Failed to initialize workspace service ${workspaceId}:${serviceType}`, { 
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
   }
 
   /**
@@ -412,55 +513,12 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
     // Track errors but continue cleanup
     const errors: Error[] = [];
 
-    // Clean up workspace services first in reverse dependency order
-    for (const [workspaceId, serviceMap] of this.workspaceServices.entries()) {
-      for (const serviceType of cleanupOrder) {
-        // Skip global services and other workspace services
-        if (!serviceType.startsWith(`${workspaceId}:`)) continue;
-        
-        // Extract the actual service type from the prefixed string
-        const actualServiceType = serviceType.split(':')[1];
-        const service = serviceMap.get(actualServiceType);
-        if (!service) continue;
-
-        try {
-          this.logger.debug('Cleaning up workspace service', { 
-            workspaceId, 
-            serviceType: actualServiceType 
-          });
-          await service.cleanup();
-          this.logger.debug('Workspace service cleaned up', { 
-            workspaceId, 
-            serviceType: actualServiceType 
-          });
-        } catch (error) {
-          this.logger.error('Failed to clean up workspace service', { 
-            workspaceId, 
-            serviceType: actualServiceType, 
-            error: error instanceof Error ? error.message : String(error)
-          });
-          errors.push(error instanceof Error ? error : new Error(String(error)));
-        }
-      }
-    }
-
-    // Then clean up global services in reverse dependency order
-    for (const serviceType of cleanupOrder) {
-      // Skip workspace services
-      if (serviceType.includes(':')) continue;
-      
-      const service = this.services.get(serviceType);
-      if (!service) continue;
-
+    // Clean up services in reverse dependency order
+    for (const serviceKey of cleanupOrder) {
       try {
-        this.logger.debug('Cleaning up service', { serviceType });
-        await service.cleanup();
-        this.logger.debug('Service cleaned up', { serviceType });
+        await this.cleanupServiceByKey(serviceKey);
       } catch (error) {
-        this.logger.error('Failed to clean up service', { 
-          serviceType, 
-          error: error instanceof Error ? error.message : String(error)
-        });
+        // Log the error and continue with other services
         errors.push(error instanceof Error ? error : new Error(String(error)));
       }
     }
@@ -475,6 +533,96 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
     }
     
     this.logger.info('All services cleaned up successfully');
+  }
+
+  /**
+   * Clean up a service by its key
+   * @param serviceKey The service key
+   * @private
+   */
+  private async cleanupServiceByKey(serviceKey: string): Promise<void> {
+    // Check if this is a workspace service
+    if (serviceKey.includes(':')) {
+      // Skip generic workspace factory options
+      if (serviceKey.startsWith('*:')) {
+        return;
+      }
+      
+      // Parse the workspace ID and service type
+      const [workspaceId, serviceType] = serviceKey.split(':');
+      const workspaceServiceMap = this.workspaceServices.get(workspaceId);
+      
+      if (!workspaceServiceMap) {
+        return;
+      }
+      
+      const service = workspaceServiceMap.get(serviceType);
+      if (!service) {
+        return;
+      }
+      
+      await this.cleanupWorkspaceService(workspaceId, serviceType, service);
+    } else {
+      // Global service
+      const service = this.services.get(serviceKey);
+      if (!service) {
+        return;
+      }
+      
+      await this.cleanupService(serviceKey, service);
+    }
+  }
+
+  /**
+   * Clean up a global service
+   * @param serviceType The service type
+   * @param service The service instance
+   * @private
+   */
+  private async cleanupService(serviceType: string, service: ManagedService): Promise<void> {
+    try {
+      this.logger.debug('Cleaning up service', { serviceType });
+      await service.cleanup();
+      this.logger.debug('Service cleaned up', { serviceType });
+    } catch (error) {
+      this.logger.error('Failed to clean up service', { 
+        serviceType, 
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Clean up a workspace service
+   * @param workspaceId The workspace ID
+   * @param serviceType The service type
+   * @param service The service instance
+   * @private
+   */
+  private async cleanupWorkspaceService(
+    workspaceId: string, 
+    serviceType: string, 
+    service: ManagedService
+  ): Promise<void> {
+    try {
+      this.logger.debug('Cleaning up workspace service', { 
+        workspaceId, 
+        serviceType 
+      });
+      await service.cleanup();
+      this.logger.debug('Workspace service cleaned up', { 
+        workspaceId, 
+        serviceType 
+      });
+    } catch (error) {
+      this.logger.error('Failed to clean up workspace service', { 
+        workspaceId, 
+        serviceType, 
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
   }
 
   /**
@@ -494,13 +642,431 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
   }
   
   /**
-   * Register standard services based on common patterns
+   * Service dependencies for standard services
+   * @private
+   */
+  private static DEFAULT_SERVICE_DEPENDENCIES = {
+    'mandrake-manager': [],
+    'mcp-manager': ['mandrake-manager'],
+    'workspace-manager': ['mandrake-manager'],
+    'session-coordinator': ['workspace-manager', 'mcp-manager']
+  };
+
+  /**
+   * Service initialization priorities for standard services
+   * Higher values are initialized first
+   * @private
+   */
+  private static DEFAULT_SERVICE_PRIORITIES = {
+    'mandrake-manager': 100,
+    'workspace-manager': 50,
+    'mcp-manager': 25,
+    'session-coordinator': 10
+  };
+
+  /**
+   * Register standard services for Mandrake
    * @param home The Mandrake home directory
    * @param logger Optional logger
    */
   registerStandardServices(home: string, logger?: Logger): void {
-    // Use the exported helper function to register standard service factories
-    registerStandardServiceFactories(this, home, logger);
+    this.logger.info('Registering standard services');
+    
+    // Register MandrakeManager
+    this.registerMandrakeManager(home);
+    
+    // Register global services
+    this.registerGlobalServices();
+    
+    // Set up workspace service factories
+    this.registerWorkspaceFactories();
+    
+    // Register services for existing workspaces
+    this.registerExistingWorkspaces().catch(error => {
+      this.logger.error('Failed to register existing workspaces', {
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
+  }
+  
+  /**
+   * Register the MandrakeManager service
+   * @param home The Mandrake home directory
+   * @private
+   */
+  private registerMandrakeManager(home: string): void {
+    this.logger.info('Registering MandrakeManager service');
+    
+    const { MandrakeManager } = require('@mandrake/workspace');
+    
+    this.registerServiceFactory(
+      'mandrake-manager',
+      () => {
+        this.logger.info('Creating MandrakeManager');
+        const mandrakeManager = new MandrakeManager(home);
+        
+        return this.createAndRegisterService(
+          'mandrake-manager',
+          MandrakeManagerAdapter,
+          {
+            instance: mandrakeManager,
+            logger: new ConsoleLogger({ meta: { service: 'MandrakeManagerAdapter' } })
+          },
+          {
+            dependencies: ServiceRegistryImpl.DEFAULT_SERVICE_DEPENDENCIES['mandrake-manager'],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['mandrake-manager']
+          }
+        );
+      },
+      {
+        dependencies: ServiceRegistryImpl.DEFAULT_SERVICE_DEPENDENCIES['mandrake-manager'],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['mandrake-manager']
+      }
+    );
+  }
+  
+  /**
+   * Register global services (system level)
+   * @private
+   */
+  private registerGlobalServices(): void {
+    this.logger.info('Registering global services');
+    
+    // Import required classes
+    const { MCPManager } = require('@mandrake/mcp');
+    
+    // Register MCPManager factory for system
+    this.registerServiceFactory(
+      'mcp-manager',
+      () => {
+        this.logger.info('Creating system MCPManager');
+        const mcpManager = new MCPManager();
+        
+        // Create the adapter directly rather than using createAndRegisterService
+        // This is because MCPManagerAdapter has a more specific constructor than our generic interface
+        const logger = new ConsoleLogger({ meta: { service: 'MCPManagerAdapter' } });
+        const adapter = new MCPManagerAdapter(
+          mcpManager,
+          {}, // Empty config to start with
+          'default', // Config ID
+          { logger, isSystem: true }
+        );
+        
+        // Register the service
+        this.registerService(
+          'mcp-manager',
+          adapter,
+          {
+            dependencies: ServiceRegistryImpl.DEFAULT_SERVICE_DEPENDENCIES['mcp-manager'],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['mcp-manager']
+          }
+        );
+        
+        return adapter;
+      },
+      {
+        dependencies: ServiceRegistryImpl.DEFAULT_SERVICE_DEPENDENCIES['mcp-manager'],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['mcp-manager']
+      }
+    );
+    
+    // Register SessionCoordinator factory for system
+    this.registerServiceFactory(
+      'session-coordinator',
+      () => {
+        this.logger.info('Creating system SessionCoordinator');
+        
+        return this.createAndRegisterService(
+          'session-coordinator',
+          SessionCoordinatorAdapter,
+          {
+            instance: 'system', // Use 'system' as the session ID
+            options: { isSystem: true },
+            logger: new ConsoleLogger({ meta: { service: 'SessionCoordinatorAdapter' } })
+          },
+          {
+            dependencies: ['mandrake-manager', 'mcp-manager'],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['session-coordinator']
+          }
+        );
+      },
+      {
+        dependencies: ['mandrake-manager', 'mcp-manager'],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['session-coordinator']
+      }
+    );
+  }
+  
+  /**
+   * Register factory functions for workspace-specific services
+   * @private
+   */
+  private registerWorkspaceFactories(): void {
+    this.logger.info('Registering workspace factory functions');
+    
+    // WorkspaceManager factory function
+    this.registerWorkspaceFactoryFunction<WorkspaceManagerAdapter>(
+      'workspace-manager',
+      (workspaceId: string) => {
+        this.logger.info('Creating WorkspaceManager', { workspaceId });
+        
+        return this.createAndRegisterWorkspaceService(
+          workspaceId,
+          'workspace-manager',
+          WorkspaceManagerAdapter,
+          {
+            instance: workspaceId,
+            logger: new ConsoleLogger({ 
+              meta: { service: 'WorkspaceManagerAdapter', workspaceId }
+            })
+          },
+          {
+            dependencies: ServiceRegistryImpl.DEFAULT_SERVICE_DEPENDENCIES['workspace-manager'],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['workspace-manager']
+          }
+        );
+      },
+      {
+        dependencies: ServiceRegistryImpl.DEFAULT_SERVICE_DEPENDENCIES['workspace-manager'],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['workspace-manager']
+      }
+    );
+    
+    // MCP Manager factory function for workspaces
+    this.registerWorkspaceFactoryFunction<MCPManagerAdapter>(
+      'mcp-manager',
+      (workspaceId: string) => {
+        this.logger.info('Creating workspace MCPManager', { workspaceId });
+        
+        const { MCPManager } = require('@mandrake/mcp');
+        const mcpManager = new MCPManager();
+        
+        // Create the adapter directly rather than using createAndRegisterWorkspaceService
+        const logger = new ConsoleLogger({ meta: { service: 'MCPManagerAdapter', workspaceId } });
+        const adapter = new MCPManagerAdapter(
+          mcpManager,
+          {}, // Empty config to start with
+          'default', // Config ID
+          { logger, workspaceId }
+        );
+        
+        // Register the workspace service
+        this.registerWorkspaceService(
+          workspaceId,
+          'mcp-manager',
+          adapter,
+          {
+            dependencies: [`workspace-manager`],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['mcp-manager']
+          }
+        );
+        
+        return adapter;
+      },
+      {
+        dependencies: [`workspace-manager`],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['mcp-manager']
+      }
+    );
+    
+    // SessionCoordinator factory function for workspaces
+    this.registerWorkspaceFactoryFunction<SessionCoordinatorAdapter>(
+      'session-coordinator',
+      (workspaceId: string) => {
+        this.logger.info('Creating workspace SessionCoordinator', { workspaceId });
+        
+        return this.createAndRegisterWorkspaceService(
+          workspaceId,
+          'session-coordinator',
+          SessionCoordinatorAdapter,
+          {
+            instance: workspaceId, // Use workspaceId as sessionId
+            options: {
+              workspaceName: `workspace-${workspaceId}`
+            },
+            logger: new ConsoleLogger({ 
+              meta: { service: 'SessionCoordinatorAdapter', workspaceId }
+            })
+          },
+          {
+            dependencies: [`workspace-manager`, `mcp-manager`],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['session-coordinator']
+          }
+        );
+      },
+      {
+        dependencies: [`workspace-manager`, `mcp-manager`],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['session-coordinator']
+      }
+    );
+  }
+  
+  /**
+   * Register services for existing workspaces
+   * @private
+   */
+  private async registerExistingWorkspaces(): Promise<void> {
+    try {
+      this.logger.info('Registering services for existing workspaces');
+      
+      // Get the MandrakeManager adapter
+      const mandrakeAdapter = this.getService<MandrakeManagerAdapter>('mandrake-manager');
+      if (!mandrakeAdapter) {
+        this.logger.warn('Cannot register existing workspaces: MandrakeManager not available');
+        return;
+      }
+      
+      // Initialize the MandrakeManager if not already initialized
+      if (!mandrakeAdapter.isInitialized()) {
+        await mandrakeAdapter.init();
+      }
+      
+      // Get the list of workspaces
+      const manager = mandrakeAdapter.getManager();
+      let workspaces;
+      
+      try {
+        workspaces = await manager.listWorkspaces();
+        
+        // Ensure workspaces is an array
+        if (!Array.isArray(workspaces)) {
+          this.logger.warn('listWorkspaces did not return an array, skipping workspace registration');
+          return;
+        }
+      } catch (error) {
+        this.logger.warn('Could not list workspaces, skipping workspace registration', { 
+          error: error instanceof Error ? error.message : String(error) 
+        });
+        return;
+      }
+      
+      // Register services for each workspace
+      for (const workspace of workspaces) {
+        const workspaceId = workspace.id;
+        
+        this.logger.info(`Registering services for workspace ${workspaceId}`);
+        
+        try {
+          this.registerWorkspaceServices(workspaceId);
+        } catch (error) {
+          this.logger.error(`Error registering services for workspace ${workspaceId}`, { 
+            error: error instanceof Error ? error.message : String(error) 
+          });
+        }
+      }
+    } catch (error) {
+      this.logger.error('Error registering workspace services', { 
+        error: error instanceof Error ? error.message : String(error) 
+      });
+      throw error;
+    }
+  }
+  
+  /**
+   * Register services for a specific workspace
+   * @param workspaceId The workspace ID
+   */
+  registerWorkspaceServices(workspaceId: string): void {
+    this.logger.info(`Registering services for workspace ${workspaceId}`);
+    
+    // Register WorkspaceManager factory
+    this.registerWorkspaceServiceFactory(
+      workspaceId,
+      'workspace-manager',
+      () => {
+        this.logger.info(`Creating WorkspaceManager for ${workspaceId}`);
+        
+        return this.createAndRegisterWorkspaceService(
+          workspaceId,
+          'workspace-manager',
+          WorkspaceManagerAdapter,
+          {
+            instance: workspaceId,
+            logger: new ConsoleLogger({ 
+              meta: { service: 'WorkspaceManagerAdapter', workspaceId }
+            })
+          },
+          {
+            dependencies: ServiceRegistryImpl.DEFAULT_SERVICE_DEPENDENCIES['workspace-manager'],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['workspace-manager']
+          }
+        );
+      },
+      {
+        dependencies: ServiceRegistryImpl.DEFAULT_SERVICE_DEPENDENCIES['workspace-manager'],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['workspace-manager']
+      }
+    );
+    
+    // Register MCPManager factory
+    this.registerWorkspaceServiceFactory(
+      workspaceId,
+      'mcp-manager',
+      () => {
+        this.logger.info(`Creating MCPManager for ${workspaceId}`);
+        
+        const { MCPManager } = require('@mandrake/mcp');
+        const mcpManager = new MCPManager();
+        
+        // Create the adapter directly rather than using createAndRegisterWorkspaceService
+        const logger = new ConsoleLogger({ meta: { service: 'MCPManagerAdapter', workspaceId } });
+        const adapter = new MCPManagerAdapter(
+          mcpManager,
+          {}, // Empty config to start with
+          'default', // Config ID
+          { logger, workspaceId }
+        );
+        
+        // Register the workspace service
+        this.registerWorkspaceService(
+          workspaceId,
+          'mcp-manager',
+          adapter,
+          {
+            dependencies: [`${workspaceId}:workspace-manager`],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['mcp-manager']
+          }
+        );
+        
+        return adapter;
+      },
+      {
+        dependencies: [`${workspaceId}:workspace-manager`],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['mcp-manager']
+      }
+    );
+    
+    // Register SessionCoordinator factory
+    this.registerWorkspaceServiceFactory(
+      workspaceId,
+      'session-coordinator',
+      () => {
+        this.logger.info(`Creating SessionCoordinator for ${workspaceId}`);
+        
+        return this.createAndRegisterWorkspaceService(
+          workspaceId,
+          'session-coordinator',
+          SessionCoordinatorAdapter,
+          {
+            instance: workspaceId, // Use workspaceId as sessionId
+            options: {
+              workspaceName: `workspace-${workspaceId}`
+            },
+            logger: new ConsoleLogger({ 
+              meta: { service: 'SessionCoordinatorAdapter', workspaceId }
+            })
+          },
+          {
+            dependencies: [`${workspaceId}:workspace-manager`, `${workspaceId}:mcp-manager`],
+            initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['session-coordinator']
+          }
+        );
+      },
+      {
+        dependencies: [`${workspaceId}:workspace-manager`, `${workspaceId}:mcp-manager`],
+        initializationPriority: ServiceRegistryImpl.DEFAULT_SERVICE_PRIORITIES['session-coordinator']
+      }
+    );
   }
 
   /**
@@ -518,7 +1084,7 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
     // Get workspace service statuses
     for (const [workspaceId, serviceMap] of this.workspaceServices.entries()) {
       for (const [type, service] of serviceMap.entries()) {
-        statuses.set(`${workspaceId}:${type}`, await service.getStatus());
+        statuses.set(this.getWorkspaceServiceKey(workspaceId, type), await service.getStatus());
       }
     }
     
@@ -527,11 +1093,11 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
   
   /**
    * Get the MandrakeManager instance
-   * This is a convenience method that gets the mandrake-manager adapter and returns the underlying manager
    * @returns The MandrakeManager instance
+   * @throws Error if the service is not available
    */
-  async getMandrakeManager(): Promise<any> {
-    const adapter = this.getService('mandrake-manager');
+  async getMandrakeManager(): Promise<MandrakeManager> {
+    const adapter = this.getService<MandrakeManagerAdapter>('mandrake-manager');
     if (!adapter) {
       throw new Error('MandrakeManager service not available in registry');
     }
@@ -540,18 +1106,15 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
   
   /**
    * Get an MCPManager instance
-   * This is a convenience method that gets the mcp-manager adapter and returns the underlying manager
-   * @param workspaceId Optional workspace ID. If provided, gets the workspace-specific MCP manager.
-   *                   If not provided, gets the system-level MCP manager.
+   * @param workspaceId Optional workspace ID for workspace-specific MCP manager
    * @returns The MCPManager instance
+   * @throws Error if the service is not available
    */
-  async getMCPManager(workspaceId?: string): Promise<any> {
-    let adapter;
+  async getMCPManager(workspaceId?: string): Promise<MCPManager> {
+    let adapter: MCPManagerAdapter | null;
+    
     if (workspaceId) {
-      adapter = this.getWorkspaceService<MCPManagerAdapter>(
-        workspaceId,
-        'mcp-manager'
-      );
+      adapter = this.getWorkspaceService<MCPManagerAdapter>(workspaceId, 'mcp-manager');
       if (!adapter) {
         throw new Error(`MCPManager service for workspace ${workspaceId} not available in registry`);
       }
@@ -561,24 +1124,89 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
         throw new Error('System MCPManager service not available in registry');
       }
     }
+    
     return adapter.getManager();
   }
   
   /**
    * Get a WorkspaceManager instance
-   * This is a convenience method that gets the workspace-manager adapter and returns the underlying manager
    * @param workspaceId The ID of the workspace
    * @returns The WorkspaceManager instance
+   * @throws Error if the service is not available
    */
-  async getWorkspaceManager(workspaceId: string): Promise<any> {
+  async getWorkspaceManager(workspaceId: string): Promise<WorkspaceManager> {
     const adapter = this.getWorkspaceService<WorkspaceManagerAdapter>(
       workspaceId,
       'workspace-manager'
     );
+    
     if (!adapter) {
       throw new Error(`WorkspaceManager service for workspace ${workspaceId} not available in registry`);
     }
+    
     return adapter.getManager();
+  }
+
+  /**
+   * Get a SessionCoordinator instance
+   * @param workspaceId Optional workspace ID for workspace-specific session coordinator
+   * @returns The SessionCoordinator instance
+   * @throws Error if the service is not available
+   */
+  async getSessionCoordinator(workspaceId?: string): Promise<SessionCoordinator> {
+    let adapter: SessionCoordinatorAdapter | null;
+    
+    if (workspaceId) {
+      adapter = this.getWorkspaceService<SessionCoordinatorAdapter>(
+        workspaceId, 
+        'session-coordinator'
+      );
+      
+      if (!adapter) {
+        throw new Error(`SessionCoordinator service for workspace ${workspaceId} not available in registry`);
+      }
+    } else {
+      adapter = this.getService<SessionCoordinatorAdapter>('session-coordinator');
+      if (!adapter) {
+        throw new Error('System SessionCoordinator service not available in registry');
+      }
+    }
+    
+    return adapter.getCoordinator();
+  }
+
+  /**
+   * Ensure that required services are available
+   * @param requiredServices Services that must be available
+   * @param workspaceId Optional workspace ID for workspace services
+   * @throws Error if any required service is not available
+   */
+  async ensureServices(
+    requiredServices: string[], 
+    workspaceId?: string
+  ): Promise<void> {
+    const missingServices: string[] = [];
+    
+    for (const serviceType of requiredServices) {
+      let available: boolean;
+      
+      if (workspaceId) {
+        available = !!this.getWorkspaceService(workspaceId, serviceType);
+      } else {
+        available = !!this.getService(serviceType);
+      }
+      
+      if (!available) {
+        missingServices.push(serviceType);
+      }
+    }
+    
+    if (missingServices.length > 0) {
+      throw new Error(
+        `Required services not available: ${missingServices.join(', ')}` +
+        (workspaceId ? ` for workspace ${workspaceId}` : '')
+      );
+    }
   }
 
   /**
@@ -600,14 +1228,14 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
     // Add all workspace services to the graph
     for (const [workspaceId, serviceMap] of this.workspaceServices.entries()) {
       for (const [type] of serviceMap) {
-        const fullType = `${workspaceId}:${type}`;
+        const fullType = this.getWorkspaceServiceKey(workspaceId, type);
         if (!graph.has(fullType)) {
           graph.set(fullType, []);
         }
       }
     }
     
-    // Services that have no dependencies or whose dependencies have been processed
+    // Services that have been resolved
     const resolved: string[] = [];
     
     // Keep track of nodes that are being processed in the current DFS stack
@@ -644,7 +1272,7 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
         // Check for workspace-specific dependencies which should be prefixed
         if (node.includes(':') && !dependency.includes(':')) {
           const workspaceId = node.split(':')[0];
-          const workspaceDependency = `${workspaceId}:${dependency}`;
+          const workspaceDependency = this.getWorkspaceServiceKey(workspaceId, dependency);
           
           // If the workspace-specific dependency exists, use it instead
           if (graph.has(workspaceDependency)) {
@@ -688,498 +1316,101 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
       return bPriority - aPriority;
     });
   }
-}
 
-/**
- * Helper functions for creating and registering services
- */
-
-/**
- * Options for creating a service
- */
-export interface ServiceCreationOptions {
-  /** The service instance to adapt */
-  instance: any;
-  
-  /** Optional service-specific options */
-  options?: Record<string, any>;
-  
-  /** Optional logger to use */
-  logger?: Logger;
-  
-  /** Optional workspace ID for workspace services */
-  workspaceId?: string;
-  
-  /** Optional metadata for the service */
-  metadata?: Record<string, any>;
-}
-
-/**
- * Options for registering a service
- */
-export interface ServiceRegistrationOptions {
-  /** Optional dependencies for the service */
-  dependencies?: string[];
-  
-  /** Optional initialization priority (higher is initialized earlier) */
-  initializationPriority?: number;
-  
-  /** Optional metadata for the service */
-  metadata?: Record<string, any>;
-}
-
-/**
- * Create and register a service in a single function call
- * @param registry The service registry to register with
- * @param type The service type
- * @param adapterClass The adapter class to instantiate
- * @param creationOptions Options for creating the service
- * @param registrationOptions Options for registering the service
- * @returns The created service instance
- */
-export function createAndRegisterService<T extends ManagedService>(
-  registry: ServiceRegistry,
-  type: string,
-  adapterClass: new (instance: any, options?: any) => T,
-  creationOptions: ServiceCreationOptions,
-  registrationOptions?: ServiceRegistrationOptions
-): T {
-  // Create service instance
-  const loggerMeta: LogMeta = { 
-    service: `${adapterClass.name}` 
-  };
-  
-  if (creationOptions.workspaceId) {
-    loggerMeta.workspaceId = creationOptions.workspaceId;
-  }
-  
-  // Create the adapter with appropriate options
-  const adapterOptions: Record<string, any> = {
-    ...creationOptions.options,
-    logger: creationOptions.logger || new ConsoleLogger({ meta: loggerMeta }),
-    ...creationOptions.metadata
-  };
-  
-  // Add workspaceId to options if provided
-  if (creationOptions.workspaceId) {
-    adapterOptions.workspaceId = creationOptions.workspaceId;
-  }
-  
-  const adapter = new adapterClass(
-    creationOptions.instance,
-    adapterOptions
-  );
-  
-  // Register the service with the registry
-  if (creationOptions.workspaceId) {
-    registry.registerWorkspaceService(
-      creationOptions.workspaceId,
-      type,
-      adapter,
-      registrationOptions
-    );
-  } else {
-    registry.registerService(
-      type,
-      adapter,
-      registrationOptions
-    );
-  }
-  
-  return adapter;
-}
-
-/**
- * Create and register a workspace service in a single function call
- * @param registry The service registry to register with
- * @param workspaceId The workspace ID
- * @param type The service type
- * @param adapterClass The adapter class to instantiate
- * @param creationOptions Options for creating the service
- * @param registrationOptions Options for registering the service
- * @returns The created service instance
- */
-export function createAndRegisterWorkspaceService<T extends ManagedService>(
-  registry: ServiceRegistry,
-  workspaceId: string,
-  type: string,
-  adapterClass: new (instance: any, options?: any) => T,
-  creationOptions: Omit<ServiceCreationOptions, 'workspaceId'>,
-  registrationOptions?: ServiceRegistrationOptions
-): T {
-  return createAndRegisterService(
-    registry,
-    type,
-    adapterClass,
-    { ...creationOptions, workspaceId },
-    registrationOptions
-  );
-}
-
-/**
- * Enhanced ServiceRegistry interface with lazy service creation capabilities
- * 
- * This extension adds the ability to register service factories and create services on-demand
- */
-export interface EnhancedServiceRegistry extends ServiceRegistry {
   /**
-   * Register a service factory for lazy creation
-   * @param type The service type
-   * @param factory Function that creates the service instance
-   * @param options Optional registration options
+   * Get the key used for workspace services in internal maps
+   * @param workspaceId The workspace ID
+   * @param serviceType The service type
+   * @returns The workspace service key
+   * @private
    */
-  registerServiceFactory<T extends ManagedService>(
-    type: string,
-    factory: () => T,
-    options?: ServiceOptions
-  ): void;
+  private getWorkspaceServiceKey(workspaceId: string, serviceType: string): string {
+    return `${workspaceId}:${serviceType}`;
+  }
   
   /**
-   * Register a workspace service factory for lazy creation
+   * Create and register a service in a single function call
+   * @param type The service type
+   * @param adapterClass The adapter class to instantiate
+   * @param creationOptions Options for creating the service
+   * @param registrationOptions Options for registering the service
+   * @returns The created service instance
+   */
+  createAndRegisterService<T extends ManagedService>(
+    type: string,
+    adapterClass: new (instance: any, options?: any) => T,
+    creationOptions: ServiceCreationOptions,
+    registrationOptions?: ServiceOptions
+  ): T {
+    // Create logger meta information
+    const loggerMeta: LogMeta = { 
+      service: `${adapterClass.name}` 
+    };
+    
+    if (creationOptions.workspaceId) {
+      loggerMeta.workspaceId = creationOptions.workspaceId;
+    }
+    
+    // Create the adapter with appropriate options
+    const adapterOptions: Record<string, any> = {
+      ...creationOptions.options,
+      logger: creationOptions.logger || new ConsoleLogger({ meta: loggerMeta }),
+      ...creationOptions.metadata
+    };
+    
+    // Add workspaceId to options if provided
+    if (creationOptions.workspaceId) {
+      adapterOptions.workspaceId = creationOptions.workspaceId;
+    }
+    
+    const adapter = new adapterClass(
+      creationOptions.instance,
+      adapterOptions
+    );
+    
+    // Register the service with the registry
+    if (creationOptions.workspaceId) {
+      this.registerWorkspaceService(
+        creationOptions.workspaceId,
+        type,
+        adapter,
+        registrationOptions
+      );
+    } else {
+      this.registerService(
+        type,
+        adapter,
+        registrationOptions
+      );
+    }
+    
+    return adapter;
+  }
+
+  /**
+   * Create and register a workspace service in a single function call
    * @param workspaceId The workspace ID
    * @param type The service type
-   * @param factory Function that creates the service instance
-   * @param options Optional registration options
+   * @param adapterClass The adapter class to instantiate
+   * @param creationOptions Options for creating the service
+   * @param registrationOptions Options for registering the service
+   * @returns The created service instance
    */
-  registerWorkspaceServiceFactory<T extends ManagedService>(
+  createAndRegisterWorkspaceService<T extends ManagedService>(
     workspaceId: string,
     type: string,
-    factory: () => T,
-    options?: ServiceOptions
-  ): void;
-  
-  /**
-   * Register a workspace factory function that will apply to any workspace ID
-   * @param type The service type
-   * @param factoryFn Function that takes a workspace ID and returns a service instance
-   * @param options Optional registration options
-   */
-  registerWorkspaceFactoryFunction<T extends ManagedService>(
-    type: string,
-    factoryFn: (workspaceId: string) => T,
-    options?: ServiceOptions
-  ): void;
-  
-  /**
-   * Create and register standard services based on common patterns
-   * @param home The Mandrake home directory
-   * @param logger Optional logger
-   */
-  registerStandardServices(home: string, logger?: Logger): void;
-}
-
-/**
- * Register standard service factories
- * @param registry The registry to register with
- * @param home Mandrake home directory
- * @param logger Optional logger to use
- */
-export function registerStandardServiceFactories(
-  registry: EnhancedServiceRegistry,
-  home: string,
-  logger?: Logger
-): void {
-  // Import required adapters
-  const { 
-    MandrakeManagerAdapter, 
-    MCPManagerAdapter,
-    WorkspaceManagerAdapter,
-    SessionCoordinatorAdapter 
-  } = require('./adapters');
-  
-  // Import manager classes
-  const { MandrakeManager } = require('@mandrake/workspace');
-  const { MCPManager } = require('@mandrake/mcp');
-  
-  // Standard service dependencies
-  const serviceDependencies = {
-    'mandrake-manager': [],
-    'mcp-manager': ['mandrake-manager'],
-    'workspace-manager': ['mandrake-manager'],
-    'session-coordinator': ['workspace-manager']
-  };
-  
-  // Standard service priorities
-  const servicePriorities = {
-    'mandrake-manager': 100,
-    'workspace-manager': 50,
-    'mcp-manager': 25,
-    'session-coordinator': 10
-  };
-  
-  // Create logger for service factories
-  const serviceLogger = logger || new ConsoleLogger({
-    meta: { component: 'ServiceFactories' }
-  });
-  
-  // Register MandrakeManager factory
-  registry.registerServiceFactory(
-    'mandrake-manager',
-    () => {
-      const mandrakeManager = new MandrakeManager(home);
-      return new MandrakeManagerAdapter(mandrakeManager, {
-        logger: new ConsoleLogger({ meta: { service: 'MandrakeManagerAdapter' } })
-      });
-    },
-    {
-      dependencies: serviceDependencies['mandrake-manager'],
-      initializationPriority: servicePriorities['mandrake-manager']
-    }
-  );
-  
-  // Register MCPManager factory
-  registry.registerServiceFactory(
-    'mcp-manager',
-    () => {
-      // Get MandrakeManager first
-      const mandrakeAdapter = registry.getService<typeof MandrakeManagerAdapter>('mandrake-manager');
-      if (!mandrakeAdapter) {
-        throw new Error('Cannot create MCPManager: MandrakeManager service not available');
-      }
-      
-      const mcpManager = new MCPManager();
-      return new MCPManagerAdapter(
-        mcpManager,
-        {}, // No initial config
-        'default',
-        {
-          logger: new ConsoleLogger({ meta: { service: 'SystemMCPManagerAdapter' } })
-        }
-      );
-    },
-    {
-      dependencies: serviceDependencies['mcp-manager'],
-      initializationPriority: servicePriorities['mcp-manager']
-    }
-  );
-  
-  // Define base workspace service factories (these will be registered per workspace)
-  const createWorkspaceManager = (workspaceId: string) => {
-    // Get MandrakeManager first
-    const mandrakeAdapter = registry.getService<typeof MandrakeManagerAdapter>('mandrake-manager');
-    if (!mandrakeAdapter) {
-      throw new Error('Cannot create WorkspaceManager: MandrakeManager service not available');
-    }
-    
-    // Get workspace data
-    const workspaceData = mandrakeAdapter.getManager().getWorkspace(workspaceId);
-    
-    return new WorkspaceManagerAdapter(workspaceData, {
-      logger: new ConsoleLogger({ 
-        meta: { service: 'WorkspaceManagerAdapter', workspaceId } 
-      })
-    });
-  };
-  
-  const createWorkspaceMcpManager = (workspaceId: string) => {
-    // Get workspace manager first
-    const workspaceManager = registry.getWorkspaceService<typeof WorkspaceManagerAdapter>(
-      workspaceId,
-      'workspace-manager'
+    adapterClass: new (instance: any, options?: any) => T,
+    creationOptions: Omit<ServiceCreationOptions, 'workspaceId'>,
+    registrationOptions?: ServiceOptions
+  ): T {
+    return this.createAndRegisterService(
+      type,
+      adapterClass,
+      { ...creationOptions, workspaceId },
+      registrationOptions
     );
-    
-    if (!workspaceManager) {
-      throw new Error(`Cannot create MCPManager: WorkspaceManager for ${workspaceId} not available`);
-    }
-    
-    // Create MCPManager
-    const mcpManager = new MCPManager();
-    
-    // Get tool configs
-    let active = 'default';
-    let toolConfigs = {};
-    
-    try {
-      const manager = workspaceManager.getManager();
-      active = manager.tools.getActive();
-      toolConfigs = manager.tools.getConfigSet(active);
-    } catch (error) {
-      serviceLogger.warn(`Error getting tool configs for workspace ${workspaceId}`, { error });
-    }
-    
-    return new MCPManagerAdapter(
-      mcpManager,
-      toolConfigs,
-      active,
-      {
-        logger: new ConsoleLogger({ 
-          meta: { service: 'MCPManagerAdapter', workspaceId } 
-        }),
-        workspaceId
-      }
-    );
-  };
-  
-  const createSessionCoordinator = (workspaceId: string) => {
-    // Get workspace manager first
-    const workspaceManager = registry.getWorkspaceService<typeof WorkspaceManagerAdapter>(
-      workspaceId,
-      'workspace-manager'
-    );
-    
-    if (!workspaceManager) {
-      throw new Error(`Cannot create SessionCoordinator: WorkspaceManager for ${workspaceId} not available`);
-    }
-    
-    return new SessionCoordinatorAdapter({
-      workspaceId,
-      logger: new ConsoleLogger({ 
-        meta: { service: 'SessionCoordinatorAdapter', workspaceId } 
-      })
-    });
-  };
-  
-  // Register workspace factory functions that will be used whenever a specific workspace is requested
-  // This approach doesn't require having the workspace list ahead of time
-  const registerWorkspaceFactoryFunctions = () => {
-    // Register dynamic factory registration function
-    registry.registerServiceFactory(
-      'workspace-factory-registrar',
-      () => {
-        return {
-          async init(): Promise<void> {
-            serviceLogger.info('Initializing workspace factory registrar');
-            
-            // Register this workspace-specific factory for ANY workspace ID that gets requested
-            registry.registerWorkspaceFactoryFunction<typeof WorkspaceManagerAdapter>(
-              'workspace-manager',
-              (wsId: string) => createWorkspaceManager(wsId),
-              {
-                dependencies: serviceDependencies['workspace-manager'],
-                initializationPriority: servicePriorities['workspace-manager']
-              }
-            );
-            
-            registry.registerWorkspaceFactoryFunction<typeof MCPManagerAdapter>(
-              'mcp-manager',
-              (wsId: string) => createWorkspaceMcpManager(wsId),
-              {
-                dependencies: [], // We'll handle dependencies in the adapter
-                initializationPriority: servicePriorities['mcp-manager']
-              }
-            );
-            
-            registry.registerWorkspaceFactoryFunction<typeof SessionCoordinatorAdapter>(
-              'session-coordinator',
-              (wsId: string) => createSessionCoordinator(wsId),
-              {
-                dependencies: [], // We'll handle dependencies in the adapter
-                initializationPriority: servicePriorities['session-coordinator']
-              }
-            );
-            
-            serviceLogger.info('Workspace factory functions registered');
-          },
-          
-          async cleanup(): Promise<void> {
-            serviceLogger.info('Cleaning up workspace factory registrar');
-          },
-          
-          isInitialized(): boolean {
-            return true;
-          },
-          
-          getStatus(): Promise<ServiceStatus> {
-            return Promise.resolve({
-              isHealthy: true,
-              statusCode: 200,
-              message: 'Workspace factory registrar is available'
-            });
-          }
-        };
-      },
-      {
-        dependencies: ['mandrake-manager'],
-        initializationPriority: 90 // High priority, just below mandrake-manager
-      }
-    );
-  };
-  
-  // Also try to register existing workspaces if available
-  const registerExistingWorkspaces = async () => {
-    try {
-      const mandrakeAdapter = registry.getService('mandrake-manager') as any;
-      if (!mandrakeAdapter) {
-        serviceLogger.warn('Cannot register existing workspaces: MandrakeManager not available');
-        return;
-      }
-      
-      // Get workspaces list
-      let workspaces = [];
-      try {
-        workspaces = mandrakeAdapter.getManager().listWorkspaces();
-        
-        // Ensure workspaces is an array (handle potential API differences)
-        if (!Array.isArray(workspaces)) {
-          serviceLogger.warn('listWorkspaces did not return an array, skipping workspace registration');
-          return;
-        }
-      } catch (error) {
-        serviceLogger.warn('Could not list workspaces, skipping workspace registration', { error });
-        return;
-      }
-      
-      for (const workspace of workspaces) {
-        const workspaceId = workspace.id;
-        
-        // Pre-register workspace services for existing workspaces
-        // When using the dynamic factory functions, these are not strictly needed,
-        // but registering them explicitly can improve performance
-        serviceLogger.info(`Pre-registering workspace services for ${workspaceId}`);
-        
-        try {
-          // Each service will be created on-demand when requested
-          registry.registerWorkspaceServiceFactory(
-            workspaceId,
-            'workspace-manager',
-            () => createWorkspaceManager(workspaceId),
-            {
-              dependencies: serviceDependencies['workspace-manager'],
-              initializationPriority: servicePriorities['workspace-manager']
-            }
-          );
-          
-          registry.registerWorkspaceServiceFactory(
-            workspaceId,
-            'mcp-manager',
-            () => createWorkspaceMcpManager(workspaceId),
-            {
-              dependencies: [`${workspaceId}:workspace-manager`],
-              initializationPriority: servicePriorities['mcp-manager']
-            }
-          );
-          
-          registry.registerWorkspaceServiceFactory(
-            workspaceId,
-            'session-coordinator',
-            () => createSessionCoordinator(workspaceId),
-            {
-              dependencies: [`${workspaceId}:workspace-manager`],
-              initializationPriority: servicePriorities['session-coordinator']
-            }
-          );
-        } catch (error) {
-          serviceLogger.error(`Error registering services for workspace ${workspaceId}`, { error });
-        }
-      }
-    } catch (error) {
-      serviceLogger.error('Error registering workspace factories', { error });
-    }
-  };
-  
-  // Register the workspace factory functions first - these will handle any workspace ID
-  registerWorkspaceFactoryFunctions();
-  
-  // Also try to register known workspaces if the MandrakeManager is available
-  const mandrakeAdapter = registry.getService<typeof MandrakeManagerAdapter>('mandrake-manager');
-  if (mandrakeAdapter) {
-    // Try to initialize the MandrakeManager and register existing workspaces
-    mandrakeAdapter.init()
-      .then(() => registerExistingWorkspaces())
-      .catch((error: any) => {
-        serviceLogger.error('Failed to initialize MandrakeManager for workspace factories', { error });
-      });
   }
 }
 
+// Export types
 export * from './types';

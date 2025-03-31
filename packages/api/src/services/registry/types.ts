@@ -3,6 +3,10 @@
  * 
  * This file defines the core interfaces for the service registry architecture.
  */
+import type { Logger } from '@mandrake/utils';
+import type { MandrakeManager, WorkspaceManager } from '@mandrake/workspace';
+import type { MCPManager } from '@mandrake/mcp';
+import type { SessionCoordinator } from '@mandrake/session';
 
 /**
  * ServerState interface to define server states
@@ -94,11 +98,31 @@ export interface ManagedService {
 }
 
 /**
+ * Options for creating a service through an adapter
+ */
+export interface ServiceCreationOptions {
+  /** The service instance to adapt */
+  instance: any;
+  
+  /** Optional service-specific options */
+  options?: Record<string, any>;
+  
+  /** Optional logger to use */
+  logger?: Logger;
+  
+  /** Optional workspace ID for workspace services */
+  workspaceId?: string;
+  
+  /** Optional metadata for the service */
+  metadata?: Record<string, any>;
+}
+
+/**
  * Service registry interface for managing service lifecycles
  */
 export interface ServiceRegistry {
   /**
-   * Register a global service
+   * Register a global service directly
    * @param type Unique identifier for the service type
    * @param instance The service instance to register
    * @param options Optional registration options
@@ -110,7 +134,7 @@ export interface ServiceRegistry {
   ): void;
   
   /**
-   * Register a workspace-specific service
+   * Register a workspace-specific service directly
    * @param workspaceId The ID of the workspace
    * @param type Unique identifier for the service type
    * @param instance The service instance to register
@@ -120,6 +144,44 @@ export interface ServiceRegistry {
     workspaceId: string, 
     type: string, 
     instance: T, 
+    options?: ServiceOptions
+  ): void;
+  
+  /**
+   * Register a service factory for lazy creation
+   * @param type The service type
+   * @param factory Function that creates the service instance
+   * @param options Optional registration options
+   */
+  registerServiceFactory<T extends ManagedService>(
+    type: string,
+    factory: () => T,
+    options?: ServiceOptions
+  ): void;
+  
+  /**
+   * Register a workspace service factory for lazy creation
+   * @param workspaceId The workspace ID
+   * @param type The service type
+   * @param factory Function that creates the service instance
+   * @param options Optional registration options
+   */
+  registerWorkspaceServiceFactory<T extends ManagedService>(
+    workspaceId: string,
+    type: string,
+    factory: () => T,
+    options?: ServiceOptions
+  ): void;
+  
+  /**
+   * Register a workspace factory function that will apply to any workspace ID
+   * @param type The service type
+   * @param factoryFn Function that takes a workspace ID and returns a service instance
+   * @param options Optional registration options
+   */
+  registerWorkspaceFactoryFunction<T extends ManagedService>(
+    type: string,
+    factoryFn: (workspaceId: string) => T,
     options?: ServiceOptions
   ): void;
   
@@ -169,25 +231,88 @@ export interface ServiceRegistry {
   
   /**
    * Get the MandrakeManager instance
-   * This is a convenience method that gets the mandrake-manager adapter and returns the underlying manager
-   * @returns The MandrakeManager instance or null if not found
+   * @returns The MandrakeManager instance
+   * @throws Error if the service is not available
    */
-  getMandrakeManager(): Promise<any>;
+  getMandrakeManager(): Promise<MandrakeManager>;
   
   /**
    * Get an MCPManager instance
-   * This is a convenience method that gets the mcp-manager adapter and returns the underlying manager
-   * @param workspaceId Optional workspace ID. If provided, gets the workspace-specific MCP manager.
-   *                   If not provided, gets the system-level MCP manager.
-   * @returns The MCPManager instance or null if not found
+   * @param workspaceId Optional workspace ID for workspace-specific MCP manager
+   * @returns The MCPManager instance
+   * @throws Error if the service is not available
    */
-  getMCPManager(workspaceId?: string): Promise<any>;
+  getMCPManager(workspaceId?: string): Promise<MCPManager>;
   
   /**
    * Get a WorkspaceManager instance
-   * This is a convenience method that gets the workspace-manager adapter and returns the underlying manager
    * @param workspaceId The ID of the workspace
-   * @returns The WorkspaceManager instance or null if not found
+   * @returns The WorkspaceManager instance
+   * @throws Error if the service is not available
    */
-  getWorkspaceManager(workspaceId: string): Promise<any>;
+  getWorkspaceManager(workspaceId: string): Promise<WorkspaceManager>;
+  
+  /**
+   * Get a SessionCoordinator instance
+   * @param workspaceId Optional workspace ID for workspace-specific session coordinator
+   * @returns The SessionCoordinator instance
+   * @throws Error if the service is not available
+   */
+  getSessionCoordinator(workspaceId?: string): Promise<SessionCoordinator>;
+  
+  /**
+   * Register standard services based on common patterns
+   * @param home The Mandrake home directory
+   * @param logger Optional logger
+   */
+  registerStandardServices(home: string, logger?: Logger): void;
+  
+  /**
+   * Register services for a specific workspace
+   * @param workspaceId The workspace ID
+   */
+  registerWorkspaceServices(workspaceId: string): void;
+  
+  /**
+   * Ensure that required services are available
+   * @param requiredServices Services that must be available
+   * @param workspaceId Optional workspace ID for workspace services
+   * @throws Error if any required service is not available
+   */
+  ensureServices(
+    requiredServices: string[], 
+    workspaceId?: string
+  ): Promise<void>;
+  
+  /**
+   * Create and register a service in a single function call
+   * @param type The service type
+   * @param adapterClass The adapter class to instantiate
+   * @param creationOptions Options for creating the service
+   * @param registrationOptions Optional registration options
+   * @returns The created service instance
+   */
+  createAndRegisterService<T extends ManagedService>(
+    type: string,
+    adapterClass: new (instance: any, options?: any) => T,
+    creationOptions: ServiceCreationOptions,
+    registrationOptions?: ServiceOptions
+  ): T;
+  
+  /**
+   * Create and register a workspace service in a single function call
+   * @param workspaceId The workspace ID
+   * @param type The service type
+   * @param adapterClass The adapter class to instantiate
+   * @param creationOptions Options for creating the service
+   * @param registrationOptions Optional registration options
+   * @returns The created service instance
+   */
+  createAndRegisterWorkspaceService<T extends ManagedService>(
+    workspaceId: string,
+    type: string,
+    adapterClass: new (instance: any, options?: any) => T,
+    creationOptions: Omit<ServiceCreationOptions, 'workspaceId'>,
+    registrationOptions?: ServiceOptions
+  ): T;
 }

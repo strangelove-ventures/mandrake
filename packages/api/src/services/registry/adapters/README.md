@@ -17,6 +17,7 @@ We have implemented the following adapters:
 ## Adapter Pattern
 
 Each adapter implements the ManagedService interface defined in `../types.ts` and wraps an existing service to provide:
+
 - Lifecycle management (initialization, cleanup)
 - Health status reporting
 - Dependency resolution (via the ServiceRegistry)
@@ -98,17 +99,12 @@ export class SomeManagerAdapter implements ManagedService {
 
 ## Implementation Status
 
-### Completed Adapters:
+### Completed Adapters
 
 - ✅ **MandrakeManagerAdapter**: Global configuration and workspace registry
 - ✅ **WorkspaceManagerAdapter**: Individual workspace management
 - ✅ **MCPManagerAdapter**: MCP server management
 - ✅ **SessionCoordinatorAdapter**: Session coordination and round management
-
-### Planned Adapters:
-
-- ⏳ **ToolsManagerAdapter**: Tool configuration management
-- ⏳ **ModelsManagerAdapter**: Model configuration management
 
 ## Integration with ServiceRegistry
 

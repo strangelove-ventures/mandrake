@@ -2,125 +2,222 @@
 
 The Service Registry provides a centralized system for registering, initializing, and managing services in the Mandrake API.
 
-## Features
+## Overview
 
-- Centralized service management
-- Dependency-based initialization order
-- Priority-based initialization
-- Workspace-scoped services
-- Service health status reporting
-- Graceful service cleanup
+The Service Registry is a core architectural component that manages the lifecycle of all services within Mandrake. It handles dependency-based initialization, workspace-specific service instances, lazy loading, and graceful cleanup.
 
-## Core Components
+## Key Features
 
-- **ServiceRegistry**: Central interface for managing services
-- **ManagedService**: Interface that all managed services must implement
-- **Service Adapters**: Adapters that wrap existing services to implement the ManagedService interface
-- **Helper Functions**: Utilities for creating and registering services
+- **Centralized Service Management**: Single point of access for all services
+- **Dependency Resolution**: Automatically resolves service dependencies
+- **Lazy Service Creation**: Services are created on demand via factories
+- **Workspace Isolation**: Per-workspace service instances
+- **Type-Safe Access**: Specialized getters for common services
+- **Health Monitoring**: Service status tracking and reporting
+- **Graceful Cleanup**: Orderly shutdown of services
 
-## Service Registration Helpers
+## Core Interfaces
 
-To simplify service registration, we provide helper functions that reduce boilerplate code.
+### ServiceRegistry
 
-### Basic Usage
+The main interface for interacting with services:
 
 ```typescript
-import { ServiceRegistryImpl, createAndRegisterService } from './services/registry';
-import { MandrakeManagerAdapter } from './services/registry/adapters';
-import { MandrakeManager } from '@mandrake/workspace';
+export interface ServiceRegistry {
+  // Service registration methods
+  registerService<T extends ManagedService>(type: string, instance: T, options?: ServiceOptions): void;
+  registerWorkspaceService<T extends ManagedService>(workspaceId: string, type: string, instance: T, options?: ServiceOptions): void;
+  registerServiceFactory<T extends ManagedService>(type: string, factory: () => T, options?: ServiceOptions): void;
+  registerWorkspaceServiceFactory<T extends ManagedService>(workspaceId: string, type: string, factory: () => T, options?: ServiceOptions): void;
+  registerWorkspaceFactoryFunction<T extends ManagedService>(type: string, factoryFn: (workspaceId: string) => T, options?: ServiceOptions): void;
+  
+  // Service access methods
+  getService<T extends ManagedService>(type: string): T | null;
+  getWorkspaceService<T extends ManagedService>(workspaceId: string, type: string): T | null;
+  
+  // Lifecycle management
+  initializeServices(): Promise<void>;
+  cleanupServices(): Promise<void>;
+  
+  // Status monitoring
+  getServiceStatus(type: string, workspaceId?: string): Promise<ServiceStatus | null>;
+  getAllServiceStatuses(): Promise<Map<string, ServiceStatus>>;
+  
+  // Type-safe manager access
+  getMandrakeManager(): Promise<MandrakeManager>;
+  getMCPManager(workspaceId?: string): Promise<MCPManager>;
+  getWorkspaceManager(workspaceId: string): Promise<WorkspaceManager>;
+  getSessionCoordinator(workspaceId?: string): Promise<SessionCoordinator>;
+  
+  // Convenience methods
+  registerStandardServices(home: string, logger?: Logger): void;
+  registerWorkspaceServices(workspaceId: string): void;
+  ensureServices(requiredServices: string[], workspaceId?: string): Promise<void>;
+  
+  // Helper methods for service creation and registration
+  createAndRegisterService<T extends ManagedService>(
+    type: string,
+    adapterClass: new (instance: any, options?: any) => T,
+    creationOptions: ServiceCreationOptions,
+    registrationOptions?: ServiceOptions
+  ): T;
+  
+  createAndRegisterWorkspaceService<T extends ManagedService>(
+    workspaceId: string,
+    type: string,
+    adapterClass: new (instance: any, options?: any) => T,
+    creationOptions: Omit<ServiceCreationOptions, 'workspaceId'>,
+    registrationOptions?: ServiceOptions
+  ): T;
+}
+```
+
+### ManagedService
+
+Interface that all services must implement:
+
+```typescript
+export interface ManagedService {
+  init(): Promise<void>;
+  isInitialized(): boolean;
+  cleanup(): Promise<void>;
+  getStatus(): Promise<ServiceStatus>;
+}
+```
+
+## Service Adapters
+
+Adapters wrap core manager implementations to provide the `ManagedService` interface:
+
+- **MandrakeManagerAdapter**: System configuration and workspace management
+- **MCPManagerAdapter**: Tool server management
+- **WorkspaceManagerAdapter**: Workspace operations
+- **SessionCoordinatorAdapter**: Session handling and LLM interactions
+
+## Usage Examples
+
+### Basic Service Registry Setup
+
+```typescript
+import { ServiceRegistryImpl } from './services/registry';
 import { ConsoleLogger } from '@mandrake/utils';
 
-// Initialize service registry
-const serviceRegistry = new ServiceRegistryImpl();
+// Create the registry with a custom logger
+const logger = new ConsoleLogger({ meta: { component: 'ServiceRegistry' } });
+const registry = new ServiceRegistryImpl({ logger });
 
-// Create MandrakeManager
-const mandrakeManager = new MandrakeManager('/path/to/mandrake/home');
+// Register standard services
+registry.registerStandardServices('/path/to/mandrake/home', logger);
 
-// Create and register MandrakeManagerAdapter
-const mandrakeAdapter = createAndRegisterService(
-  serviceRegistry,
-  'mandrake-manager',
-  MandrakeManagerAdapter,
+// Initialize all services
+await registry.initializeServices();
+```
+
+### Using Type-Safe Manager Access
+
+```typescript
+// Get the MandrakeManager (system-wide)
+const mandrakeManager = await registry.getMandrakeManager();
+const workspaces = await mandrakeManager.listWorkspaces();
+
+// Get an MCP Manager (workspace-specific)
+const mcpManager = await registry.getMCPManager('workspace-123');
+await mcpManager.startServer('ripper', { port: 3010 });
+
+// Get a workspace manager
+const workspaceManager = await registry.getWorkspaceManager('workspace-123');
+const config = await workspaceManager.getConfig();
+
+// Get a session coordinator
+const sessionCoordinator = await registry.getSessionCoordinator('workspace-123');
+const session = await sessionCoordinator.createSession({ model: 'gpt-4' });
+```
+
+### Manual Service Registration
+
+```typescript
+// Register a global service
+registry.registerService(
+  'custom-service',
+  customServiceInstance,
   {
-    instance: mandrakeManager,
-    logger: new ConsoleLogger({ meta: { service: 'MandrakeManagerAdapter' } })
-  },
-  {
-    dependencies: [],
-    initializationPriority: 100  // Highest priority - initialize first
+    dependencies: ['mandrake-manager'],
+    initializationPriority: 50
   }
 );
 
-// Initialize all services
-await serviceRegistry.initializeServices();
+// Register a workspace service
+registry.registerWorkspaceService(
+  'workspace-123',
+  'custom-workspace-service',
+  customWorkspaceServiceInstance,
+  {
+    dependencies: ['workspace-123:workspace-manager'],
+    initializationPriority: 40
+  }
+);
 ```
 
-### Workspace Services
-
-For workspace-scoped services, use the dedicated helper:
+### Creating and Registering Services
 
 ```typescript
-import { createAndRegisterWorkspaceService } from './services/registry';
-import { WorkspaceManagerAdapter } from './services/registry/adapters';
-
-// Create and register WorkspaceManager for a specific workspace
-const wsAdapter = createAndRegisterWorkspaceService(
-  serviceRegistry,
-  workspaceId,
-  'workspace-manager',
-  WorkspaceManagerAdapter,
+// Create and register a custom service
+const customAdapter = registry.createAndRegisterService(
+  'custom-service',
+  CustomServiceAdapter,
   {
-    instance: workspaceManager,
-    logger: new ConsoleLogger({ meta: { service: 'WorkspaceManagerAdapter' } })
+    instance: customService,
+    logger: new ConsoleLogger({ meta: { service: 'CustomService' } }),
+    options: { 
+      configPath: '/path/to/config.json'
+    }
   },
   {
     dependencies: ['mandrake-manager'],
-    initializationPriority: 10
+    initializationPriority: 50
+  }
+);
+
+// Create and register a workspace service
+const workspaceAdapter = registry.createAndRegisterWorkspaceService(
+  'workspace-123',
+  'custom-workspace-service',
+  CustomWorkspaceAdapter,
+  {
+    instance: customWorkspaceService,
+    logger: new ConsoleLogger({ 
+      meta: { service: 'CustomWorkspaceService', workspaceId: 'workspace-123' } 
+    }),
+    options: { 
+      workspacePath: '/path/to/workspace' 
+    }
+  },
+  {
+    dependencies: ['workspace-123:workspace-manager'],
+    initializationPriority: 30
   }
 );
 ```
 
-## Helper Function Parameters
-
-### `createAndRegisterService`
+## Service Options
 
 ```typescript
-function createAndRegisterService<T extends ManagedService>(
-  registry: ServiceRegistry,
-  type: string,
-  adapterClass: new (instance: any, options?: any) => T,
-  creationOptions: ServiceCreationOptions,
-  registrationOptions?: ServiceRegistrationOptions
-): T
+export interface ServiceOptions {
+  /** Services that must be initialized before this service */
+  dependencies?: string[];
+  
+  /** Optional priority for initialization (higher is initialized earlier) */
+  initializationPriority?: number;
+  
+  /** Optional metadata for the service */
+  metadata?: Record<string, any>;
+}
 ```
 
-**Parameters:**
-- `registry`: The ServiceRegistry to register with
-- `type`: The service type identifier (e.g., 'mandrake-manager')
-- `adapterClass`: The adapter class constructor
-- `creationOptions`: Options for creating the service (instance, logger, etc.)
-- `registrationOptions`: Options for registering the service (dependencies, priority)
-
-### `createAndRegisterWorkspaceService`
+## Service Creation Options
 
 ```typescript
-function createAndRegisterWorkspaceService<T extends ManagedService>(
-  registry: ServiceRegistry,
-  workspaceId: string,
-  type: string,
-  adapterClass: new (instance: any, options?: any) => T,
-  creationOptions: Omit<ServiceCreationOptions, 'workspaceId'>,
-  registrationOptions?: ServiceRegistrationOptions
-): T
-```
-
-**Parameters:**
-- Same as `createAndRegisterService` plus `workspaceId`
-
-## ServiceCreationOptions
-
-```typescript
-interface ServiceCreationOptions {
+export interface ServiceCreationOptions {
   /** The service instance to adapt */
   instance: any;
   
@@ -138,30 +235,12 @@ interface ServiceCreationOptions {
 }
 ```
 
-## ServiceRegistrationOptions
-
-```typescript
-interface ServiceRegistrationOptions {
-  /** Optional dependencies for the service */
-  dependencies?: string[];
-  
-  /** Optional initialization priority (higher is initialized earlier) */
-  initializationPriority?: number;
-  
-  /** Optional metadata for the service */
-  metadata?: Record<string, any>;
-}
-```
-
 ## Best Practices
 
-1. Always specify dependencies correctly to ensure proper initialization order
-2. Use high priority values for foundational services (like MandrakeManager)
-3. For workspace services, include the base manager as a dependency
-4. Create a consistent logger for each service with appropriate metadata
-5. Clean up resources properly in adapter cleanup methods
-6. Provide detailed status information in getStatus implementations
-
-## Example
-
-See the `examples/helper-usage.ts` file for detailed usage examples.
+1. **Service Dependencies**: Always specify dependencies correctly to ensure proper initialization order
+2. **Initialization Priorities**: Use higher values for foundational services
+3. **Workspace Services**: Include the workspace manager as a dependency for workspace services
+4. **Lazy Loading**: Use factory functions for services that are only needed occasionally
+5. **Error Handling**: Implement robust error handling in service initializers and cleanups
+6. **Logging**: Provide a logger with appropriate metadata for each service
+7. **Cleanup**: Ensure all resources are properly released in cleanup methods

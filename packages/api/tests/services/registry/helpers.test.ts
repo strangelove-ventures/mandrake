@@ -4,9 +4,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { 
   ServiceRegistryImpl, 
   ManagedService, 
-  ServiceStatus,
-  createAndRegisterService,
-  createAndRegisterWorkspaceService
+  ServiceStatus
 } from '../../../src/services/registry';
 import { ConsoleLogger } from '@mandrake/utils';
 import { tmpdir } from 'os';
@@ -128,8 +126,7 @@ describe('Service Registry Helpers', () => {
     const testService = new TestService('test-service');
     
     // Act
-    const adapter = createAndRegisterService(
-      registry,
+    const adapter = registry.createAndRegisterService(
       'test-service',
       TestServiceAdapter,
       {
@@ -166,8 +163,7 @@ describe('Service Registry Helpers', () => {
     const workspaceId = 'workspace-123';
     
     // Act
-    const adapter = createAndRegisterWorkspaceService(
-      registry,
+    const adapter = registry.createAndRegisterWorkspaceService(
       workspaceId,
       'test-service',
       TestServiceAdapter,
@@ -210,8 +206,7 @@ describe('Service Registry Helpers', () => {
     const dependentService = new TestService('dependent-service');
     
     // Act - Create dependency first
-    const dependencyAdapter = createAndRegisterService(
-      registry,
+    const dependencyAdapter = registry.createAndRegisterService(
       'dependency-service',
       TestServiceAdapter,
       {
@@ -223,8 +218,7 @@ describe('Service Registry Helpers', () => {
     );
     
     // Create dependent service that depends on the first
-    const dependentAdapter = createAndRegisterService(
-      registry,
+    const dependentAdapter = registry.createAndRegisterService(
       'dependent-service',
       TestServiceAdapter,
       {
@@ -250,8 +244,7 @@ describe('Service Registry Helpers', () => {
     const logMessages = ['test message 1', 'test message 2'];
     
     // Act
-    const adapter = createAndRegisterService(
-      registry,
+    const adapter = registry.createAndRegisterService(
       'config-test',
       TestServiceAdapter,
       {
@@ -276,8 +269,7 @@ describe('Service Registry Helpers', () => {
     const metadata = { version: '1.0.0', author: 'Test Author' };
     
     // Act
-    const adapter = createAndRegisterService(
-      registry,
+    const adapter = registry.createAndRegisterService(
       'metadata-test',
       TestServiceAdapter,
       {
