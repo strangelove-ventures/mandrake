@@ -166,4 +166,28 @@ export interface ServiceRegistry {
    * @returns Map of service type to status
    */
   getAllServiceStatuses(): Promise<Map<string, ServiceStatus>>;
+  
+  /**
+   * Get the MandrakeManager instance
+   * This is a convenience method that gets the mandrake-manager adapter and returns the underlying manager
+   * @returns The MandrakeManager instance or null if not found
+   */
+  getMandrakeManager(): Promise<any>;
+  
+  /**
+   * Get an MCPManager instance
+   * This is a convenience method that gets the mcp-manager adapter and returns the underlying manager
+   * @param workspaceId Optional workspace ID. If provided, gets the workspace-specific MCP manager.
+   *                   If not provided, gets the system-level MCP manager.
+   * @returns The MCPManager instance or null if not found
+   */
+  getMCPManager(workspaceId?: string): Promise<any>;
+  
+  /**
+   * Get a WorkspaceManager instance
+   * This is a convenience method that gets the workspace-manager adapter and returns the underlying manager
+   * @param workspaceId The ID of the workspace
+   * @returns The WorkspaceManager instance or null if not found
+   */
+  getWorkspaceManager(workspaceId: string): Promise<any>;
 }

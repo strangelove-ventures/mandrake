@@ -173,12 +173,24 @@ function createWorkspaceAccessorsObject(
     // Create a session coordinator
     createSessionCoordinator: (wsId: string, sessionId: string, coordinator: SessionCoordinator) => {
       // Get or create the map for this workspace
-      if (!coordinatorMaps.has(wsId)) {
+      let coordMap = coordinatorMaps.get(wsId);
+      
+      // If the map doesn't exist, create it and ensure we get a reference to the new map
+      if (!coordMap) {
         coordinatorMaps.set(wsId, new Map<string, SessionCoordinator>());
+        coordMap = coordinatorMaps.get(wsId);
+        
+        // If creating the map failed for some reason, throw an error
+        if (!coordMap) {
+          throw new Error(`Failed to create coordinator map for workspace ${wsId}`);
+        }
       }
       
       // Add the coordinator to the map
-      (coordinatorMaps.get(wsId) as any).set(sessionId, coordinator);
+      coordMap.set(sessionId, coordinator);
+      
+      // Return true to indicate success
+      return true;
     },
     
     // Remove a session coordinator
@@ -221,7 +233,12 @@ export function workspaceRoutes(registry: ServiceRegistry) {
       throw new Error(`Workspace manager for ${workspaceId} not found in registry`);
     }
     
-    return wsAdapter.getManager();
+    const manager = wsAdapter.getManager();
+    if (!manager) {
+      throw new Error(`Workspace manager instance for ${workspaceId} is not initialized`);
+    }
+    
+    return manager;
   };
   
   // Helper to get MCP manager
@@ -235,7 +252,12 @@ export function workspaceRoutes(registry: ServiceRegistry) {
       throw new Error(`MCP manager for ${workspaceId} not found in registry`);
     }
     
-    return mcpAdapter.getManager();
+    const manager = mcpAdapter.getManager();
+    if (!manager) {
+      throw new Error(`MCP manager instance for ${workspaceId} is not initialized`);
+    }
+    
+    return manager;
   };
   
   // Helper to get session coordinator (future use)

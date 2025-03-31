@@ -165,15 +165,24 @@ function createAccessorsObject(registry: ServiceRegistry): ManagerAccessors {
     // Create a session coordinator for a workspace/session combination
     createSessionCoordinator: (workspaceId: string, sessionId: string, coordinator: SessionCoordinator) => {
       // Get or create the map for this workspace
-      const coordMap = coordinatorMaps.get(workspaceId) || 
-                       coordinatorMaps.set(workspaceId, new Map()).get(workspaceId);
+      let coordMap = coordinatorMaps.get(workspaceId);
+      
+      // If the map doesn't exist, create it and ensure we get a reference to the new map
+      if (!coordMap) {
+        coordinatorMaps.set(workspaceId, new Map<string, SessionCoordinator>());
+        coordMap = coordinatorMaps.get(workspaceId);
+        
+        // If creating the map failed for some reason, throw an error
+        if (!coordMap) {
+          throw new Error(`Failed to create coordinator map for workspace ${workspaceId}`);
+        }
+      }
       
       // Add the coordinator to the map
-      if (coordMap) {
-        coordMap.set(sessionId, coordinator);
-      } else {
-        // failure
-      }
+      coordMap.set(sessionId, coordinator);
+      
+      // Return true to indicate success
+      return true;
     },
     
     // Remove a session coordinator
@@ -199,14 +208,6 @@ function createAccessorsObject(registry: ServiceRegistry): ManagerAccessors {
 export function systemRoutes(registry: ServiceRegistry) {
   const app = new Hono();
   
-  // Get the MandrakeManager from registry
-  const getMandrakeManager = () => {
-    const adapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
-    if (!adapter) {
-      throw new Error('MandrakeManager service not found in registry');
-    }
-    return adapter.getManager();
-  };
   
   // Get the System MCP Manager from registry
   const getMcpManager = () => {
@@ -220,7 +221,12 @@ export function systemRoutes(registry: ServiceRegistry) {
   // System info endpoint
   app.get('/', async (c) => {
     try {
-      const mandrakeManager = getMandrakeManager();
+      // Get MandrakeManager
+      const mandrakeManagerAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+      if (!mandrakeManagerAdapter) {
+        throw new Error('MandrakeManager service not available');
+      }
+      const mandrakeManager = mandrakeManagerAdapter.getManager();
       
       // Get service status information
       const serviceStatusMap = await registry.getAllServiceStatuses();
@@ -262,9 +268,29 @@ export function systemRoutes(registry: ServiceRegistry) {
   
   // Config routes
   try {
-    const mandrakeManager = getMandrakeManager();
-    const configRouter = mandrakeConfigRoutes(mandrakeManager.config);
-    app.route('/config', configRouter);
+    app.all('/config/*', async (c) => {
+      try {
+        const mandrakeManager = await registry.getMandrakeManager();
+        const configRouter = mandrakeConfigRoutes(mandrakeManager.config);
+        
+        // Create a new request with the path modified to strip the /config prefix
+        const url = new URL(c.req.url);
+        const pathParts = url.pathname.split('/');
+        const configIndex = pathParts.findIndex(part => part === 'config');
+        
+        if (configIndex !== -1) {
+          const newPathParts = pathParts.slice(configIndex + 1);
+          url.pathname = '/' + newPathParts.join('/');
+          const newRequest = new Request(url.toString(), c.req.raw);
+          return configRouter.fetch(newRequest, c.env);
+        }
+        
+        return c.json({ error: 'Invalid config path' }, 404);
+      } catch (error) {
+        console.error('Error in config routes:', error);
+        return c.json({ error: 'Config service unavailable' }, 503);
+      }
+    });
   } catch (error) {
     console.error('Error setting up config routes:', error);
     app.get('/config', (c) => {
@@ -277,10 +303,30 @@ export function systemRoutes(registry: ServiceRegistry) {
   
   // Tool routes
   try {
-    const mandrakeManager = getMandrakeManager();
-    const mcpManager = getMcpManager();
-    const toolsRouter = allToolRoutes(mandrakeManager.tools, mcpManager);
-    app.route('/tools', toolsRouter);
+    app.all('/tools/*', async (c) => {
+      try {
+        const mandrakeManager = await registry.getMandrakeManager();
+        const mcpManager = await getMcpManager();
+        const toolsRouter = allToolRoutes(mandrakeManager.tools, mcpManager);
+        
+        // Create a new request with the path modified to strip the /tools prefix
+        const url = new URL(c.req.url);
+        const pathParts = url.pathname.split('/');
+        const toolsIndex = pathParts.findIndex(part => part === 'tools');
+        
+        if (toolsIndex !== -1) {
+          const newPathParts = pathParts.slice(toolsIndex + 1);
+          url.pathname = '/' + newPathParts.join('/');
+          const newRequest = new Request(url.toString(), c.req.raw);
+          return toolsRouter.fetch(newRequest, c.env);
+        }
+        
+        return c.json({ error: 'Invalid tools path' }, 404);
+      } catch (error) {
+        console.error('Error handling tools route:', error);
+        return c.json({ error: 'Tools service unavailable' }, 503);
+      }
+    });
   } catch (error) {
     console.error('Error setting up tools routes:', error);
     app.get('/tools', (c) => {
@@ -293,9 +339,37 @@ export function systemRoutes(registry: ServiceRegistry) {
   
   // Model routes
   try {
-    const mandrakeManager = getMandrakeManager();
+    // Get MandrakeManager for models
+    const mandrakeManagerAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    if (!mandrakeManagerAdapter) {
+      throw new Error('MandrakeManager service not available');
+    }
+    const mandrakeManager = mandrakeManagerAdapter.getManager();
+    
+    // Create the models router with the appropriate manager
     const modelsRouter = modelsRoutes(mandrakeManager.models);
-    app.route('/models', modelsRouter);
+    
+    // Handle all models routes
+    app.all('/models/*', async (c) => {
+      try {
+        // Create a new request with the path modified to strip the /models prefix
+        const url = new URL(c.req.url);
+        const pathParts = url.pathname.split('/');
+        const modelsIndex = pathParts.findIndex(part => part === 'models');
+        
+        if (modelsIndex !== -1) {
+          const newPathParts = pathParts.slice(modelsIndex + 1);
+          url.pathname = '/' + newPathParts.join('/');
+          const newRequest = new Request(url.toString(), c.req.raw);
+          return modelsRouter.fetch(newRequest, c.env);
+        }
+        
+        return c.json({ error: 'Invalid models path' }, 404);
+      } catch (error) {
+        console.error('Error handling models route:', error);
+        return c.json({ error: 'Models service unavailable' }, 503);
+      }
+    });
   } catch (error) {
     console.error('Error setting up models routes:', error);
     app.get('/models', (c) => {
@@ -308,7 +382,13 @@ export function systemRoutes(registry: ServiceRegistry) {
   
   // Provider routes
   try {
-    const mandrakeManager = getMandrakeManager();
+    // Get MandrakeManager
+    const mandrakeManagerAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    if (!mandrakeManagerAdapter) {
+      throw new Error('MandrakeManager service not available');
+    }
+    const mandrakeManager = mandrakeManagerAdapter.getManager();
+    
     const providersRouter = providersRoutes(mandrakeManager.models);
     app.route('/providers', providersRouter);
   } catch (error) {
@@ -323,7 +403,13 @@ export function systemRoutes(registry: ServiceRegistry) {
   
   // Prompt routes
   try {
-    const mandrakeManager = getMandrakeManager();
+    // Get MandrakeManager
+    const mandrakeManagerAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    if (!mandrakeManagerAdapter) {
+      throw new Error('MandrakeManager service not available');
+    }
+    const mandrakeManager = mandrakeManagerAdapter.getManager();
+    
     const promptRouter = promptRoutes(mandrakeManager.prompt);
     app.route('/prompt', promptRouter);
   } catch (error) {
@@ -338,8 +424,19 @@ export function systemRoutes(registry: ServiceRegistry) {
   
   // Session database routes - accessing SessionManager through MandrakeManager
   try {
-    const mandrakeManager = getMandrakeManager();
-    const mcpManager = getMcpManager();
+    // Get MandrakeManager
+    const mandrakeManagerAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    if (!mandrakeManagerAdapter) {
+      throw new Error('MandrakeManager service not available');
+    }
+    const mandrakeManager = mandrakeManagerAdapter.getManager();
+    
+    // Get MCP Manager
+    const mcpManagerAdapter = registry.getService<MCPManagerAdapter>('mcp-manager');
+    if (!mcpManagerAdapter) {
+      throw new Error('MCPManager service not available');
+    }
+    const mcpManager = mcpManagerAdapter.getManager();
     
     // Create a proper Managers object with registry-backed services
     const managers = createManagersObject(registry, mandrakeManager, mcpManager);
@@ -362,9 +459,19 @@ export function systemRoutes(registry: ServiceRegistry) {
   
   // Session streaming routes - access SessionCoordinator via factory function
   try {
-    // Get required managers
-    const mandrakeManager = getMandrakeManager();
-    const mcpManager = getMcpManager();
+    // Get MandrakeManager
+    const mandrakeManagerAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    if (!mandrakeManagerAdapter) {
+      throw new Error('MandrakeManager service not available');
+    }
+    const mandrakeManager = mandrakeManagerAdapter.getManager();
+    
+    // Get MCP Manager
+    const mcpManagerAdapter = registry.getService<MCPManagerAdapter>('mcp-manager');
+    if (!mcpManagerAdapter) {
+      throw new Error('MCPManager service not available');
+    }
+    const mcpManager = mcpManagerAdapter.getManager();
     
     // Use the same managers and accessors creation functions for consistency
     const managers = createManagersObject(registry, mandrakeManager, mcpManager);
@@ -384,7 +491,13 @@ export function systemRoutes(registry: ServiceRegistry) {
   }
   // Dynamic context routes
   try {
-    const mandrakeManager = getMandrakeManager();
+    // Get MandrakeManager
+    const mandrakeManagerAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    if (!mandrakeManagerAdapter) {
+      throw new Error('MandrakeManager service not available');
+    }
+    const mandrakeManager = mandrakeManagerAdapter.getManager();
+    
     if ((mandrakeManager as any).dynamic) {
       const dynamicRouter = dynamicContextRoutes((mandrakeManager as any).dynamic);
       app.route('/dynamic', dynamicRouter);
@@ -408,7 +521,13 @@ export function systemRoutes(registry: ServiceRegistry) {
   
   // Files routes
   try {
-    const mandrakeManager = getMandrakeManager();
+    // Get MandrakeManager
+    const mandrakeManagerAdapter = registry.getService<MandrakeManagerAdapter>('mandrake-manager');
+    if (!mandrakeManagerAdapter) {
+      throw new Error('MandrakeManager service not available');
+    }
+    const mandrakeManager = mandrakeManagerAdapter.getManager();
+    
     if ((mandrakeManager as any).files) {
       const filesRouter = filesRoutes((mandrakeManager as any).files);
       app.route('/files', filesRouter);

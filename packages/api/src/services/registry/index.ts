@@ -1,5 +1,10 @@
 import type { ManagedService, ServiceOptions, ServiceRegistry, ServiceStatus } from './types';
 import { ConsoleLogger, type Logger, type LogMeta } from '@mandrake/utils';
+import { 
+  MandrakeManagerAdapter, 
+  MCPManagerAdapter, 
+  WorkspaceManagerAdapter 
+} from './adapters';
 
 /**
  * Default logger implementation for ServiceRegistry
@@ -518,6 +523,62 @@ export class ServiceRegistryImpl implements EnhancedServiceRegistry {
     }
     
     return statuses;
+  }
+  
+  /**
+   * Get the MandrakeManager instance
+   * This is a convenience method that gets the mandrake-manager adapter and returns the underlying manager
+   * @returns The MandrakeManager instance
+   */
+  async getMandrakeManager(): Promise<any> {
+    const adapter = this.getService('mandrake-manager');
+    if (!adapter) {
+      throw new Error('MandrakeManager service not available in registry');
+    }
+    return adapter.getManager();
+  }
+  
+  /**
+   * Get an MCPManager instance
+   * This is a convenience method that gets the mcp-manager adapter and returns the underlying manager
+   * @param workspaceId Optional workspace ID. If provided, gets the workspace-specific MCP manager.
+   *                   If not provided, gets the system-level MCP manager.
+   * @returns The MCPManager instance
+   */
+  async getMCPManager(workspaceId?: string): Promise<any> {
+    let adapter;
+    if (workspaceId) {
+      adapter = this.getWorkspaceService<MCPManagerAdapter>(
+        workspaceId,
+        'mcp-manager'
+      );
+      if (!adapter) {
+        throw new Error(`MCPManager service for workspace ${workspaceId} not available in registry`);
+      }
+    } else {
+      adapter = this.getService<MCPManagerAdapter>('mcp-manager');
+      if (!adapter) {
+        throw new Error('System MCPManager service not available in registry');
+      }
+    }
+    return adapter.getManager();
+  }
+  
+  /**
+   * Get a WorkspaceManager instance
+   * This is a convenience method that gets the workspace-manager adapter and returns the underlying manager
+   * @param workspaceId The ID of the workspace
+   * @returns The WorkspaceManager instance
+   */
+  async getWorkspaceManager(workspaceId: string): Promise<any> {
+    const adapter = this.getWorkspaceService<WorkspaceManagerAdapter>(
+      workspaceId,
+      'workspace-manager'
+    );
+    if (!adapter) {
+      throw new Error(`WorkspaceManager service for workspace ${workspaceId} not available in registry`);
+    }
+    return adapter.getManager();
   }
 
   /**
