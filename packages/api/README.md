@@ -2,6 +2,14 @@
 
 The API package serves as the core server component for the Mandrake project, providing RESTful endpoints for all functionality. Built with [Hono](https://hono.dev/), it's designed to work seamlessly with the Next.js frontend while maintaining a clean separation of concerns.
 
+## Documentation
+
+Full API documentation is available in the following formats:
+
+- **OpenAPI Specification**: [View the full OpenAPI spec](./docs/openapi.yaml)
+- **Service Registry Documentation**: [Learn about the Service Registry](./src/services/registry/README.md)
+- **Service Adapters Documentation**: [Learn about Service Adapters](./src/services/registry/adapters/README.md)
+
 ## Architecture
 
 The API follows a layered architecture with three main components:
@@ -42,30 +50,60 @@ Routes expose the functionality as HTTP endpoints, following a consistent patter
 
 Routes use middleware to access managers through the Service Registry.
 
-## API Routes
+## API Endpoints
 
-### System-Level Routes
-- **GET /system** - System information
-- **GET|PUT /system/config** - Mandrake configuration
-- **GET|POST|PUT|DELETE /system/tools** - Tools configuration
-- **GET|POST /system/mcp** - MCP server operations
-- **GET|POST|PUT|DELETE /system/models** - Models management
-- **GET|PUT /system/prompt** - Prompt configuration
-- **GET|POST|PUT|DELETE /system/dynamic** - Dynamic context
-- **GET|POST|PUT|DELETE /system/sessions** - Session management
+Mandrake API is organized into system-level and workspace-level endpoints. Below is a high-level overview of available endpoints. For detailed request/response formats, parameters, and examples, please refer to the [OpenAPI specification](./docs/openapi.yaml).
 
-### Workspace-Level Routes
-- **GET /workspaces/list** - List workspaces
-- **POST /workspaces/create** - Create workspace
-- **GET|DELETE /workspaces/:id** - Workspace info/management
-- **GET|PUT /workspaces/:id/config** - Workspace configuration
-- **GET|POST|PUT|DELETE /workspaces/:id/tools** - Tools configuration
-- **GET|POST /workspaces/:id/mcp** - MCP server operations
-- **GET|POST|PUT|DELETE /workspaces/:id/models** - Models management
-- **GET|PUT /workspaces/:id/prompt** - Prompt configuration
-- **GET|POST|PUT|DELETE /workspaces/:id/files** - Files management
-- **GET|POST|PUT|DELETE /workspaces/:id/dynamic** - Dynamic context
-- **GET|POST|PUT|DELETE /workspaces/:id/sessions** - Session management
+### System-Level Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/system` | Get system information and health status |
+| GET | `/system/config` | Get system configuration |
+| PUT | `/system/config` | Update system configuration |
+| GET | `/system/tools/operations` | List available tool operations |
+| GET | `/system/tools/configs` | List tool configurations |
+| POST | `/system/tools/configs` | Create a new tool configuration |
+| GET | `/system/tools/configs/:configId` | Get a specific tool configuration |
+| PUT | `/system/tools/active` | Update the active tool configuration |
+| GET | `/system/models` | List available models |
+| GET | `/system/models/active` | Get the active model |
+| PUT | `/system/models/active` | Update the active model |
+| GET | `/system/prompt` | Get prompt configuration |
+| PUT | `/system/prompt` | Update prompt configuration |
+| GET | `/system/sessions` | List all sessions |
+| POST | `/system/sessions` | Create a new session |
+| GET | `/system/sessions/:sessionId` | Get a specific session |
+| DELETE | `/system/sessions/:sessionId` | Delete a session |
+| GET | `/system/sessions/:sessionId/history` | Get session message history |
+| POST | `/system/sessions/:sessionId/stream` | Stream a conversation with the LLM |
+
+### Workspace-Level Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/workspaces` | List all workspaces |
+| POST | `/workspaces` | Create a new workspace |
+| GET | `/workspaces/:workspaceId` | Get a specific workspace |
+| DELETE | `/workspaces/:workspaceId` | Delete a workspace |
+| GET | `/workspaces/:workspaceId/config` | Get workspace configuration |
+| PUT | `/workspaces/:workspaceId/config` | Update workspace configuration |
+| GET | `/workspaces/:workspaceId/tools/operations` | List workspace tool operations |
+| GET | `/workspaces/:workspaceId/tools/configs` | List workspace tool configurations |
+| POST | `/workspaces/:workspaceId/tools/configs` | Create a workspace tool configuration |
+| GET | `/workspaces/:workspaceId/models` | List workspace models |
+| GET | `/workspaces/:workspaceId/prompt` | Get workspace prompt configuration |
+| PUT | `/workspaces/:workspaceId/prompt` | Update workspace prompt configuration |
+| GET | `/workspaces/:workspaceId/files` | List workspace files |
+| POST | `/workspaces/:workspaceId/files` | Create a new file in the workspace |
+| GET | `/workspaces/:workspaceId/dynamic` | List dynamic context methods |
+| POST | `/workspaces/:workspaceId/dynamic` | Create a new dynamic context method |
+| GET | `/workspaces/:workspaceId/sessions` | List workspace sessions |
+| POST | `/workspaces/:workspaceId/sessions` | Create a workspace session |
+| GET | `/workspaces/:workspaceId/sessions/:sessionId` | Get a workspace session |
+| DELETE | `/workspaces/:workspaceId/sessions/:sessionId` | Delete a workspace session |
+| GET | `/workspaces/:workspaceId/sessions/:sessionId/history` | Get workspace session history |
+| POST | `/workspaces/:workspaceId/sessions/:sessionId/stream` | Stream a workspace conversation |
 
 ## Usage
 
@@ -141,6 +179,7 @@ bun test --test-name-pattern "should create"
 - ✅ Complete route implementation with manager integration
 - ✅ Streaming support for session responses
 - ✅ Workspace isolation
-- 🔄 API documentation and OpenAPI schema
+- ✅ API documentation and OpenAPI schema
+- ✅ OpenAPI specification validation tests
 - ⏳ Authentication and authorization
 - ⏳ Rate limiting and usage metrics

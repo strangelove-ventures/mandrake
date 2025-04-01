@@ -15,8 +15,7 @@ To use a tool, output a JSON object with the following structure:
   }
 }
 
-## IMPORTANT: Make only one tool call at a time
-Make a single tool call, then wait for the result before making another call.
+**IMPORTANT**: Make only one tool call at a time. Make a single tool call then wait for the result before making another call.
 
 ## Usage Example
 

@@ -8,7 +8,10 @@
     "test": "bun test",
     "test:registry": "bun test tests/services/registry/*.test.ts",
     "test:routes": "bun test tests/routes/files.test.ts tests/routes/config.test.ts tests/routes/dynamic.test.ts tests/routes/models.test.ts tests/routes/prompt.test.ts tests/routes/sessions.test.ts tests/routes/tools.test.ts",
-    "clean": "rm -rf dist"
+    "test:openapi": "bun test tests/openapi-validation.test.ts",
+    "test:openapi:endpoints": "bun test tests/openapi-endpoints.test.ts",
+    "clean": "rm -rf dist",
+    "validate:openapi": "bun run test:openapi && bun run test:openapi:endpoints"
   },
   "dependencies": {
     "hono": "^4.6.6",
@@ -22,6 +25,7 @@
     "@types/bun": "latest",
     "@types/tmp": "^0.2.6",
     "tmp": "^0.2.3",
-    "typescript": "^5.0.0"
+    "typescript": "^5.0.0",
+    "yaml": "^2.7.1"
   }
 }
