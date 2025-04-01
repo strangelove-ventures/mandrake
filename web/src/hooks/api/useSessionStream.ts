@@ -1,13 +1,14 @@
 /**
  * React hook for session streaming
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createSessionStream } from '@/lib/api/core/streaming';
 import { 
   StreamInitEvent,
   TurnEvent,
   ErrorEvent,
-  StreamEventUnion
+  StreamEventUnion,
+  ReadyEvent
 } from '@mandrake/utils/dist/types/api';
 
 /**
@@ -61,24 +62,33 @@ export function useSessionStream({
   // Connection control
   const [shouldConnect, setShouldConnect] = useState(autoConnect);
   
+  // Ref to store the sendMessage function returned by createSessionStream
+  const sendMessageRef = useRef<((content: string) => boolean) | null>(null);
+  
   // Connect/disconnect effect
   useEffect(() => {
     if (!sessionId || !shouldConnect) return;
     
     console.log(`Connecting to session stream: ${sessionId} - Workspace: ${workspaceId || 'system'}`);
     
-    // Set connected state
-    setState(prev => ({ ...prev, isConnected: true, isComplete: false }));
-    
     // Create stream
     const cleanup = createSessionStream(sessionId, workspaceId, {
+      onConnect: () => {
+        console.log('WebSocket connected');
+        setState(prev => ({ 
+          ...prev, 
+          isConnected: true, 
+          isComplete: false,
+          error: null
+        }));
+      },
+      
       onInit: (event) => {
         console.log('Stream initialized:', event);
         setState(prev => ({
           ...prev,
           init: event,
           events: [...prev.events, event],
-          isConnected: true,
           isComplete: false,
           error: null
         }));
@@ -116,7 +126,8 @@ export function useSessionStream({
         setState(prev => ({
           ...prev,
           error: event,
-          isConnected: false,
+          // Note: we don't set isConnected to false here 
+          // because the WebSocket might still be connected despite an error
           events: [...prev.events, event]
         }));
       },
@@ -126,7 +137,7 @@ export function useSessionStream({
         setState(prev => ({
           ...prev,
           isComplete: true,
-          isConnected: false,
+          // WebSocket connection can remain open for future requests
           events: [...prev.events, event]
         }));
       },
@@ -134,6 +145,16 @@ export function useSessionStream({
       onEvent: (event) => {
         // This handler is used to capture all events
         console.log('Generic event handler called:', event);
+        
+        // Handle WebSocket ready event
+        if (event.type === 'ready') {
+          console.log('WebSocket ready event received');
+          setState(prev => ({
+            ...prev,
+            isConnected: true,
+            events: [...prev.events, event]
+          }));
+        }
       }
     });
     
@@ -141,8 +162,19 @@ export function useSessionStream({
     return () => {
       cleanup();
       setState(prev => ({ ...prev, isConnected: false }));
+      sendMessageRef.current = null;
     };
   }, [sessionId, workspaceId, shouldConnect]);
+  
+  // Function to send a message through the WebSocket
+  const sendMessage = (content: string): boolean => {
+    if (!sendMessageRef.current) {
+      console.warn('Cannot send message: WebSocket not initialized');
+      return false;
+    }
+    
+    return sendMessageRef.current(content);
+  };
   
   // Control functions
   const connect = () => setShouldConnect(true);
@@ -176,6 +208,7 @@ export function useSessionStream({
     // Control methods
     connect,
     disconnect,
-    reset
+    reset,
+    sendMessage
   };
 }

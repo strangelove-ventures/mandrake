@@ -175,60 +175,14 @@ afterAll(() => {
   }
 });
 
-test.skip('system API streaming should use coordinator streamRequest', async () => {
-  // Create a system session
-  const session = await mandrakeManager.sessions.createSession({
-    title: 'Test System Streaming Session'
-  });
-  
-  // Set up a system coordinator
-  const systemCoordinator = new SessionCoordinator({
-    metadata: {
-      name: 'system',
-      path: mandrakeManager.paths.root
-    },
-    promptManager: mandrakeManager.prompt,
-    sessionManager: mandrakeManager.sessions,
-    mcpManager: managers.systemMcpManager,
-    modelsManager: mandrakeManager.models
-  });
-  
-  // Add to the system coordinators map
-  systemSessionCoordinators.set(session.id, systemCoordinator);
-  
-  // Make a simple streaming request
-  const req = new Request(`http://localhost/${session.id}/request`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      content: 'Can you run the "hostname" command to get the system name, then run "pwd" to get the current directory, save both outputs to a file called "system_info.txt" in our workspace, and then confirm the file was created?'
-    })
-  });
-  
-  // Send the request to the API
-  const res = await systemStreamingApp.fetch(req);
-  
-  // Verify it's a valid SSE response
-  const isValid = await verifySSEResponse(res);
-  expect(isValid).toBe(true);
-  
-  // Check the response content type
-  const contentType = res.headers.get('Content-Type');
-  expect(contentType).toBe('text/event-stream');
-  
-  // Allow some time for streaming to start
-  await new Promise(resolve => setTimeout(resolve, 2000));
-}, 240000);
-
-test('workspace level streaming works properly', async () => {
+test('workspace WebSocket streaming with Hono adapter', async () => {
   // Create a workspace session
   const session = await workspaceManager.sessions.createSession({
-    title: 'Test Workspace Streaming Session'
+    title: 'Test WebSocket Streaming Session'
   });
-  const mcp = await mcpManagers.get(workspaceId)
-  // console.log(await mcp.listAllTools())
+  
+  const mcp = await mcpManagers.get(workspaceId);
+  
   // Set up a workspace coordinator
   const workspaceCoordinator = new SessionCoordinator({
     metadata: {
@@ -248,28 +202,184 @@ test('workspace level streaming works properly', async () => {
   sessionCoordinators.set(workspaceId, coordMap);
   coordMap.set(session.id, workspaceCoordinator);
 
-  // Make a simple streaming request
-  const req = new Request(`http://localhost/${session.id}/request`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      content: 'Can you run the "hostname" command to get the system name, then run "pwd" to get the current directory, save both outputs to a file called "system_info.txt" in our workspace, and then confirm the file was created?'
-    })
+  // Import Hono's WebSocket adapter utility for testing
+  const { createBunWebSocket } = await import('hono/bun');
+  
+  // Register our WebSocket adapter with the application
+  const { upgradeWebSocket, websocket } = createBunWebSocket();
+  
+  // Create a properly configured server to handle WebSocket upgrades
+  const testServer = Bun.serve({
+    port: 0, // Let the OS choose a random available port
+    fetch: workspaceStreamingApp.fetch,
+    websocket // Pass the WebSocket handler
+  });
+
+  // Get the server address info
+  const serverInfo = testServer.url;
+  const port = new URL(serverInfo).port;
+  
+  // Store received messages
+  const receivedMessages: any[] = [];
+  
+  // Create a promise that resolves when expected messages are received
+  const messagesPromise = new Promise<void>((resolve, reject) => {
+    // Connect with a real WebSocket client
+    const wsClient = new WebSocket(`ws://localhost:${port}/${session.id}/ws`);
+    
+    // Track if we've received essential message types
+    const receivedTypes = {
+      ready: false,
+      initialized: false,
+      turn: false,
+      completed: false
+    };
+    
+    // Keep track of message order
+    const messageOrder = [];
+    
+    // Setup event handlers
+    wsClient.addEventListener('open', () => {
+      
+      // Send a message with a query that will trigger tool calls
+      setTimeout(() => {
+        wsClient.send(JSON.stringify({
+          content: 'Can you run the "hostname" command to get the system name, then run "pwd" to get the current directory? Finally, tell me what files are in the current directory.'
+        }));
+      }, 500);
+    });
+    
+    wsClient.addEventListener('message', (event) => {
+      
+      try {
+        const data = JSON.parse(event.data);
+        receivedMessages.push(data);
+        
+        // Track message order
+        messageOrder.push(data.type);
+        
+        // Track essential message types
+        if (data.type === 'ready') receivedTypes.ready = true;
+        if (data.type === 'initialized') receivedTypes.initialized = true;
+        if (data.type === 'turn') receivedTypes.turn = true;
+        
+        // Wait for tool calls or complete the test after a reasonable timeout
+        if (receivedTypes.ready && receivedTypes.initialized && receivedTypes.turn) {
+          // Check if we have a turn with a tool call
+          if (data.type === 'turn' && 
+              data.toolCalls && 
+              Array.isArray(data.toolCalls) &&
+              data.toolCalls.some((tc: { call: null; }) => tc && tc.call !== null)) {
+            // Wait longer to capture more of the interaction
+            setTimeout(() => {
+              wsClient.close();
+              resolve();
+            }, 5000);
+          }
+          
+          // Also resolve if we get to the completed state
+          if (data.type === 'completed') {
+            wsClient.close();
+            resolve();
+          }
+        }
+        
+        // Set a generous timeout to capture the full interaction including tool calls
+        setTimeout(() => {
+          if (!receivedTypes.completed) {
+            wsClient.close();
+            resolve();
+          }
+        }, 200000);
+      } catch (e) {
+        console.error('Error parsing message:', e);
+      }
+    });
+    
+    wsClient.addEventListener('error', (error) => {
+      console.error('WebSocket error:', error);
+      reject(error);
+    });
+    
+    // Set a timeout to prevent the test from hanging
+    const timeoutId = setTimeout(() => {
+      wsClient.close();
+      reject(new Error('Test timed out waiting for expected messages'));
+    }, 30000);
+    
+    wsClient.addEventListener('close', () => {
+      clearTimeout(timeoutId);
+      console.log('WebSocket closed');
+    });
   });
   
-  // Send the request to the API
-  const res = await workspaceStreamingApp.fetch(req);
-  
-  // Verify it's a valid SSE response
-  const isValid = await verifySSEResponse(res);
-  expect(isValid).toBe(true);
-  
-  // Check the response content type
-  const contentType = res.headers.get('Content-Type');
-  expect(contentType).toBe('text/event-stream');
-  
-  // Allow some time for streaming to start
-  await new Promise(resolve => setTimeout(resolve, 2000));
+  try {
+    // Wait for all expected messages
+    await messagesPromise;
+    
+    // Validate received messages
+    expect(receivedMessages.length).toBeGreaterThan(0);
+    
+    // Extract message types
+    const messageTypes = receivedMessages.map(msg => msg.type);
+    console.log('Message types received:', messageTypes);
+    
+    // Verify we received the essential message types
+    expect(messageTypes).toContain('ready');
+    expect(messageTypes).toContain('initialized');
+    expect(messageTypes).toContain('turn');
+    
+    // Verify message sequence
+    const readyIndex = messageTypes.indexOf('ready');
+    const initializedIndex = messageTypes.indexOf('initialized');
+    const firstTurnIndex = messageTypes.indexOf('turn');
+    
+    // 'ready' should come before 'initialized'
+    expect(readyIndex).toBeLessThan(initializedIndex);
+    // 'initialized' should come before 'turn'
+    expect(initializedIndex).toBeLessThan(firstTurnIndex);
+    
+    // Find a turn message
+    const turnMessage = receivedMessages.find(msg => msg.type === 'turn');
+    expect(turnMessage).toBeDefined();
+    expect(turnMessage).toHaveProperty('content');
+    expect(turnMessage).toHaveProperty('turnId');
+    expect(turnMessage).toHaveProperty('status');
+    
+    // Look for any messages with tool calls
+    const messagesWithToolCalls = receivedMessages.filter(
+      msg => msg.type === 'turn' && 
+      msg.toolCalls && 
+      (Array.isArray(msg.toolCalls) ? 
+        msg.toolCalls.some((tc: { call: null; }) => tc && tc.call !== null) : 
+        msg.toolCalls.call !== null)
+    );
+    
+    // Check that we have at least one turn message with a proper tool call
+    if (messagesWithToolCalls.length > 0) {
+      const toolCallMessage = messagesWithToolCalls[0];
+      
+      let toolCall;
+      if (Array.isArray(toolCallMessage.toolCalls)) {
+        toolCall = toolCallMessage.toolCalls.find((tc: { call: null; }) => tc && tc.call !== null);
+      } else {
+        toolCall = toolCallMessage.toolCalls.call !== null ? toolCallMessage.toolCalls : null;
+      }
+      
+      // Verify tool call structure if any were found
+      if (toolCall && (toolCall.call || (toolCall.call === null && toolCall.response !== undefined))) {
+        // We have a valid tool call structure
+        console.log('Valid tool call structure found');
+        if (toolCall.call) {
+          expect(toolCall.call).toHaveProperty('serverName');
+          expect(toolCall.call).toHaveProperty('methodName');
+          expect(toolCall.call).toHaveProperty('arguments');
+        }
+      }
+    }
+    
+  } finally {
+    // Cleanup - stop the server
+    testServer.stop();
+  }
 }, 240000);

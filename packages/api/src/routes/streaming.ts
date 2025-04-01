@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { createBunWebSocket } from 'hono/bun';
 import { SessionCoordinator } from '@mandrake/session';
 import { WorkspaceManager } from '@mandrake/workspace';
 import type { ManagerAccessors, Managers } from '../types';
@@ -10,7 +11,8 @@ import type {
   TurnEvent,
   TurnCompletedEvent,
   CompletedEvent,
-  ErrorEvent
+  ErrorEvent,
+  StreamEventUnion
 } from '@mandrake/utils/src/types/api';
 
 /**
@@ -82,6 +84,36 @@ function getOrCreateSessionCoordinator(
 }
 
 /**
+ * Active WebSocket connections by session ID
+ */
+interface WebSocketConnections {
+  [sessionId: string]: Set<WebSocket>;
+}
+
+// Maintain a registry of active WebSocket connections
+const wsConnectionsBySession: WebSocketConnections = {};
+
+/**
+ * Broadcast a message to all WebSocket clients for a session
+ */
+function broadcastToSession(sessionId: string, event: StreamEventUnion) {
+  if (!wsConnectionsBySession[sessionId]) return;
+  
+  const message = JSON.stringify(event);
+  
+  for (const ws of wsConnectionsBySession[sessionId]) {
+    try {
+      // Check if the WebSocket is open (readyState === 1) 
+      if (ws.readyState === 1) {
+        ws.send(message);
+      }
+    } catch (error) {
+      console.error(`Failed to send message to WebSocket: ${error}`);
+    }
+  }
+}
+
+/**
  * Create routes for session streaming
  */
 export function sessionStreamingRoutes(
@@ -119,44 +151,73 @@ export function sessionStreamingRoutes(
     }
   });
   
-  // Stream a new request and response
-  app.post('/:sessionId/request', async (c) => {
+  // WebSocket endpoint for session streaming using Hono/Bun adapter
+  const { upgradeWebSocket, websocket } = createBunWebSocket();
+
+  app.get('/:sessionId/ws', upgradeWebSocket(async (c) => {
     const sessionId = c.req.param('sessionId');
+    console.log(`WebSocket connection request for session ${sessionId}`);
     
-    try {
-      // Get or create a session coordinator
-      const coordinator = getOrCreateSessionCoordinator(
-        isSystem, 
-        sessionId, 
-        managers, 
-        accessors, 
-        workspaceId
-      );
+    return {
+      // WebSocket opened handler
+      onOpen: (event, ws) => {
+        console.log(`WebSocket opened for session ${sessionId}`);
+        
+        // Initialize connection registry for this session if needed
+        if (!wsConnectionsBySession[sessionId]) {
+          wsConnectionsBySession[sessionId] = new Set();
+        }
+        
+        // Add this connection to the registry
+        wsConnectionsBySession[sessionId].add(ws);
+        
+        // Send ready event
+        ws.send(JSON.stringify({
+          type: 'ready',
+          sessionId
+        }));
+      },
       
-      // Get the request content
-      const data = await c.req.json() as StreamRequestRequest;
-      const { content } = data;
-      
-      if (!content) {
-        return c.json({ error: 'Request content is required' }, 400);
-      }
-      
-      // Get stream, response ID, and completion promise from the coordinator
-      const { responseId, stream, completionPromise } = await coordinator.streamRequest(sessionId, content);
-      
-      // Convert the AsyncIterable to a ReadableStream for SSE
-      const responseStream = new ReadableStream({
-        async start(controller) {
+      // WebSocket message handler
+      onMessage: async (event, ws) => {
+        const messageData = event.data.toString();
+        console.log(`WebSocket message received for session ${sessionId}:`, messageData);
+        
+        try {
+          // Parse the request data
+          const data = JSON.parse(messageData) as StreamRequestRequest;
+          const { content } = data;
+          
+          if (!content) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: 'Request content is required'
+            }));
+            return;
+          }
+          
+          // Get or create a session coordinator
+          const coordinator = getOrCreateSessionCoordinator(
+            isSystem, 
+            sessionId, 
+            managers, 
+            accessors, 
+            workspaceId
+          );
+          
+          // Get stream, response ID, and completion promise from the coordinator
+          const { responseId, stream, completionPromise } = await coordinator.streamRequest(sessionId, content);
+          
+          // Send initial event to all clients connected to this session
+          const initEvent: StreamInitEvent = {
+            type: 'initialized',
+            sessionId,
+            responseId
+          };
+          broadcastToSession(sessionId, initEvent);
+          
+          // Stream each turn update as a WebSocket message
           try {
-            // Send initial event
-            const initEvent: StreamInitEvent = {
-              type: 'initialized',
-              sessionId,
-              responseId
-            };
-            controller.enqueue(`data: ${JSON.stringify(initEvent)}\n\n`);
-            
-            // Stream each turn update as an SSE event
             for await (const turn of stream) {
               // Parse tool calls if present
               let parsedToolCalls = [];
@@ -168,7 +229,7 @@ export function sessionStreamingRoutes(
                 console.error('Error parsing tool calls:', e);
               }
               
-              // Send turn update
+              // Send turn update to all clients
               const turnEvent: TurnEvent = {
                 type: 'turn',
                 turnId: turn.id,
@@ -177,7 +238,7 @@ export function sessionStreamingRoutes(
                 status: turn.status,
                 toolCalls: parsedToolCalls
               };
-              controller.enqueue(`data: ${JSON.stringify(turnEvent)}\n\n`);
+              broadcastToSession(sessionId, turnEvent);
               
               // Send turn-completed event if applicable
               if (turn.status === 'completed' || turn.status === 'error') {
@@ -186,7 +247,7 @@ export function sessionStreamingRoutes(
                   turnId: turn.id,
                   status: turn.status
                 };
-                controller.enqueue(`data: ${JSON.stringify(completedEvent)}\n\n`);
+                broadcastToSession(sessionId, completedEvent);
               }
             }
             
@@ -196,9 +257,8 @@ export function sessionStreamingRoutes(
               sessionId,
               responseId
             };
-            controller.enqueue(`data: ${JSON.stringify(finalEvent)}\n\n`);
+            broadcastToSession(sessionId, finalEvent);
             
-            controller.close();
           } catch (error) {
             // Handle errors during streaming
             console.error('Error processing stream:', error);
@@ -206,25 +266,44 @@ export function sessionStreamingRoutes(
               type: 'error',
               message: error instanceof Error ? error.message : String(error)
             };
-            controller.enqueue(`data: ${JSON.stringify(errorEvent)}\n\n`);
-            controller.close();
+            broadcastToSession(sessionId, errorEvent);
+          }
+          
+          await completionPromise;
+          
+        } catch (error) {
+          console.error('Error processing WebSocket message:', error);
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: error instanceof Error ? error.message : String(error)
+          }));
+        }
+      },
+      
+      // WebSocket close handler
+      onClose: (event, ws) => {
+        console.log(`WebSocket closed for session ${sessionId}`);
+        
+        // Remove this connection from the registry
+        if (wsConnectionsBySession[sessionId]) {
+          wsConnectionsBySession[sessionId].delete(ws);
+          
+          // Clean up the registry if no connections remain
+          if (wsConnectionsBySession[sessionId].size === 0) {
+            delete wsConnectionsBySession[sessionId];
           }
         }
-      });
-
-      await completionPromise;
-      
-      // Return the SSE response
-      return c.body(responseStream, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive'
-        }
-      });
-    } catch (error) {
-      return sendError(c, error, `Failed to stream session ${sessionId}`);
-    }
+      }
+    };
+  }));
+  
+  // Legacy endpoint redirect to WebSocket
+  app.post('/:sessionId/request', async (c) => {
+    const sessionId = c.req.param('sessionId');
+    return c.json({ 
+      error: 'This endpoint has been deprecated. Please use the WebSocket endpoint at /:sessionId/ws',
+      websocketEndpoint: `${c.req.url.replace('/request', '/ws')}`
+    }, 410); // 410 Gone status code
   });
   
   return app;

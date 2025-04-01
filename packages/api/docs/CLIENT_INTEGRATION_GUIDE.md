@@ -98,84 +98,172 @@ async function getSessionHistory(workspaceId: string, sessionId: string) {
 }
 ```
 
-### 3. Streaming Conversations
+### 3. Streaming Conversations with WebSockets
 
-The streaming API uses Server-Sent Events (SSE) to provide real-time updates:
+The streaming API uses WebSockets to provide real-time bidirectional updates with better performance and without Content Security Policy (CSP) issues. For a comprehensive guide to the WebSocket API, see [WebSocket Streaming API](./WEBSOCKET_STREAMING_API.md).
 
 ```typescript
-// Stream a conversation with proper error and event handling
-async function streamConversation(workspaceId: string, sessionId: string, message: string) {
-  const response = await fetch(
-    `${API_BASE}/workspaces/${workspaceId}/sessions/${sessionId}/stream`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        messages: [{ role: 'user', content: message }]
-      })
-    }
-  );
+// Stream a conversation using WebSocket connection
+function createSessionStream(workspaceId: string, sessionId: string) {
+  // Determine WebSocket URL
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const baseUrl = `${protocol}//${window.location.host}/api`;
+  const url = workspaceId
+    ? `${baseUrl}/workspaces/${workspaceId}/sessions/${sessionId}/streaming/ws`
+    : `${baseUrl}/system/sessions/${sessionId}/streaming/ws`;
 
-  if (!response.ok) {
-    throw await handleApiError(response);
-  }
-
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  // Process the stream
-  function processStream(callback: (event: any) => void) {
-    return reader.read().then(({ done, value }) => {
-      if (done) return;
-
-      buffer += decoder.decode(value, { stream: true });
+  // Create WebSocket connection
+  const ws = new WebSocket(url);
+  
+  // Event handlers
+  let onReadyHandler: ((event: any) => void) | null = null;
+  let onInitializedHandler: ((event: any) => void) | null = null;
+  let onTurnHandler: ((event: any) => void) | null = null;
+  let onCompletedHandler: ((event: any) => void) | null = null;
+  let onErrorHandler: ((event: any) => void) | null = null;
+  
+  // Connection opened handler
+  ws.addEventListener('open', () => {
+    console.log('WebSocket connection established');
+  });
+  
+  // Listen for messages
+  ws.addEventListener('message', (event) => {
+    try {
+      const data = JSON.parse(event.data);
       
-      // Process complete events (split by double newline)
-      const events = buffer.split('\n\n');
-      buffer = events.pop() || '';
-
-      // Process each complete event
-      for (const event of events) {
-        if (event.startsWith('data: ')) {
-          try {
-            const data = JSON.parse(event.slice(6));
-            callback(data);
-          } catch (e) {
-            console.error('Error parsing event:', e);
-          }
-        }
-      }
-
-      // Continue reading
-      return processStream(callback);
-    });
-  }
-
-  // Return a promise that completes when the stream ends
-  return new Promise((resolve, reject) => {
-    const content: string[] = [];
-    
-    processStream(event => {
       // Handle different event types
-      switch (event.type) {
-        case 'content':
-          content.push(event.content);
+      switch (data.type) {
+        case 'ready':
+          // WebSocket connection is ready to accept requests
+          onReadyHandler?.(data);
           break;
-        case 'tool_call':
-          // Handle tool call event
+        case 'initialized':
+          // Session stream has been initialized with a responseId
+          onInitializedHandler?.(data);
           break;
-        case 'tool_result':
-          // Handle tool result event
+        case 'turn':
+          // Content or tool call update
+          onTurnHandler?.(data);
           break;
-        case 'end':
-          resolve(content.join(''));
+        case 'turn-completed':
+          // A turn is completed
+          break;
+        case 'completed':
+          // The entire response is completed
+          onCompletedHandler?.(data);
           break;
         case 'error':
-          reject(new Error(event.error));
+          // Error occurred
+          onErrorHandler?.(data);
           break;
+        default:
+          console.warn('Unknown event type:', data.type);
       }
-    }).catch(reject);
+    } catch (error) {
+      console.error('Error parsing WebSocket message:', error);
+    }
+  });
+  
+  // Handle WebSocket errors
+  ws.addEventListener('error', (error) => {
+    console.error('WebSocket error:', error);
+    onErrorHandler?.({
+      type: 'error',
+      message: 'WebSocket connection error'
+    });
+  });
+  
+  // Handle WebSocket close
+  ws.addEventListener('close', (event) => {
+    console.log(`WebSocket closed: ${event.code} ${event.reason}`);
+  });
+  
+  // Return interface for interacting with the stream
+  return {
+    // Send a message to the stream
+    sendMessage: (content: string) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ content }));
+        return true;
+      }
+      return false;
+    },
+    
+    // Set event handlers
+    onReady: (handler: (event: any) => void) => {
+      onReadyHandler = handler;
+    },
+    onInitialized: (handler: (event: any) => void) => {
+      onInitializedHandler = handler;
+    },
+    onTurn: (handler: (event: any) => void) => {
+      onTurnHandler = handler;
+    },
+    onCompleted: (handler: (event: any) => void) => {
+      onCompletedHandler = handler;
+    },
+    onError: (handler: (event: any) => void) => {
+      onErrorHandler = handler;
+    },
+    
+    // Close the WebSocket connection
+    close: () => {
+      ws.close();
+    }
+  };
+}
+
+// Usage example
+function streamConversationExample(workspaceId: string, sessionId: string, message: string) {
+  return new Promise((resolve, reject) => {
+    const stream = createSessionStream(workspaceId, sessionId);
+    const content: string[] = [];
+    
+    // Handle ready event (WebSocket connected and ready)
+    stream.onReady((event) => {
+      console.log('WebSocket ready, sending message...');
+      stream.sendMessage(message);
+    });
+    
+    // Handle initialized event (session started)
+    stream.onInitialized((event) => {
+      console.log('Session initialized with responseId:', event.responseId);
+    });
+    
+    // Handle turn events (content and tool calls)
+    stream.onTurn((event) => {
+      console.log('Received turn update:', event);
+      
+      // Collect content
+      content.push(event.content || '');
+      
+      // Handle tool calls if present
+      if (event.toolCalls && Array.isArray(event.toolCalls)) {
+        event.toolCalls.forEach(toolCall => {
+          if (toolCall.call) {
+            console.log('Tool call:', toolCall.call);
+          }
+          if (toolCall.response) {
+            console.log('Tool response:', toolCall.response);
+          }
+        });
+      }
+    });
+    
+    // Handle completion
+    stream.onCompleted((event) => {
+      console.log('Stream completed');
+      resolve(content.join(''));
+      stream.close();
+    });
+    
+    // Handle errors
+    stream.onError((event) => {
+      console.error('Stream error:', event);
+      reject(new Error(event.message));
+      stream.close();
+    });
   });
 }
 ```
@@ -269,20 +357,64 @@ class MandrakeClient {
     return response.json();
   }
   
-  // Stream request with event handling
-  private async streamRequest(path: string, body: any) {
-    const url = `${this.baseUrl}${path}`;
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+  // WebSocket streaming
+  createSessionStream(workspaceId: string, sessionId: string) {
+    // Create WebSocket URL
+    const baseUrl = this.baseUrl.replace(/^http/, window.location.protocol === 'https:' ? 'wss' : 'ws');
+    const url = workspaceId
+      ? `${baseUrl}/workspaces/${workspaceId}/sessions/${sessionId}/streaming/ws`
+      : `${baseUrl}/system/sessions/${sessionId}/streaming/ws`;
+    
+    // Create WebSocket connection
+    const ws = new WebSocket(url);
+    
+    // Set up event handlers and interface (as in the example above)
+    let onReadyHandler: ((event: any) => void) | null = null;
+    let onInitializedHandler: ((event: any) => void) | null = null;
+    let onTurnHandler: ((event: any) => void) | null = null;
+    let onCompletedHandler: ((event: any) => void) | null = null;
+    let onErrorHandler: ((event: any) => void) | null = null;
+    
+    // Setup message handling
+    ws.addEventListener('message', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        switch (data.type) {
+          case 'ready': onReadyHandler?.(data); break;
+          case 'initialized': onInitializedHandler?.(data); break;
+          case 'turn': onTurnHandler?.(data); break;
+          case 'completed': onCompletedHandler?.(data); break;
+          case 'error': onErrorHandler?.(data); break;
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+      }
     });
     
-    if (!response.ok) {
-      throw await this.handleError(response);
-    }
+    // Handle errors
+    ws.addEventListener('error', (error) => {
+      onErrorHandler?.({
+        type: 'error',
+        message: 'WebSocket connection error'
+      });
+    });
     
-    return response;
+    // Return the interface
+    return {
+      sendMessage: (content: string) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ content }));
+          return true;
+        }
+        return false;
+      },
+      onReady: (handler: (event: any) => void) => { onReadyHandler = handler; },
+      onInitialized: (handler: (event: any) => void) => { onInitializedHandler = handler; },
+      onTurn: (handler: (event: any) => void) => { onTurnHandler = handler; },
+      onCompleted: (handler: (event: any) => void) => { onCompletedHandler = handler; },
+      onError: (handler: (event: any) => void) => { onErrorHandler = handler; },
+      close: () => { ws.close(); }
+    };
   }
   
   // Error handling
@@ -318,9 +450,34 @@ class MandrakeClient {
     return this.request(`/workspaces/${workspaceId}/sessions/${sessionId}/history`);
   }
   
-  // Streaming conversation
+  // Streaming conversation with WebSockets
   async streamConversation(workspaceId: string, sessionId: string, message: string) {
-    // Implementation as shown in the streaming example above
+    return new Promise((resolve, reject) => {
+      const stream = this.createSessionStream(workspaceId, sessionId);
+      const content: string[] = [];
+      
+      // Once connected, send the message
+      stream.onReady(() => {
+        stream.sendMessage(message);
+      });
+      
+      // Collect content from turns
+      stream.onTurn((event) => {
+        content.push(event.content || '');
+      });
+      
+      // Resolve when complete
+      stream.onCompleted(() => {
+        resolve(content.join(''));
+        stream.close();
+      });
+      
+      // Handle errors
+      stream.onError((event) => {
+        reject(new Error(event.message));
+        stream.close();
+      });
+    });
   }
   
   // Add other methods as needed...

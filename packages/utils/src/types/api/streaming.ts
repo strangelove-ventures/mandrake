@@ -12,7 +12,8 @@ export type StreamEventType =
   | 'turn'          // Turn update (content added)
   | 'turn-completed' // Turn finished
   | 'completed'     // Stream completed
-  | 'error';        // Error occurred
+  | 'error'         // Error occurred
+  | 'ready';        // WebSocket connection ready
 
 /**
  * Base interface for all stream events
@@ -94,6 +95,15 @@ export interface ErrorEvent extends StreamEvent {
 }
 
 /**
+ * WebSocket ready event
+ */
+export interface ReadyEvent extends StreamEvent {
+  type: 'ready';
+  /** Session ID */
+  sessionId: string;
+}
+
+/**
  * Union type for all possible stream events
  */
 export type StreamEventUnion = 
@@ -101,4 +111,5 @@ export type StreamEventUnion =
   | TurnEvent
   | TurnCompletedEvent
   | CompletedEvent
-  | ErrorEvent;
+  | ErrorEvent
+  | ReadyEvent;

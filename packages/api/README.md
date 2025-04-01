@@ -6,9 +6,11 @@ The API package serves as the core server component for the Mandrake project, pr
 
 Full API documentation is available in the following formats:
 
-- **OpenAPI Specification**: [View the full OpenAPI spec](./docs/openapi.yaml)
+- **OpenAPI Specification**: [View the full OpenAPI spec](./docs/openapi.yaml) - [Using the OpenAPI Spec](./docs/OPENAPI.md)
 - **Service Registry Documentation**: [Learn about the Service Registry](./src/services/registry/README.md)
 - **Service Adapters Documentation**: [Learn about Service Adapters](./src/services/registry/adapters/README.md)
+- **Client Integration Guide**: [Integrating with the API from clients](./docs/CLIENT_INTEGRATION_GUIDE.md)
+- **Extending the API**: [Guide for adding new routes and services](./docs/EXTENDING_THE_API.md)
 
 ## Architecture
 

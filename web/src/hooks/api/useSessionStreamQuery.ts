@@ -8,7 +8,8 @@ import type {
   TurnEvent,
   ErrorEvent,
   StreamEventUnion,
-  CompletedEvent
+  CompletedEvent,
+  ReadyEvent
 } from '@mandrake/utils/dist/types/api';
 
 /**
@@ -39,8 +40,8 @@ interface UseSessionStreamQueryProps {
   workspaceId: string;
   /** Whether to auto-connect */
   autoConnect?: boolean;
-  /** Whether to use the legacy EventSource method (may trigger CSP in some browsers) */
-  useLegacyMethod?: boolean;
+  /** Connection method to use */
+  connectionMethod?: 'websocket' | 'fetch' | 'eventsource'; // Note: 'eventsource' is deprecated
 }
 
 /**
@@ -86,6 +87,73 @@ function createEventSourceStream(
   return () => {
     console.log('Cleaning up EventSource');
     eventSource.close();
+  };
+}
+
+/**
+ * Create a WebSocket connection
+ * This is the most modern approach and avoids CSP issues
+ */
+function createWebSocketConnection(
+  url: string,
+  onMessage: (data: StreamEventUnion) => void,
+  onError: (error: Error) => void
+): () => void {
+  console.log(`Creating WebSocket connection to ${url}`);
+  
+  // WebSocket needs a WS/WSS protocol
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsUrl = url.replace(/^https?:\/\//, protocol + '//') + '/ws';
+  
+  // Create WebSocket
+  const ws = new WebSocket(wsUrl);
+  
+  // Track connection state
+  let isConnected = false;
+  
+  // Handle connection open
+  ws.addEventListener('open', () => {
+    console.log('WebSocket connected');
+    isConnected = true;
+  });
+  
+  // Handle incoming messages
+  ws.addEventListener('message', (event) => {
+    console.log('Received WebSocket message:', event.data);
+    try {
+      // Parse the event data
+      const data = JSON.parse(event.data) as StreamEventUnion;
+      onMessage(data);
+    } catch (error) {
+      // Handle JSON parsing errors
+      console.error('Error parsing WebSocket message:', error);
+      onError(error as Error);
+    }
+  });
+  
+  // Handle connection errors
+  ws.addEventListener('error', (error) => {
+    console.error('WebSocket error:', error);
+    onError(new Error(`WebSocket error: ${String(error)}`));
+  });
+  
+  // Handle connection close
+  ws.addEventListener('close', (event) => {
+    console.log(`WebSocket closed: ${event.code} ${event.reason}`);
+    if (isConnected) {
+      onError(new Error(`WebSocket connection closed: ${event.code} ${event.reason}`));
+      isConnected = false;
+    }
+  });
+  
+  // Return cleanup function
+  return () => {
+    console.log('Cleaning up WebSocket connection');
+    
+    // Close the WebSocket if it's open
+    if (ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(ws.readyState)) {
+      ws.close();
+    }
   };
 }
 
@@ -175,7 +243,7 @@ export function useSessionStreamQuery({
   sessionId,
   workspaceId,
   autoConnect = false,
-  useLegacyMethod = false
+  connectionMethod = 'websocket' // Default to WebSocket for best compatibility
 }: UseSessionStreamQueryProps) {
   // Use a ref to store state between renders
   const stateRef = useRef<SessionStreamState>({
@@ -193,7 +261,7 @@ export function useSessionStreamQuery({
   // State to control the connection
   const [shouldConnect, setShouldConnect] = useState(autoConnect);
   
-  // Cleanup reference for EventSource method
+  // Cleanup reference for connection management
   const cleanupRef = useRef<(() => void) | null>(null);
   
   // Handler for stream events
@@ -265,6 +333,15 @@ export function useSessionStreamQuery({
         };
         break;
         
+      case 'ready':
+        // WebSocket ready notification
+        stateRef.current = {
+          ...stateRef.current,
+          isConnected: true,
+          events: [...stateRef.current.events, eventData]
+        };
+        break;
+        
       default:
         // Unknown event type, just add to events
         stateRef.current = {
@@ -279,11 +356,11 @@ export function useSessionStreamQuery({
   
   // Handler for stream errors
   const handleError = (error: Error) => {
-    console.error('SSE connection error:', error);
+    console.error('Stream connection error:', error);
     
     const errorEvent: ErrorEvent = {
       type: 'error',
-      message: `SSE connection error: ${error.message}`
+      message: `Stream connection error: ${error.message}`
     };
     
     stateRef.current = {
@@ -296,9 +373,17 @@ export function useSessionStreamQuery({
     setState({ ...stateRef.current });
   };
   
-  // For legacy EventSource method
+  // WebSocket and EventSource connection effect
   useEffect(() => {
-    if (!shouldConnect || !sessionId || !useLegacyMethod) {
+    if (!shouldConnect || !sessionId) {
+      return;
+    }
+    
+    // When using WebSockets, we should always use the WebSocket implementation
+    // EventSource is now deprecated and only kept for backward compatibility
+    const effectiveMethod = connectionMethod === 'eventsource' ? 'websocket' : connectionMethod;
+    
+    if (!['websocket', 'eventsource'].includes(effectiveMethod)) {
       return;
     }
     
@@ -309,14 +394,12 @@ export function useSessionStreamQuery({
       
     let url;
     if (workspaceId) {
-      // Fixed URL pattern to include /sessions/ in the path
       url = `${baseUrl}/workspaces/${workspaceId}/sessions/${sessionId}/streaming`;
     } else {
-      // Fixed URL pattern to include /sessions/ in the path
       url = `${baseUrl}/system/sessions/${sessionId}/streaming`;
     }
     
-    console.log(`Connecting to session stream with EventSource: ${sessionId} - Workspace: ${workspaceId || 'system'}`);
+    console.log(`Connecting to session stream with ${effectiveMethod}: ${sessionId} - Workspace: ${workspaceId || 'system'}`);
     
     // Update state to show connection
     const newState = { 
@@ -328,27 +411,28 @@ export function useSessionStreamQuery({
     stateRef.current = newState;
     setState(newState);
     
-    // Create the EventSource connection
-    cleanupRef.current = createEventSourceStream(
+    // Always use WebSocket as the primary method now
+    // EventSource is only kept for backward compatibility
+    cleanupRef.current = createWebSocketConnection(
       url,
       handleMessage,
       handleError
     );
     
-    // Cleanup on unmount or when shouldConnect changes
+    // Cleanup on unmount or when connection params change
     return () => {
       if (cleanupRef.current) {
         cleanupRef.current();
         cleanupRef.current = null;
       }
     };
-  }, [sessionId, workspaceId, shouldConnect, useLegacyMethod]);
+  }, [sessionId, workspaceId, shouldConnect, connectionMethod]);
   
-  // For modern Fetch API method
+  // For Fetch API method
   const query = useQuery({
-    queryKey: ['sessionStream', sessionId, workspaceId, shouldConnect, useLegacyMethod],
+    queryKey: ['sessionStream', sessionId, workspaceId, shouldConnect, connectionMethod],
     queryFn: async ({ signal }) => {
-      if (!sessionId || !shouldConnect || useLegacyMethod) {
+      if (!sessionId || !shouldConnect || connectionMethod !== 'fetch') {
         return stateRef.current;
       }
       
@@ -359,10 +443,8 @@ export function useSessionStreamQuery({
         
       let url;
       if (workspaceId) {
-        // Fixed URL pattern to include /sessions/ in the path
         url = `${baseUrl}/workspaces/${workspaceId}/sessions/${sessionId}/streaming`;
       } else {
-        // Fixed URL pattern to include /sessions/ in the path
         url = `${baseUrl}/system/sessions/${sessionId}/streaming`;
       }
       
@@ -389,7 +471,7 @@ export function useSessionStreamQuery({
       // Return the current state
       return stateRef.current;
     },
-    enabled: shouldConnect && !!sessionId && !useLegacyMethod,
+    enabled: shouldConnect && !!sessionId && connectionMethod === 'fetch',
     refetchOnWindowFocus: false,
     refetchOnMount: false,
     refetchOnReconnect: false,
