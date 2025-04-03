@@ -223,7 +223,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
   const workspaceRouter = new Hono();
   
   // Helper to get workspace manager
-  const getWorkspaceManager = (workspaceId: string) => {
+  const getWorkspaceManager = async (workspaceId: string) => {
     const wsAdapter = registry.getWorkspaceService<WorkspaceManagerAdapter>(
       workspaceId, 
       'workspace-manager'
@@ -231,6 +231,12 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     
     if (!wsAdapter) {
       throw new Error(`Workspace manager for ${workspaceId} not found in registry`);
+    }
+    
+    // Ensure the adapter is initialized before getting the manager
+    if (!wsAdapter.isInitialized()) {
+      console.log(`Lazily initializing workspace manager for ${workspaceId}`);
+      await wsAdapter.init();
     }
     
     const manager = wsAdapter.getManager();
@@ -242,7 +248,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
   };
   
   // Helper to get MCP manager
-  const getMcpManager = (workspaceId: string) => {
+  const getMcpManager = async (workspaceId: string) => {
     const mcpAdapter = registry.getWorkspaceService<MCPManagerAdapter>(
       workspaceId,
       'mcp-manager'
@@ -250,6 +256,12 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     
     if (!mcpAdapter) {
       throw new Error(`MCP manager for ${workspaceId} not found in registry`);
+    }
+    
+    // Ensure the adapter is initialized before getting the manager
+    if (!mcpAdapter.isInitialized()) {
+      console.log(`Lazily initializing MCP manager for ${workspaceId}`);
+      await mcpAdapter.init();
     }
     
     const manager = mcpAdapter.getManager();
@@ -261,7 +273,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
   };
   
   // Helper to get session coordinator (future use)
-  const getSessionCoordinator = (workspaceId: string) => {
+  const getSessionCoordinator = async (workspaceId: string) => {
     const sessionAdapter = registry.getWorkspaceService<SessionCoordinatorAdapter>(
       workspaceId,
       'session-coordinator'
@@ -269,6 +281,12 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     
     if (!sessionAdapter) {
       throw new Error(`Session coordinator for ${workspaceId} not found in registry`);
+    }
+    
+    // Ensure the adapter is initialized before getting the coordinator
+    if (!sessionAdapter.isInitialized()) {
+      console.log(`Lazily initializing session coordinator for ${workspaceId}`);
+      await sessionAdapter.init();
     }
     
     return sessionAdapter.getCoordinator();
@@ -299,6 +317,20 @@ export function workspaceRoutes(registry: ServiceRegistry) {
         }, 404);
       }
       
+      // CRITICAL: Ensure the workspace adapter is initialized before proceeding
+      if (!wsAdapter.isInitialized()) {
+        console.log(`Initializing workspace manager adapter for ${workspaceId}`);
+        try {
+          await wsAdapter.init();
+        } catch (initError) {
+          console.error(`Failed to initialize workspace ${workspaceId}:`, initError);
+          return c.json({ 
+            error: 'Workspace initialization failed',
+            message: initError instanceof Error ? initError.message : String(initError) 
+          }, 503);
+        }
+      }
+      
       // Add workspaceId to the context for later use
       c.set('workspaceId', workspaceId);
       
@@ -321,7 +353,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.get('/config', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId');
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         return c.json(await workspace.config.getConfig());
       } catch (error) {
         console.error('Error getting workspace config:', error);
@@ -333,7 +365,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.put('/config', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         const config = await c.req.json();
         await workspace.config.updateConfig(config);
         return c.json({ success: true });
@@ -358,11 +390,11 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.all('/tools/*', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         
         let mcpManager;
         try {
-          mcpManager = getMcpManager(workspaceId);
+          mcpManager = await getMcpManager(workspaceId);
         } catch (error) {
           return c.json({ error: 'MCP manager not available for this workspace' }, 503);
         }
@@ -394,7 +426,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
         
         let mcpManager;
         try {
-          mcpManager = getMcpManager(workspaceId);
+          mcpManager = await getMcpManager(workspaceId);
         } catch (error) {
           return c.json({ error: 'MCP manager not available for this workspace' }, 503);
         }
@@ -411,7 +443,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.get('/tools/configs', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         const configSets = await workspace.tools.listConfigSets();
         return c.json(configSets);
       } catch (error) {
@@ -423,8 +455,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.post('/tools/configs', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
-        const mcpManager = getMcpManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
+        const mcpManager = await getMcpManager(workspaceId);
         const config = await c.req.json();
         
         if (!config.id) {
@@ -461,7 +493,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.get('/tools/configs/:toolId', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         const toolId = c.req.param('toolId');
         const configSet = await workspace.tools.getConfigSet(toolId);
         if (!configSet) {
@@ -479,8 +511,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
         const toolId = c.req.param('toolId');
-        const workspace = getWorkspaceManager(workspaceId);
-        const mcpManager = getMcpManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
+        const mcpManager = await getMcpManager(workspaceId);
         const configUpdate = await c.req.json();
         
         // Update the configuration
@@ -526,7 +558,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.get('/tools/configs/active', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         
         const activeId = await workspace.tools.getActive();
         const activeConfig = await workspace.tools.getConfigSet(activeId);
@@ -545,8 +577,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.put('/tools/configs/active', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
-        const mcpManager = getMcpManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
+        const mcpManager = await getMcpManager(workspaceId);
         const { id } = await c.req.json();
         
         if (!id) {
@@ -616,8 +648,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.get('/tools/servers/status', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
-        const mcpManager = getMcpManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
+        const mcpManager = await getMcpManager(workspaceId);
         
         // Get statuses for all servers in the active configuration
         const serverStatuses: Record<string, any> = {};
@@ -709,8 +741,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
         const serverId = c.req.param('serverId');
-        const workspace = getWorkspaceManager(workspaceId);
-        const mcpManager = getMcpManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
+        const mcpManager = await getMcpManager(workspaceId);
         
         // Get active configuration to check if this server is included
         const active = await workspace.tools.getActive();
@@ -784,8 +816,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
         const serverId = c.req.param('serverId');
-        const workspace = getWorkspaceManager(workspaceId);
-        const mcpManager = getMcpManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
+        const mcpManager = await getMcpManager(workspaceId);
         
         // First check if this server is in the active configuration
         const active = await workspace.tools.getActive();
@@ -858,7 +890,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.all('/models/*', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         const modelsApp = modelsRoutes(workspace.models);
         
         const url = new URL(c.req.url);
@@ -891,7 +923,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.all('/providers/*', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         const providersApp = providersRoutes(workspace.models);
         
         const url = new URL(c.req.url);
@@ -924,7 +956,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.all('/prompt/*', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         const promptApp = promptRoutes(workspace.prompt);
         
         const url = new URL(c.req.url);
@@ -957,7 +989,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.all('/files/*', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         const filesApp = filesRoutes(workspace.files);
         
         const url = new URL(c.req.url);
@@ -990,7 +1022,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.all('/dynamic/*', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         const dynamicApp = dynamicContextRoutes(workspace.dynamic);
         
         const url = new URL(c.req.url);
@@ -1023,7 +1055,7 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.post('/sessions', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
         
         const { title, description, metadata } = await c.req.json();
         const session = await workspace.sessions.createSession({ 
@@ -1053,8 +1085,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.all('/sessions/*', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
-        const mcpManager = getMcpManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
+        const mcpManager = await getMcpManager(workspaceId);
         
         // Create managers and accessors with registry-backed services
         const managers = createWorkspaceManagersObject(registry, workspace, mcpManager, workspaceId);
@@ -1094,8 +1126,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
     workspaceRouter.all('/streaming/*', async (c) => {
       try {
         const workspaceId = (c as any).get('workspaceId') as string;
-        const workspace = getWorkspaceManager(workspaceId);
-        const mcpManager = getMcpManager(workspaceId);
+        const workspace = await getWorkspaceManager(workspaceId);
+        const mcpManager = await getMcpManager(workspaceId);
         
         // Create managers and accessors with registry-backed services
         const managers = createWorkspaceManagersObject(registry, workspace, mcpManager, workspaceId);

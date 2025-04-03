@@ -84,10 +84,15 @@ function getOrCreateSessionCoordinator(
 }
 
 /**
+ * Import the WSContext type from Hono
+ */
+import type { WSContext } from 'hono/ws';
+
+/**
  * Active WebSocket connections by session ID
  */
 interface WebSocketConnections {
-  [sessionId: string]: Set<WebSocket>;
+  [sessionId: string]: Set<WSContext<unknown>>;
 }
 
 // Maintain a registry of active WebSocket connections
@@ -101,11 +106,11 @@ function broadcastToSession(sessionId: string, event: StreamEventUnion) {
   
   const message = JSON.stringify(event);
   
-  for (const ws of wsConnectionsBySession[sessionId]) {
+  for (const wsContext of wsConnectionsBySession[sessionId]) {
     try {
       // Check if the WebSocket is open (readyState === 1) 
-      if (ws.readyState === 1) {
-        ws.send(message);
+      if (wsContext && wsContext.readyState === 1) {
+        wsContext.send(message);
       }
     } catch (error) {
       console.error(`Failed to send message to WebSocket: ${error}`);

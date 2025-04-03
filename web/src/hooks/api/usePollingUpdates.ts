@@ -38,9 +38,10 @@ export function usePollingUpdates({
       
       try {
         const path = workspaceId
-          ? apiClient.createUrl(`/sessions/${sessionId}/messages`, workspaceId)
+          ? `/workspaces/${workspaceId}/sessions/${sessionId}/history`
           : `/system/sessions/${sessionId}/history`;
 
+        console.log(`Polling session history from: ${path}`);
         const result = await apiClient.fetchJson(path);
         setData(result);
         setError(null);

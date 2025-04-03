@@ -71,8 +71,8 @@ export function useSessionStream({
     
     console.log(`Connecting to session stream: ${sessionId} - Workspace: ${workspaceId || 'system'}`);
     
-    // Create stream
-    const cleanup = createSessionStream(sessionId, workspaceId, {
+    // Create stream with WebSocket
+    const { cleanup, sendMessage } = createSessionStream(sessionId, workspaceId, {
       onConnect: () => {
         console.log('WebSocket connected');
         setState(prev => ({ 
@@ -157,6 +157,9 @@ export function useSessionStream({
         }
       }
     });
+    
+    // Store the sendMessage function in the ref for use outside the effect
+    sendMessageRef.current = sendMessage;
     
     // Cleanup function
     return () => {

@@ -55,6 +55,7 @@ export default function SessionChatModal({ isOpen, onClose, sessionId, workspace
     error: streamingError,
     connect: connectStream,
     disconnect: disconnectStream,
+    sendMessage: sendWebSocketMessage,
     // reset: resetStream
   } = useSessionStreamQuery({
     sessionId,
@@ -227,17 +228,33 @@ export default function SessionChatModal({ isOpen, onClose, sessionId, workspace
       
       // Connect to stream first to catch the response using new hook
       console.log('Connecting to stream for', sessionId);
-      connectStream();
       
       // Clear any previous error
       setError(null);
       
-      // Send message through streaming API
-      console.log('Sending API request to', sessionId);
-      await sendMessage.mutateAsync({
-        sessionId,
-        message: messageText
-      });
+      try {
+        // Wait for the connection to be established before sending
+        await connectStream();
+        
+        // Now we can safely send through the WebSocket
+        console.log('WebSocket connected, sending message to', sessionId);
+        const messageSent = sendWebSocketMessage(messageText);
+        
+        if (!messageSent) {
+          console.error('Failed to send message through WebSocket, falling back to API');
+          await sendMessage.mutateAsync({
+            sessionId,
+            message: messageText
+          });
+        }
+      } catch (connectionError) {
+        console.error('Failed to establish WebSocket connection:', connectionError);
+        console.log('Falling back to API for sending message');
+        await sendMessage.mutateAsync({
+          sessionId,
+          message: messageText
+        });
+      }
       console.log('Message sent, waiting for response');
       
       // Clear the fallback timer if the request completes successfully

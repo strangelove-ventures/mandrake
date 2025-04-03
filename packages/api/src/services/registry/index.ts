@@ -681,12 +681,8 @@ export class ServiceRegistryImpl implements ServiceRegistry {
     // Set up workspace service factories
     this.registerWorkspaceFactories();
     
-    // Register services for existing workspaces
-    this.registerExistingWorkspaces().catch(error => {
-      this.logger.error('Failed to register existing workspaces', {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    });
+    // Note: registerExistingWorkspaces is now called explicitly after core service initialization
+    // in index.ts to ensure proper dependency resolution and initialization sequencing
   }
   
   /**
@@ -903,9 +899,8 @@ export class ServiceRegistryImpl implements ServiceRegistry {
   
   /**
    * Register services for existing workspaces
-   * @private
    */
-  private async registerExistingWorkspaces(): Promise<void> {
+  async registerExistingWorkspaces(): Promise<void> {
     try {
       this.logger.info('Registering services for existing workspaces');
       

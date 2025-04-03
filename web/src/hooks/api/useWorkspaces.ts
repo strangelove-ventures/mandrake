@@ -39,7 +39,9 @@ export function useWorkspace(id: string) {
   return useQuery({
     queryKey: workspaceKeys.detail(id),
     queryFn: () => api.workspaces.get(id),
-    enabled: Boolean(id)
+    enabled: Boolean(id),
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000) // Exponential backoff
   });
 }
 

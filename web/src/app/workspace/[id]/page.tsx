@@ -13,7 +13,7 @@ export default function WorkspacePage() {
   const workspaceId = Array.isArray(params.id) ? params.id[0] : params.id;
   
   // Fetch workspace details
-  const { data: workspace, isLoading: isLoadingWorkspace } = useWorkspace(workspaceId);
+  const { data: workspace, isLoading: isLoadingWorkspace, error: workspaceError } = useWorkspace(workspaceId);
   
   // State for chat modal
   const [sessionModalOpen, setSessionModalOpen] = useState(false);
@@ -36,6 +36,39 @@ export default function WorkspacePage() {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
               <div className="lg:col-span-2 h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
               <div className="lg:col-span-1 h-64 bg-gray-200 dark:bg-gray-700 rounded"></div>
+            </div>
+          </div>
+        </main>
+      </div>
+    );
+  }
+  
+  if (workspaceError) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <Header />
+        <main className="container mx-auto p-4 md:p-8">
+          <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900 rounded-lg p-6 my-8">
+            <h2 className="text-2xl font-bold text-red-600 dark:text-red-400 mb-4">Error Loading Workspace</h2>
+            <p className="text-gray-700 dark:text-gray-300 mb-4">
+              There was a problem loading this workspace. The workspace service may not be properly initialized.
+            </p>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Error: {String(workspaceError)}
+            </p>
+            <div className="flex gap-4">
+              <a 
+                href="/" 
+                className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Return to Home
+              </a>
+              <button 
+                onClick={() => window.location.reload()} 
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-800"
+              >
+                Retry
+              </button>
             </div>
           </div>
         </main>

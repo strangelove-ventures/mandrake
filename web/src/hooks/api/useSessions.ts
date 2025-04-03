@@ -26,7 +26,9 @@ export const sessionKeys = {
 export function useSessions(workspaceId?: string) {
   return useQuery({
     queryKey: sessionKeys.lists(workspaceId),
-    queryFn: () => api.sessions.list(workspaceId)
+    queryFn: () => api.sessions.list(workspaceId),
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000) // Exponential backoff
   });
 }
 
@@ -37,7 +39,9 @@ export function useSession(id: string, workspaceId?: string) {
   return useQuery({
     queryKey: sessionKeys.detail(id, workspaceId),
     queryFn: () => api.sessions.get(id, workspaceId),
-    enabled: Boolean(id)
+    enabled: Boolean(id),
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000) // Exponential backoff
   });
 }
 
@@ -48,7 +52,9 @@ export function useSessionMessages(sessionId: string, workspaceId?: string) {
   return useQuery({
     queryKey: sessionKeys.messages(sessionId, workspaceId),
     queryFn: () => api.sessions.getMessages(sessionId, workspaceId),
-    enabled: Boolean(sessionId)
+    enabled: Boolean(sessionId),
+    retry: 2,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000) // Exponential backoff
   });
 }
 

@@ -77,7 +77,9 @@ export class WorkspaceManagerAdapter implements ManagedService {
         // This would normally be done through the service registry
         // For now, we'll use a simple approach to get it working
         const { MandrakeManager } = require('@mandrake/workspace');
-        const mandrakeHome = process.env.MANDRAKE_HOME || '~/.mandrake';
+        const os = require('os');
+        const path = require('path');
+        const mandrakeHome = process.env.MANDRAKE_HOME || path.join(process.env.HOME || os.homedir(), '.mandrake');
         const mandrakeManager = new MandrakeManager(mandrakeHome);
         await mandrakeManager.init();
         

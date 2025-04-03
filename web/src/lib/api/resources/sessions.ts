@@ -81,10 +81,13 @@ export const sessions = {
    * Send a message to a session through the streaming API
    */
   sendMessage: async (sessionId: string, message: string, workspaceId?: string): Promise<void> => {
+    // URL pattern for the new WebSocket-based API
     const path = workspaceId
-      ? apiClient.createUrl(`/streaming/${sessionId}/request`, workspaceId)
-      : `/system/streaming/${sessionId}/request`;
+      ? `/workspaces/${workspaceId}/sessions/${sessionId}/streaming/request`
+      : `/system/sessions/${sessionId}/streaming/request`;
       
+    console.log(`Sending message to: ${path}`);
+    
     // Use fetchStreaming to avoid expecting a JSON response
     return apiClient.fetchStreaming(path, {
       method: 'POST',
@@ -97,7 +100,7 @@ export const sessions = {
    */
   getMessages: async (sessionId: string, workspaceId?: string) => {
     const path = workspaceId
-      ? apiClient.createUrl(`/sessions/${sessionId}/history`, workspaceId)
+      ? `/workspaces/${workspaceId}/sessions/${sessionId}/history`
       : `/system/sessions/${sessionId}/history`;
       
     console.log(`Fetching session messages from: ${path}`);
@@ -109,8 +112,8 @@ export const sessions = {
    */
   getSessionPrompt: async (sessionId: string, workspaceId?: string) => {
     const path = workspaceId
-      ? apiClient.createUrl(`/streaming/${sessionId}/prompt`, workspaceId)
-      : `/system/streaming/${sessionId}/prompt`;
+      ? `/workspaces/${workspaceId}/sessions/${sessionId}/streaming/prompt`
+      : `/system/sessions/${sessionId}/streaming/prompt`;
       
     return apiClient.fetchJson<{ sessionId: string; systemPrompt: string }>(path);
   },

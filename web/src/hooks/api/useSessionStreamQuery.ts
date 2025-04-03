@@ -46,12 +46,14 @@ interface UseSessionStreamQueryProps {
 
 /**
  * Create a SSE connection using the traditional EventSource API (may trigger CSP in some browsers)
+ * @deprecated Use WebSockets instead - this is kept for backward compatibility only
  */
 function createEventSourceStream(
   url: string,
   onMessage: (data: StreamEventUnion) => void,
   onError: (error: Error) => void
 ): () => void {
+  console.warn('EventSource is deprecated, use WebSockets instead');
   console.log(`Creating EventSource for ${url}`);
   
   // Create EventSource
@@ -98,12 +100,31 @@ function createWebSocketConnection(
   url: string,
   onMessage: (data: StreamEventUnion) => void,
   onError: (error: Error) => void
-): () => void {
+): { cleanup: () => void; ws: WebSocket } {
   console.log(`Creating WebSocket connection to ${url}`);
   
   // WebSocket needs a WS/WSS protocol
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = url.replace(/^https?:\/\//, protocol + '//') + '/ws';
+  const baseUrl = typeof window !== 'undefined' 
+    ? protocol + '//' + window.location.host + '/api' 
+    : 'ws://localhost:4000';
+    
+  // Extract session ID and workspace ID from the URL
+  const urlParts = url.split('/');
+  const sessionIdIdx = urlParts.indexOf('sessions');
+  const sessionId = sessionIdIdx >= 0 ? urlParts[sessionIdIdx + 1] : ''; 
+  
+  // Determine if this is a workspace or system session
+  let wsUrl;
+  if (url.includes('/workspaces/')) {
+    const workspaceIdIdx = urlParts.indexOf('workspaces');
+    const workspaceId = workspaceIdIdx >= 0 ? urlParts[workspaceIdIdx + 1] : '';
+    wsUrl = `${baseUrl}/workspaces/${workspaceId}/sessions/${sessionId}/streaming/ws`;
+  } else {
+    wsUrl = `${baseUrl}/system/sessions/${sessionId}/streaming/ws`;
+  }
+  
+  console.log(`WebSocket URL: ${wsUrl}`);
   
   // Create WebSocket
   const ws = new WebSocket(wsUrl);
@@ -146,20 +167,24 @@ function createWebSocketConnection(
     }
   });
   
-  // Return cleanup function
-  return () => {
-    console.log('Cleaning up WebSocket connection');
-    
-    // Close the WebSocket if it's open
-    if (ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(ws.readyState)) {
-      ws.close();
-    }
+  // Return cleanup function and WebSocket instance
+  return {
+    cleanup: () => {
+      console.log('Cleaning up WebSocket connection');
+      
+      // Close the WebSocket if it's open
+      if (ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(ws.readyState)) {
+        ws.close();
+      }
+    },
+    ws
   };
 }
 
 /**
  * Create a SSE connection using the Fetch API with ReadableStream
  * This approach avoids CSP issues with unsafe-eval
+ * @deprecated Use WebSockets instead - this is kept for backward compatibility only
  */
 async function createFetchBasedSSE(
   url: string,
@@ -168,6 +193,7 @@ async function createFetchBasedSSE(
   signal: AbortSignal
 ) {
   try {
+    console.warn('Fetch-based SSE is deprecated, use WebSockets instead');
     console.log(`Creating fetch-based SSE for ${url}`);
     
     // Make the request with the appropriate headers
@@ -264,6 +290,9 @@ export function useSessionStreamQuery({
   // Cleanup reference for connection management
   const cleanupRef = useRef<(() => void) | null>(null);
   
+  // Store the WebSocket instance for sending messages
+  const wsRef = useRef<WebSocket | null>(null);
+  
   // Handler for stream events
   const handleMessage = (eventData: StreamEventUnion) => {
     // Update the state based on event type
@@ -277,6 +306,11 @@ export function useSessionStreamQuery({
           isComplete: false,
           error: null
         };
+        
+        // Resolve connection promise when initialized
+        if (connectionPromiseRef.current?.resolve) {
+          connectionPromiseRef.current.resolve();
+        }
         break;
         
       case 'turn':
@@ -340,6 +374,12 @@ export function useSessionStreamQuery({
           isConnected: true,
           events: [...stateRef.current.events, eventData]
         };
+        
+        // Resolve connection promise when ready event is received
+        if (connectionPromiseRef.current?.resolve) {
+          console.log('WebSocket ready, resolving connection promise');
+          connectionPromiseRef.current.resolve();
+        }
         break;
         
       default:
@@ -371,6 +411,12 @@ export function useSessionStreamQuery({
     };
     
     setState({ ...stateRef.current });
+    
+    // Reject connection promise if there's an error
+    if (connectionPromiseRef.current?.reject) {
+      console.log('WebSocket error, rejecting connection promise');
+      connectionPromiseRef.current.reject(error);
+    }
   };
   
   // WebSocket and EventSource connection effect
@@ -398,6 +444,7 @@ export function useSessionStreamQuery({
     } else {
       url = `${baseUrl}/system/sessions/${sessionId}/streaming`;
     }
+    console.log(`Streaming base URL: ${url}`);
     
     console.log(`Connecting to session stream with ${effectiveMethod}: ${sessionId} - Workspace: ${workspaceId || 'system'}`);
     
@@ -413,11 +460,17 @@ export function useSessionStreamQuery({
     
     // Always use WebSocket as the primary method now
     // EventSource is only kept for backward compatibility
-    cleanupRef.current = createWebSocketConnection(
+    const wsConnection = createWebSocketConnection(
       url,
       handleMessage,
       handleError
     );
+    
+    // Store both the cleanup function and the WebSocket instance
+    cleanupRef.current = wsConnection.cleanup;
+    
+      // Store the WebSocket instance for sending messages
+    wsRef.current = wsConnection.ws;
     
     // Cleanup on unmount or when connection params change
     return () => {
@@ -428,13 +481,17 @@ export function useSessionStreamQuery({
     };
   }, [sessionId, workspaceId, shouldConnect, connectionMethod]);
   
-  // For Fetch API method
+  // For Fetch API method 
+  // Note: This approach is now deprecated and only kept for backward compatibility
+  // WebSockets should be used instead
   const query = useQuery({
     queryKey: ['sessionStream', sessionId, workspaceId, shouldConnect, connectionMethod],
     queryFn: async ({ signal }) => {
       if (!sessionId || !shouldConnect || connectionMethod !== 'fetch') {
         return stateRef.current;
       }
+      
+      console.warn('Fetch API method is deprecated, use WebSockets instead');
       
       // Build the URL based on workspace ID
       const baseUrl = typeof window !== 'undefined' 
@@ -479,10 +536,52 @@ export function useSessionStreamQuery({
     gcTime: 0, // Don't keep old data in cache
   });
 
-  // Connect/disconnect methods
-  const connect = () => {
+  // Connection promise to track when the WebSocket is ready
+  const connectionPromiseRef = useRef<{
+    resolve: () => void;
+    reject: (err: Error) => void;
+    promise: Promise<void>;
+  } | null>(null);
+
+  // Create a new connection promise with timeout
+  const createConnectionPromise = () => {
+    let resolve: () => void;
+    let reject: (err: Error) => void;
+    
+    const promise = new Promise<void>((res, rej) => {
+      resolve = res;
+      reject = rej;
+    });
+    
+    connectionPromiseRef.current = {
+      resolve: resolve!,
+      reject: reject!,
+      promise
+    };
+    
+    // Add a timeout to the promise
+    const timeoutId = setTimeout(() => {
+      if (connectionPromiseRef.current) {
+        console.log('WebSocket connection timeout after 5 seconds');
+        connectionPromiseRef.current.reject(new Error('WebSocket connection timeout after 5 seconds'));
+      }
+    }, 5000);
+    
+    // Store the timeout ID on the promise so we can clear it later
+    const originalPromise = connectionPromiseRef.current.promise;
+    connectionPromiseRef.current.promise = originalPromise.finally(() => {
+      clearTimeout(timeoutId);
+    });
+    
+    return connectionPromiseRef.current.promise;
+  };
+
+  // Connect method - returns a promise that resolves when connected
+  const connect = async (): Promise<void> => {
     console.log('Connecting to stream...');
+    createConnectionPromise();
     setShouldConnect(true);
+    return connectionPromiseRef.current!.promise;
   };
 
   const disconnect = () => {
@@ -492,6 +591,11 @@ export function useSessionStreamQuery({
     if (cleanupRef.current) {
       cleanupRef.current();
       cleanupRef.current = null;
+    }
+    
+    // Reset connection promise
+    if (connectionPromiseRef.current) {
+      connectionPromiseRef.current = null;
     }
     
     setState(prev => ({
@@ -518,6 +622,40 @@ export function useSessionStreamQuery({
     setState(initialState);
   };
 
+  // Function to send a message through the WebSocket
+  const sendWebSocketMessage = (content: string): boolean => {
+    if (!state.isConnected) {
+      console.warn('Cannot send message: WebSocket not connected');
+      return false;
+    }
+    
+    if (!connectionMethod || connectionMethod !== 'websocket') {
+      console.warn('Cannot send message: Not using WebSocket connection');
+      return false;
+    }
+    
+    if (!wsRef.current) {
+      console.warn('Cannot send message: WebSocket connection not established');
+      return false;
+    }
+    
+    try {
+      // Use the WebSocket connection to send the message
+      // This will be handled by the wsConnectionsBySession registry on the server
+      if (wsRef.current.readyState === WebSocket.OPEN) {
+        console.log('Sending through WebSocket:', { content });
+        wsRef.current.send(JSON.stringify({ content }));
+        return true;
+      } else {
+        console.warn(`Cannot send message: WebSocket not in OPEN state (readyState: ${wsRef.current.readyState})`);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error sending WebSocket message:', error);
+      return false;
+    }
+  };
+
   // Return the hook interface
   return {
     // Stream state
@@ -532,6 +670,7 @@ export function useSessionStreamQuery({
     connect,
     disconnect,
     reset,
+    sendMessage: sendWebSocketMessage,
     
     // Query status
     isLoading: query.isLoading,

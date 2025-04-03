@@ -66,6 +66,14 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
   // Initialize registry services (this will initialize initially registered services)
   await serviceRegistry.initializeServices();
   
+  // Register and initialize existing workspaces after core services are ready
+  try {
+    console.log('Registering existing workspaces after core services initialization');
+    await serviceRegistry.registerExistingWorkspaces();
+  } catch (error) {
+    console.error('Error during workspace registration:', error);
+  }
+  
   // Get access to the MandrakeManager and MCPManager in a way that doesn't throw if they're not initialized yet
   // This is important for testing where the factories might be registered but not initialized
   try {

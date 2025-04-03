@@ -44,7 +44,7 @@ export function createSessionStream(
   sessionId: string, 
   workspaceId: string,
   handlers: StreamEventHandlers
-): () => void {
+): { cleanup: () => void; sendMessage: (content: string) => boolean } {
   // WebSocket needs an absolute URL with protocol 
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const baseUrl = typeof window !== 'undefined' 
@@ -228,23 +228,26 @@ export function createSessionStream(
     }
   }
   
-  // Return cleanup function
-  return () => {
-    console.log('Cleaning up WebSocket connection');
-    
-    // Set the state to disconnected to prevent reconnect attempts
-    connectionState = ConnectionState.DISCONNECTED;
-    
-    // Clear timeouts
-    clearTimeout(connectionTimeoutId);
-    if (reconnectTimeoutId) {
-      clearTimeout(reconnectTimeoutId);
-    }
-    
-    // Close the WebSocket if it's open
-    if (ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(ws.readyState)) {
-      ws.close();
-    }
+  // Return object with cleanup function and sendMessage method
+  return {
+    cleanup: () => {
+      console.log('Cleaning up WebSocket connection');
+      
+      // Set the state to disconnected to prevent reconnect attempts
+      connectionState = ConnectionState.DISCONNECTED;
+      
+      // Clear timeouts
+      clearTimeout(connectionTimeoutId);
+      if (reconnectTimeoutId) {
+        clearTimeout(reconnectTimeoutId);
+      }
+      
+      // Close the WebSocket if it's open
+      if (ws && [WebSocket.CONNECTING, WebSocket.OPEN].includes(ws.readyState)) {
+        ws.close();
+      }
+    },
+    sendMessage
   };
 }
 

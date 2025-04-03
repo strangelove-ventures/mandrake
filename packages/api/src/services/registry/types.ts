@@ -268,6 +268,12 @@ export interface ServiceRegistry {
   registerStandardServices(home: string, logger?: Logger): void;
   
   /**
+   * Register services for existing workspaces
+   * This should be called after core services are initialized
+   */
+  registerExistingWorkspaces(): Promise<void>;
+  
+  /**
    * Register services for a specific workspace
    * @param workspaceId The workspace ID
    */

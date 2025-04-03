@@ -105,7 +105,18 @@ export default function WorkspaceSessionList({ workspaceId, onSelectSession }: W
               {error && !isLoading && (
                 <tr>
                   <td colSpan={3} className="py-4 text-center text-red-500">
-                    Error loading sessions: {String(error)}
+                    <div className="flex flex-col gap-2">
+                      <p>Error loading sessions: {String(error)}</p>
+                      <p className="text-sm">
+                        The workspace service may not be properly initialized. Try refreshing the page or returning to the home page.
+                      </p>
+                      <button 
+                        onClick={() => refetch()}
+                        className="px-4 py-2 mt-2 bg-blue-500 text-white rounded hover:bg-blue-600 w-32 mx-auto"
+                      >
+                        Retry
+                      </button>
+                    </div>
                   </td>
                 </tr>
               )}
