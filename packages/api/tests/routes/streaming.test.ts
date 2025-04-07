@@ -7,9 +7,10 @@ import { config } from 'dotenv';
 import { resolve } from 'path';
 import { MandrakeManager, WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
-import { sessionStreamingRoutes, systemSessionStreamingRoutes } from '../../src/routes/streaming';
-import type { Managers, ManagerAccessors } from '../../src/types';
+import { sessionStreamingRoutes, systemSessionStreamingRoutes, workspaceSessionStreamingRoutes } from '../../src/routes/streaming';
+import type { Managers, ManagerAccessors, WebSocketManager } from '../../src/types';
 import { SessionCoordinator } from '@mandrake/session';
+import { initWebSocketManager } from '../../src/index';
 
 // Setup for testing
 let tempDir: string;
@@ -153,9 +154,12 @@ beforeAll(async () => {
     }
   };
   
-  // Initialize Hono apps for testing
-  systemStreamingApp = systemSessionStreamingRoutes(managers, accessors);
-  workspaceStreamingApp = sessionStreamingRoutes(managers, accessors, false, workspaceId);
+  // Initialize shared WebSocket manager
+  const wsManager = initWebSocketManager();
+  
+  // Initialize Hono apps for testing with the shared WebSocket manager
+  systemStreamingApp = systemSessionStreamingRoutes(managers, accessors, wsManager);
+  workspaceStreamingApp = sessionStreamingRoutes(managers, accessors, false, workspaceId, wsManager);
 });
 
 afterEach(async () => {
@@ -175,7 +179,7 @@ afterAll(() => {
   }
 });
 
-test('workspace WebSocket streaming with Hono adapter', async () => {
+test('workspace WebSocket streaming with shared WebSocket manager', async () => {
   // Create a workspace session
   const session = await workspaceManager.sessions.createSession({
     title: 'Test WebSocket Streaming Session'
@@ -202,17 +206,14 @@ test('workspace WebSocket streaming with Hono adapter', async () => {
   sessionCoordinators.set(workspaceId, coordMap);
   coordMap.set(session.id, workspaceCoordinator);
 
-  // Import Hono's WebSocket adapter utility for testing
-  const { createBunWebSocket } = await import('hono/bun');
+  // Get the shared WebSocket manager
+  const wsManager = initWebSocketManager();
   
-  // Register our WebSocket adapter with the application
-  const { upgradeWebSocket, websocket } = createBunWebSocket();
-  
-  // Create a properly configured server to handle WebSocket upgrades
+  // Create a properly configured server using the shared WebSocket manager
   const testServer = Bun.serve({
     port: 0, // Let the OS choose a random available port
     fetch: workspaceStreamingApp.fetch,
-    websocket // Pass the WebSocket handler
+    websocket: wsManager.websocket // Pass the shared WebSocket handler
   });
 
   // Get the server address info
@@ -383,3 +384,171 @@ test('workspace WebSocket streaming with Hono adapter', async () => {
     testServer.stop();
   }
 }, 240000);
+
+test('system WebSocket streaming with shared WebSocket manager', async () => {
+  // Create a system session
+  const session = await mandrakeManager.sessions.createSession({
+    title: 'Test System WebSocket Streaming Session'
+  });
+  
+  // Set up a system coordinator
+  const systemCoordinator = new SessionCoordinator({
+    metadata: {
+      name: 'system',
+      path: mandrakeManager.paths.root
+    },
+    promptManager: mandrakeManager.prompt,
+    sessionManager: mandrakeManager.sessions,
+    mcpManager: managers.systemMcpManager,
+    modelsManager: mandrakeManager.models
+  });
+  
+  // Add the coordinator to the system coordinators map
+  systemSessionCoordinators.set(session.id, systemCoordinator);
+
+  // Get the shared WebSocket manager
+  const wsManager = initWebSocketManager();
+  
+  // Create a properly configured streaming router with the shared manager
+  const streamingRouter = systemSessionStreamingRoutes(
+    managers, 
+    accessors,
+    wsManager
+  );
+  
+  // Create a properly configured server to handle WebSocket upgrades
+  const testServer = Bun.serve({
+    port: 0, // Let the OS choose a random available port
+    fetch: streamingRouter.fetch,
+    websocket: wsManager.websocket // Pass the shared WebSocket handler
+  });
+
+  // Get the server address info
+  const serverInfo = testServer.url;
+  const port = new URL(serverInfo).port;
+  
+  // Store received messages
+  const receivedMessages: any[] = [];
+  
+  // Create a promise that resolves when expected messages are received
+  const messagesPromise = new Promise<void>((resolve, reject) => {
+    // Connect with a real WebSocket client
+    const wsClient = new WebSocket(`ws://localhost:${port}/${session.id}/ws`);
+    
+    // Track if we've received essential message types
+    const receivedTypes = {
+      ready: false,
+      initialized: false,
+      turn: false,
+      completed: false
+    };
+    
+    // Keep track of message order
+    const messageOrder = [];
+    
+    // Setup event handlers
+    wsClient.addEventListener('open', () => {
+      // Send a message with a system-level query
+      setTimeout(() => {
+        wsClient.send(JSON.stringify({
+          content: 'What is your system time? Can you tell me about your configuration?'
+        }));
+      }, 500);
+    });
+    
+    wsClient.addEventListener('message', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        receivedMessages.push(data);
+        
+        // Track message order
+        messageOrder.push(data.type);
+        
+        // Track essential message types
+        if (data.type === 'ready') receivedTypes.ready = true;
+        if (data.type === 'initialized') receivedTypes.initialized = true;
+        if (data.type === 'turn') receivedTypes.turn = true;
+        
+        // Wait for completion or reasonable timeout
+        if (receivedTypes.ready && receivedTypes.initialized && receivedTypes.turn) {
+          // Resolve if we get to the completed state
+          if (data.type === 'completed') {
+            wsClient.close();
+            resolve();
+          }
+          
+          // Also resolve after we've received some content to avoid waiting indefinitely
+          if (data.type === 'turn' && data.content && data.content.length > 100) {
+            setTimeout(() => {
+              wsClient.close();
+              resolve();
+            }, 2000);
+          }
+        }
+        
+        // Set a timeout to avoid running indefinitely
+        setTimeout(() => {
+          if (!receivedTypes.completed) {
+            wsClient.close();
+            resolve();
+          }
+        }, 10000);
+      } catch (e) {
+        console.error('Error parsing message:', e);
+      }
+    });
+    
+    wsClient.addEventListener('error', (error) => {
+      console.error('WebSocket error:', error);
+      reject(error);
+    });
+    
+    // Set a timeout to prevent the test from hanging
+    const timeoutId = setTimeout(() => {
+      wsClient.close();
+      reject(new Error('Test timed out waiting for expected messages'));
+    }, 30000);
+    
+    wsClient.addEventListener('close', () => {
+      clearTimeout(timeoutId);
+      console.log('WebSocket closed');
+    });
+  });
+  
+  try {
+    // Wait for all expected messages
+    await messagesPromise;
+    
+    // Validate received messages
+    expect(receivedMessages.length).toBeGreaterThan(0);
+    
+    // Extract message types
+    const messageTypes = receivedMessages.map(msg => msg.type);
+    console.log('System stream message types received:', messageTypes);
+    
+    // Verify we received the essential message types
+    expect(messageTypes).toContain('ready');
+    expect(messageTypes).toContain('initialized');
+    expect(messageTypes).toContain('turn');
+    
+    // Verify message sequence
+    const readyIndex = messageTypes.indexOf('ready');
+    const initializedIndex = messageTypes.indexOf('initialized');
+    const firstTurnIndex = messageTypes.indexOf('turn');
+    
+    // 'ready' should come before 'initialized'
+    expect(readyIndex).toBeLessThan(initializedIndex);
+    // 'initialized' should come before 'turn'
+    expect(initializedIndex).toBeLessThan(firstTurnIndex);
+    
+    // Find a turn message
+    const turnMessage = receivedMessages.find(msg => msg.type === 'turn');
+    expect(turnMessage).toBeDefined();
+    expect(turnMessage).toHaveProperty('content');
+    expect(turnMessage).toHaveProperty('turnId');
+    expect(turnMessage).toHaveProperty('status');
+  } finally {
+    // Cleanup - stop the server
+    testServer.stop();
+  }
+}, 60000);

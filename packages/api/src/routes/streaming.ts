@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { SessionCoordinator } from '@mandrake/session';
 import { WorkspaceManager } from '@mandrake/workspace';
-import type { ManagerAccessors, Managers } from '../types';
+import type { ManagerAccessors, Managers, WebSocketManager } from '../types';
 import { sendError } from './utils';
 import type {
   StreamRequestRequest,
@@ -125,7 +125,8 @@ export function sessionStreamingRoutes(
   managers: Managers,
   accessors: ManagerAccessors,
   isSystem: boolean = false,
-  workspaceId?: string
+  workspaceId?: string,
+  wsManager?: WebSocketManager // Add WebSocket manager parameter
 ) {
   const app = new Hono();
   
@@ -157,7 +158,8 @@ export function sessionStreamingRoutes(
   });
   
   // WebSocket endpoint for session streaming using Hono/Bun adapter
-  const { upgradeWebSocket, websocket } = createBunWebSocket();
+  // If a WebSocket manager is provided, use it, otherwise create a new one
+  const { upgradeWebSocket, websocket } = wsManager || createBunWebSocket();
 
   app.get('/:sessionId/ws', upgradeWebSocket(async (c) => {
     const sessionId = c.req.param('sessionId');
@@ -317,8 +319,8 @@ export function sessionStreamingRoutes(
 /**
  * Create routes for system session streaming
  */
-export function systemSessionStreamingRoutes(managers: Managers, accessors: ManagerAccessors) {
-  return sessionStreamingRoutes(managers, accessors, true);
+export function systemSessionStreamingRoutes(managers: Managers, accessors: ManagerAccessors, wsManager?: WebSocketManager) {
+  return sessionStreamingRoutes(managers, accessors, true, undefined, wsManager);
 }
 
 /**
@@ -327,7 +329,8 @@ export function systemSessionStreamingRoutes(managers: Managers, accessors: Mana
 export function workspaceSessionStreamingRoutes(
   managers: Managers, 
   accessors: ManagerAccessors, 
-  workspaceId: string
+  workspaceId: string,
+  wsManager?: WebSocketManager
 ) {
-  return sessionStreamingRoutes(managers, accessors, false, workspaceId);
+  return sessionStreamingRoutes(managers, accessors, false, workspaceId, wsManager);
 }

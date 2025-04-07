@@ -12,7 +12,7 @@ import { MandrakeManagerAdapter, MCPManagerAdapter, SessionCoordinatorAdapter, W
 import { MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
-import type { Managers, ManagerAccessors } from '../types';
+import type { Managers, ManagerAccessors, WebSocketManager } from '../types';
 
 /**
  * Create a properly structured Managers object from registry services
@@ -205,7 +205,7 @@ function createAccessorsObject(registry: ServiceRegistry): ManagerAccessors {
  * Create system-level routes for the Mandrake API
  * @param registry Service registry for accessing all managed services
  */
-export function systemRoutes(registry: ServiceRegistry) {
+export function systemRoutes(registry: ServiceRegistry, wsManager?: WebSocketManager) {
   const app = new Hono();
   
   
@@ -477,8 +477,8 @@ export function systemRoutes(registry: ServiceRegistry) {
     const managers = createManagersObject(registry, mandrakeManager, mcpManager);
     const accessors = createAccessorsObject(registry);
     
-    // Set up the streaming routes with proper managers object
-    const streamingRouter = systemSessionStreamingRoutes(managers, accessors);
+    // Set up the streaming routes with proper managers object and WebSocket manager
+    const streamingRouter = systemSessionStreamingRoutes(managers, accessors, wsManager);
     app.route('/streaming', streamingRouter);
   } catch (error) {
     console.error('Error setting up streaming routes:', error);

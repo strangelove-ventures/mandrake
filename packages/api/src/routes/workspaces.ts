@@ -17,7 +17,7 @@ import {
   SessionCoordinatorAdapter,
   MandrakeManagerAdapter
 } from '../services/registry/adapters';
-import type { Managers, ManagerAccessors } from '../types';
+import type { Managers, ManagerAccessors, WebSocketManager } from '../types';
 
 /**
  * Create a properly structured Managers object for a workspace
@@ -213,7 +213,7 @@ function createWorkspaceAccessorsObject(
  * Create workspace-level routes for the Mandrake API
  * @param registry Service registry for accessing all managed services
  */
-export function workspaceRoutes(registry: ServiceRegistry) {
+export function workspaceRoutes(registry: ServiceRegistry, wsManager?: WebSocketManager) {
   const app = new Hono();
   
   // Mount the workspace management routes
@@ -1133,8 +1133,8 @@ export function workspaceRoutes(registry: ServiceRegistry) {
         const managers = createWorkspaceManagersObject(registry, workspace, mcpManager, workspaceId);
         const accessors = createWorkspaceAccessorsObject(registry, workspaceId);
         
-        // Set up the streaming routes with proper managers
-        const streamingRouter = workspaceSessionStreamingRoutes(managers, accessors, workspaceId);
+        // Set up the streaming routes with proper managers and WebSocket manager
+        const streamingRouter = workspaceSessionStreamingRoutes(managers, accessors, workspaceId, wsManager);
         
         // Create a new request with the path modified to strip the /streaming prefix
         const url = new URL(c.req.url);

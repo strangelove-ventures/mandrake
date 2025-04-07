@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import type { ApiEnv } from './types';
+import { createBunWebSocket } from 'hono/bun';
+import type { ApiEnv, WebSocketManager } from './types';
 import { systemRoutes } from './routes/system';
 import { workspaceRoutes } from './routes/workspaces';
 import { ServiceRegistryImpl } from './services/registry';
@@ -21,11 +22,30 @@ import { existsSync, mkdirSync } from 'fs';
 let shutdownInitiated = false;
 const registry = { current: null as ServiceRegistryImpl | null };
 
+// Create a shared WebSocket manager for the application
+const wsManager: WebSocketManager = { upgradeWebSocket: null as any, websocket: null };
+
+/**
+ * Initialize the WebSocket manager
+ * @returns The initialized WebSocket manager
+ */
+export function initWebSocketManager(): WebSocketManager {
+  const wsAdapter = createBunWebSocket();
+  wsManager.upgradeWebSocket = wsAdapter.upgradeWebSocket;
+  wsManager.websocket = wsAdapter.websocket;
+  return wsManager;
+}
+
 /**
  * Create and configure the Hono app with routes
  */
-export async function createApp(env: ApiEnv = {}): Promise<Hono> {
+export async function createApp(env: ApiEnv = {}): Promise<{ app: Hono; wsManager: WebSocketManager }> {
   const app = new Hono();
+  
+  // Initialize the WebSocket manager if not already initialized
+  if (!wsManager.websocket) {
+    initWebSocketManager();
+  }
   
   // Add middleware
   app.use(cors());
@@ -116,16 +136,16 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
   app.get('/', (c) => c.json({ status: 'Mandrake API is running' }));
   
   // Mount system routes - these handle all /system/* routes
-  app.route('/system', systemRoutes(serviceRegistry));
+  app.route('/system', systemRoutes(serviceRegistry, wsManager));
   
   // Mount workspace routes - these handle all /workspaces/* routes
-  app.route('/workspaces', workspaceRoutes(serviceRegistry));
+  app.route('/workspaces', workspaceRoutes(serviceRegistry, wsManager));
   
   // Root-level routes that mirror system routes
   // These allow for both /system/config and /config to work
   
   // Create a simplified system router for root-level routes
-  const rootSystemRouter = systemRoutes(serviceRegistry);
+  const rootSystemRouter = systemRoutes(serviceRegistry, wsManager);
   
   // For each root path, forward to the system router
   app.all('/config/*', (c) => rootSystemRouter.fetch(
@@ -219,7 +239,7 @@ export async function createApp(env: ApiEnv = {}): Promise<Hono> {
     c.env
   ));
   
-  return app;
+  return { app, wsManager };
 }
 
 /**
@@ -295,13 +315,14 @@ if (import.meta.main) {
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 4000;
   
   createApp()
-    .then((app) => {
+    .then(({ app, wsManager }) => {
       console.log(`Mandrake API starting on port ${port}...`);
       
       // @ts-ignore - Bun global is available at runtime
       const server = Bun.serve({
         port,
         fetch: app.fetch,
+        websocket: wsManager.websocket, // Pass the WebSocket handler
       });
       
       console.log(`Mandrake API is running at http://localhost:${port}`);
@@ -313,4 +334,4 @@ if (import.meta.main) {
 }
 
 // Export for use in tests or as a module
-export default { createApp };
+export default { createApp, initWebSocketManager, wsManager };

@@ -2,6 +2,7 @@ import { MandrakeManager, WorkspaceManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
 import type { ErrorResponse } from '@mandrake/utils/src/types/api';
+import type { WSContext } from 'hono/ws';
 
 // Re-export all API types from utils
 export * from '@mandrake/utils/src/types/api';
@@ -37,3 +38,9 @@ export interface StreamingOptions {
 }
 
 export type ErrorHandler = (error: unknown, message: string) => ErrorResponse;
+
+// WebSocket manager interface
+export interface WebSocketManager {
+  upgradeWebSocket: Function;
+  websocket: any;
+}
