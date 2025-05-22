@@ -30,9 +30,8 @@ bun run build
 Mandrake is organized as a monorepo with these key packages:
 
 - **workspace**: Core project configuration and state management
-- **provider**: LLM provider integration (Anthropic, Ollama)
+- **provider**: LLM provider integration (Anthropic, Ollama)  
 - **mcp**: Model Context Protocol server management  
-- **ripper**: Filesystem and command execution tool server
 - **session**: Conversation orchestration and prompt building
 - **utils**: Shared utilities and type definitions
 
@@ -54,16 +53,18 @@ await workspace.models.addProvider('anthropic', {
 });
 await workspace.models.setActive('claude-3-5-sonnet-20241022');
 
-// Start tool servers
+// Start tool servers (example with Docker-based filesystem server)
 const mcpManager = new MCPManager();
-await mcpManager.startServer('ripper', {
-  command: 'bun',
+await mcpManager.startServer('filesystem', {
+  command: 'docker',
   args: [
     'run',
-    '../ripper/dist/server.js',
-    '--transport=stdio',
-    `--workspaceDir=${workspace.paths.root}`,
-    '--excludePatterns=\\.ws'
+    '--rm',
+    '-i',
+    '--mount',
+    `type=bind,src=${workspace.paths.root},dst=/workspace`,
+    'mcp/filesystem',
+    '/workspace'
   ]
 });
 
