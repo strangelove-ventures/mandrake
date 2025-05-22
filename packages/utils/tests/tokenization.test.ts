@@ -68,7 +68,7 @@ describe('Token Counters', () => {
   test('getTokenCounter returns appropriate counter for provider', () => {
     const anthropicCounter = getTokenCounter('anthropic');
     const openaiCounter = getTokenCounter('openai');
-    const llamaCounter = getTokenCounter('llama');
+    const llamaCounter = getTokenCounter('ollama');
     const defaultCounter = getTokenCounter('unknown');
     
     expect(anthropicCounter).toBeInstanceOf(AnthropicTokenCounter);

@@ -65,16 +65,16 @@ describe('MandrakeManager', () => {
       await mkdir(customDir, { recursive: true });
 
       // Create workspace at custom path
-      const path = join(customDir, 'custom-ws');
-      const workspace = await manager.createWorkspace('custom-workspace', 'Custom workspace', path);
+      const parentPath = join(customDir, 'custom-ws');
+      const workspace = await manager.createWorkspace('custom-workspace', 'Custom workspace', parentPath);
 
       // The workspace should be available
       const workspaces = await manager.listWorkspaces();
       expect(workspaces.some(ws => ws.name === 'custom-workspace')).toBe(true);
 
-      // Workspace should be at the specified path
+      // Workspace should be at the parent path + workspace name
       const customWorkspace = workspaces.find(ws => ws.name === 'custom-workspace');
-      expect(customWorkspace?.path).toBe(path);
+      expect(customWorkspace?.path).toBe(join(parentPath, 'custom-workspace'));
     });
 
     test('should prevent duplicate workspace names', async () => {

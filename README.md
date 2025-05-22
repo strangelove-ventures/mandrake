@@ -34,6 +34,11 @@ bun link
 
 Mandrake is organized as a monorepo with these core packages:
 
+- **workspace**: Core project configuration and state management
+- **provider**: LLM provider integration (Anthropic, Ollama)  
+- **mcp**: Model Context Protocol server management  
+- **session**: Conversation orchestration and prompt building
+- **utils**: Shared utilities and type definitions
 - **workspace**: Project configuration and state management
 - **session**: Conversation orchestration and context building
 - **mcp**: Model Context Protocol server management for tools
@@ -61,11 +66,21 @@ await workspace.models.addProvider('anthropic', {
 });
 await workspace.models.setActive('claude-3-5-sonnet-20241022');
 
+// Start tool servers (example with Docker-based filesystem server)
 // Start MCP tools
 const mcpManager = new MCPManager();
 await mcpManager.startServer('filesystem', {
   command: 'docker',
+await mcpManager.startServer('filesystem', {
+  command: 'docker',
   args: [
+    'run',
+    '--rm',
+    '-i',
+    '--mount',
+    `type=bind,src=${workspace.paths.root},dst=/workspace`,
+    'mcp/filesystem',
+    '/workspace'
     'run', '--rm', '-i',
     '--mount', `type=bind,src=${workspace.paths.root},dst=/workspace`,
     'mcp/filesystem', '/workspace'

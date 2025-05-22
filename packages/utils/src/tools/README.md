@@ -82,7 +82,7 @@ const text = `
 User requested information, and I'll use a tool to help.
 
 {
-  "name": "ripper.list_files",
+  "name": "filesystem.list_files",
   "arguments": {
     "path": "/tmp"
   }

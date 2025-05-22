@@ -131,10 +131,23 @@ describe('ToolsManager', () => {
   });
 
   describe('defaults', () => {
-    test('provides default ripper server', async () => {
+    test('provides default config set with Docker-based MCP servers', async () => {
       const config = await manager.getConfigSet('default');
-      expect(config.ripper).toBeDefined();
-      expect(config.ripper.command).toBe('bun');
+      expect(config).toBeDefined();
+      expect(typeof config).toBe('object');
+      
+      // Should have filesystem, fetch, and memory servers
+      expect(config.filesystem).toBeDefined();
+      expect(config.filesystem.command).toBe('docker');
+      expect(config.filesystem.args).toContain('mcp/filesystem');
+      
+      expect(config.fetch).toBeDefined();
+      expect(config.fetch.command).toBe('docker');
+      expect(config.fetch.args).toContain('mcp/fetch');
+      
+      expect(config.memory).toBeDefined();
+      expect(config.memory.command).toBe('docker');
+      expect(config.memory.args).toContain('mcp/memory');
     });
   });
 });

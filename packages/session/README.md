@@ -71,7 +71,90 @@ Session Package
     └── Error Handling - Specialized error types
 ```
 
-## Key Components
+## Usage
+
+```typescript
+import { SessionCoordinator } from '@mandrake/session';
+import { WorkspaceManager } from '@mandrake/workspace';
+import { MCPManager } from '@mandrake/mcp';
+
+// Initialize workspace
+const workspace = new WorkspaceManager('/path/to/workspace', 'my-workspace');
+await workspace.init('My Project Workspace');
+
+// Configure model provider
+await workspace.models.updateProvider('anthropic', {
+  apiKey: process.env.ANTHROPIC_API_KEY
+});
+
+// Start MCP servers
+const mcpManager = new MCPManager();
+await mcpManager.startServer("filesystem",{
+  command: 'docker',
+  args: [
+    'run',
+    '--rm',
+    '-i',
+    '--mount',
+    `type=bind,src=${workspacePath},dst=/workspace`,
+    'mcp/filesystem',
+    '/workspace'
+  ]
+});
+
+// Create session coordinator
+const coordinator = new SessionCoordinator({
+  metadata: {
+    name: 'my-workspace',
+    path: workspace.paths.root
+  },
+  promptManager: workspace.prompt,
+  sessionManager: workspace.sessions,
+  mcpManager,
+  modelsManager: workspace.models,
+  filesManager: workspace.files,
+  dynamicContextManager: workspace.dynamic
+});
+
+// Create a session
+const session = await workspace.sessions.createSession({
+  title: 'New Project Session'
+});
+
+// Basic usage - returns response ID and completion promise
+const { responseId, completionPromise } = await coordinator.handleRequest(
+  session.id,
+  'Create a new React component that displays a counter'
+);
+
+// Wait for completion if needed
+await completionPromise;
+
+// Streaming usage
+const { stream, completionPromise: streamingPromise } = await coordinator.streamRequest(
+  session.id,
+  'Update the component to include a reset button'
+);
+
+// Process streaming updates in real-time
+for await (const turn of stream) {
+  console.log("Turn update:", turn.content);
+  
+  // Access tool calls if present
+  if (turn.parsedToolCalls?.call) {
+    console.log("Tool call:", turn.parsedToolCalls.call);
+  }
+}
+
+// Access session history
+const history = await workspace.sessions.renderSessionHistory(session.id);
+console.log(history.rounds[0].response.turns);
+
+// Cleanup when done
+await mcpManager.cleanup();
+```
+
+## Key Interfaces
 
 ### SessionCoordinator
 

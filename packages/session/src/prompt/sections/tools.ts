@@ -20,7 +20,7 @@ To use a tool, output a JSON object with the following structure:
 ## Usage Example
 
 {
-  "name": "ripper.list_allowed_directories",
+  "name": "filesystem.list_allowed_directories",
   "arguments": {}
 }
 
