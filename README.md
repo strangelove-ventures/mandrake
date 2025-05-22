@@ -1,51 +1,58 @@
 # Mandrake
 
-Mandrake is an extensible AI agent platform built for developers, enabling context-aware LLM interactions within isolated workspaces. It provides advanced tool integration, dynamic context refreshing, and structured conversation management.
+Mandrake is a CLI-first AI development assistant with deep git integration, designed for secure operations and extensible tool capabilities. It provides context-aware LLM interactions within isolated workspaces, with automatic version control and audit trails.
 
 ## Features
 
-- **Workspace Management**: Isolate projects with dedicated configuration, files, and tools
-- **Tool Integration**: Run filesystem operations, git commands, and custom tools via MCP protocol
+- **CLI-First Interface**: Terminal-based interaction optimized for developer workflows
+- **Git Integration**: Automatic branching, commits, and checkpoint system for all changes
+- **Workspace Isolation**: Secure project environments with `.ws` folder isolation from LLM
+- **Tool Integration**: Filesystem operations, git commands, and custom tools via MCP protocol  
 - **Dynamic Context**: Auto-refresh project information like directory trees and git status
-- **Cross-Provider Support**: Work with various LLM providers (Anthropic, Ollama)
+- **Multi-Provider Support**: Work with various LLM providers (Anthropic, Ollama, XAI)
 - **Session Management**: Track conversations with structured round/turn model
-- **Extensible Architecture**: Add custom tools, providers, and workspace features
+- **Security Features**: Command approval workflows and audit logging
 
 ## Installation
 
 ```bash
 # Clone the repository
-git clone https://github.com/strangelove-ventures/mandrake-new.git
-cd mandrake-new
+git clone https://github.com/strangelove-ventures/mandrake.git
+cd mandrake
 
 # Install dependencies
 bun install
 
 # Build all packages
 bun run build
+
+# Link CLI globally (coming soon)
+bun link
 ```
 
-## Packages
+## Architecture
 
-Mandrake is organized as a monorepo with these key packages:
+Mandrake is organized as a monorepo with these core packages:
 
-- **workspace**: Core project configuration and state management
-- **provider**: LLM provider integration (Anthropic, Ollama)
-- **mcp**: Model Context Protocol server management  
-- **ripper**: Filesystem and command execution tool server
-- **session**: Conversation orchestration and prompt building
-- **utils**: Shared utilities and type definitions
+- **workspace**: Project configuration and state management
+- **session**: Conversation orchestration and context building
+- **mcp**: Model Context Protocol server management for tools
+- **provider**: LLM provider integration (Anthropic, Ollama, XAI)
+- **utils**: Shared utilities, logging, and type definitions
 
 ## Quick Start
 
 ```typescript
-import { WorkspaceManager } from '@mandrake/workspace';
+import { MandrakeManager } from '@mandrake/workspace';
 import { MCPManager } from '@mandrake/mcp';
 import { SessionCoordinator } from '@mandrake/session';
 
-// Initialize workspace
-const workspace = new WorkspaceManager('~/.mandrake/workspaces', 'my-project');
-await workspace.init('My development workspace');
+// Initialize Mandrake
+const manager = new MandrakeManager('~/.mandrake');
+await manager.init();
+
+// Create a workspace
+const workspace = await manager.createWorkspace('my-project', 'Project description');
 
 // Configure model
 await workspace.models.addProvider('anthropic', {
@@ -54,23 +61,21 @@ await workspace.models.addProvider('anthropic', {
 });
 await workspace.models.setActive('claude-3-5-sonnet-20241022');
 
-// Start tool servers
+// Start MCP tools
 const mcpManager = new MCPManager();
-await mcpManager.startServer('ripper', {
-  command: 'bun',
+await mcpManager.startServer('filesystem', {
+  command: 'docker',
   args: [
-    'run',
-    '../ripper/dist/server.js',
-    '--transport=stdio',
-    `--workspaceDir=${workspace.paths.root}`,
-    '--excludePatterns=\\.ws'
+    'run', '--rm', '-i',
+    '--mount', `type=bind,src=${workspace.paths.root},dst=/workspace`,
+    'mcp/filesystem', '/workspace'
   ]
 });
 
 // Create session coordinator
 const coordinator = new SessionCoordinator({
   metadata: {
-    name: 'my-project',
+    name: workspace.name,
     path: workspace.paths.root
   },
   promptManager: workspace.prompt,
@@ -83,14 +88,37 @@ const coordinator = new SessionCoordinator({
 
 // Create a session
 const session = await workspace.sessions.createSession({
-  title: 'Project Planning Session'
+  title: 'Development Session'
 });
 
-// Handle user request
-await coordinator.handleRequest(
+// Stream a response
+const { stream } = await coordinator.streamRequest(
   session.id,
-  'Help me structure a Node.js API with TypeScript'
+  'Help me create a TypeScript CLI application'
 );
+
+for await (const turn of stream) {
+  console.log(turn.content);
+}
+```
+
+## Configuration
+
+Mandrake stores configuration in `~/.mandrake`:
+
+```sh
+~/.mandrake/
+├── mandrake.json       # Global settings and workspace registry
+├── tools.json          # Global tool configurations
+├── models.json         # Global model configurations  
+├── prompt.json         # Global prompt template
+├── mandrake.db         # Global session database
+└── workspaces/         # Individual workspace directories
+    └── my-project/
+        └── .ws/        # Workspace data (isolated from LLM)
+            ├── config/ # Workspace configurations
+            ├── files/  # Context files
+            └── session.db # Conversation history
 ```
 
 ## Development
@@ -102,21 +130,29 @@ bun run build
 # Run tests
 bun test
 
-# Start the web application
-cd apps/web
+# Watch mode for development
 bun run dev
 ```
 
-## Configuration
+## Security
 
-Mandrake stores its configuration in the `~/.mandrake` directory:
+- **Workspace Isolation**: `.ws` directories are never exposed to LLMs
+- **Command Approval**: High-risk operations require explicit user confirmation
+- **Git Audit Trail**: All changes tracked through git commits
+- **Secrets Management**: Credentials stored securely, never in git
 
-```sh
-~/.mandrake/
-├── mandrake.db         # Application-level database
-├── mandrake.json       # Global configuration
-└── workspaces/         # Individual workspaces
-    └── my-project/     # A workspace
-        ├── .ws/        # Workspace metadata and configuration
-        └── src/        # Source code
-```
+## Roadmap
+
+- [ ] CLI implementation with REPL and TUI modes
+- [ ] Enhanced git integration with PR automation
+- [ ] Native TypeScript tools to replace Docker-based MCP servers
+- [ ] Provider plugin system for easier extension
+- [ ] Advanced security features and sandboxing
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development guidelines.
+
+## License
+
+MIT License - see [LICENSE](./LICENSE) for details.
