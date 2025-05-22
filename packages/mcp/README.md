@@ -2,7 +2,7 @@
 
 ## Overview
 
-The MCP package provides management for Model Context Protocol servers in Mandrake. It handles server lifecycle, communication transport, tool discovery and invocation, error handling, and log management. This package enables Mandrake to connect with external tools like filesystem access, git operations, and web requests through a standardized protocol.
+The MCP package provides management for Model Context Protocol servers. It handles server lifecycle, communication transport, tool discovery and invocation, error handling, and log management. This package enables connection with external tools like filesystem access, git operations, and web requests through a standardized protocol.
 
 ## Core Concepts
 
@@ -17,7 +17,7 @@ MCP servers are external processes that expose tools via the Model Context Proto
 
 ### Tools
 
-Tools are capabilities exposed by MCP servers that can be invoked by Mandrake. Each tool:
+Tools are capabilities exposed by MCP servers that can be invoked. Each tool:
 
 - Has a name, description, and parameters
 - Can be called with arguments
@@ -40,8 +40,6 @@ The TransportFactory automatically includes important environment variables like
 - PATH: Required for finding executables like Docker
 - DOCKER_HOST, DOCKER_CONFIG, DOCKER_CERT_PATH: For Docker configuration
 - HOME, USER, TERM, SHELL: Common system variables
-
-This implementation eliminates the need for global environment flags like INHERIT_ENV while maintaining security by only passing necessary variables.
 
 ### Server Configuration
 
@@ -302,6 +300,7 @@ interface ServerConfig {
   env?: Record<string, string>;
   autoApprove?: string[];
   disabled?: boolean;
+  healthCheck?: HealthCheckConfig;
 }
 ```
 
@@ -340,34 +339,14 @@ interface ToolWithServer extends Tool {
 }
 ```
 
-## Integration Points
+## Error Handling
 
-The MCP package integrates with several other components in Mandrake:
+The package provides specific error types:
 
-### Workspace Package
-
-- Uses tool configurations defined in the workspace
-- Provides tools for dynamic context execution
-- Accesses workspace files for tool operations
-- Configures server health checks based on workspace settings
-
-### Session Package
-
-- Enables tool execution from LLM sessions
-- Provides tool capabilities to the provider
-- Uses the MCP health reporting for tool availability
-
-### Provider Package
-
-- Uses MCP tools to enhance LLM capabilities
-- Translates between LLM tool calls and MCP tool invocations
-- Handles tool completion requests
-
-### API Package
-
-- Exposes MCP server management via REST APIs
-- Provides server health metrics to the frontend
-- Enables server administration through API endpoints
+- `ServerStartError`: Server failed to start
+- `ToolInvocationError`: Tool execution failed
+- `TransportError`: Communication issues
+- `HealthCheckError`: Health check failures
 
 ## Development
 
@@ -390,11 +369,11 @@ src/
     └── index.ts        # Core type definitions
 ```
 
-## Future Improvements
+## Best Practices
 
-- **Docker Integration**: Transition to Docker-based MCP server management
-- **Enhanced Transport**: Add more transport options for better performance
-- **Tool Authorization**: Implement more granular tool permission controls
-- **Improved Resilience**: Better error recovery and reconnection strategies
-- **Observability**: Enhanced metrics and monitoring for server health
-- **Test Utilities**: Simplified testing support for MCP integrations
+- Always use ConfigManager to create validated configurations
+- Monitor server health for production reliability
+- Handle errors gracefully with appropriate retries
+- Clean up resources with manager.cleanup()
+- Use auto-approve carefully for security
+- Check server logs for debugging issues

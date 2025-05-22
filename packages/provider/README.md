@@ -1,14 +1,28 @@
 # Provider
 
+> **⚠️ FLAGGED FOR MAJOR REFACTOR**
+> 
+> This package is scheduled for a complete refactor as part of the CLI transformation. The new design will include:
+> - Plugin-style architecture for easier extension
+> - Unified streaming interface across all providers
+> - Better error handling and retry logic
+> - Simplified configuration
+> - Study Cline's provider implementation for inspiration
+
 ## Overview
 
-The Provider package is a unified interface for interacting with various LLM services in Mandrake. It provides a consistent API for message creation, token usage tracking, and cost calculation across different model providers like Anthropic and Ollama. This package abstracts away the implementation details of each provider's API, allowing the rest of Mandrake to work with models in a standardized way.
+The Provider package provides a unified interface for interacting with various LLM services. It abstracts away the implementation details of each provider's API, allowing consistent usage across different model providers like Anthropic and Ollama.
 
 ## Core Concepts
 
 ### BaseProvider
 
-An abstract class that serves as the foundation for all provider implementations. It handles common functionality like configuration validation, model information retrieval, and cost calculation.
+An abstract class that serves as the foundation for all provider implementations. It handles:
+
+- Configuration validation
+- Model information retrieval
+- Cost calculation
+- Common functionality across providers
 
 ### Provider Implementations
 
@@ -19,7 +33,7 @@ Concrete implementations of `BaseProvider` for specific LLM services:
 
 ### Message Streaming
 
-All providers support streaming responses with standardized message chunks, including:
+All providers support streaming responses with standardized message chunks:
 
 - `TextChunk`: Contains text content from the model
 - `UsageChunk`: Contains token usage information
@@ -41,17 +55,14 @@ provider/
     └── ollama.ts
 ```
 
-The package depends on `@mandrake/utils` for model information and schemas, and integrates with model-specific client libraries like `@anthropic-ai/sdk` and `ollama`.
-
 ## Usage
 
-### Basic Provider Creation and Usage
+### Basic Provider Creation
 
 ```typescript
 import { createProvider } from '@mandrake/provider';
-import { ProviderType } from '@mandrake/utils';
 
-// Create a provider
+// Create an Anthropic provider
 const provider = createProvider('anthropic', {
   modelId: 'claude-3-5-sonnet-20241022',
   apiKey: process.env.ANTHROPIC_API_KEY
@@ -72,16 +83,14 @@ for await (const chunk of messageStream) {
   if (chunk.type === 'text') {
     process.stdout.write(chunk.text);
   } else if (chunk.type === 'usage') {
-    console.log(
-      `\nToken usage: ${chunk.inputTokens} input, ${chunk.outputTokens} output`
-    );
+    console.log(`\nTokens: ${chunk.inputTokens} in, ${chunk.outputTokens} out`);
     const cost = provider.calculateCost(chunk.inputTokens, chunk.outputTokens);
-    console.log(`Estimated cost: $${cost.toFixed(6)}`);
+    console.log(`Cost: $${cost.toFixed(6)}`);
   }
 }
 ```
 
-### Handling Errors
+### Error Handling
 
 ```typescript
 import { 
@@ -92,35 +101,26 @@ import {
 } from '@mandrake/provider';
 
 try {
-  const provider = createProvider('anthropic', { 
-    modelId: 'claude-3-opus-20240229',
-    apiKey: process.env.ANTHROPIC_API_KEY
-  });
-  
-  const stream = await provider.createMessage(
-    'You are a helpful assistant.',
-    [{ role: 'user', content: 'Write a short story.' }]
-  );
+  const provider = createProvider('anthropic', config);
+  const stream = await provider.createMessage(systemPrompt, messages);
   
   for await (const chunk of stream) {
     // Process chunks
   }
 } catch (error) {
   if (error instanceof TokenLimitError) {
-    console.error('Token limit exceeded. Try a shorter prompt or different model.');
+    console.error('Token limit exceeded');
   } else if (error instanceof RateLimitError) {
-    console.error('Rate limit reached. Please try again later.');
+    console.error('Rate limit reached');
   } else if (error instanceof NetworkError) {
-    console.error('API connection error:', error.message);
-  } else {
-    console.error('Unexpected error:', error);
+    console.error('Network error:', error.message);
   }
 }
 ```
 
 ## Key Interfaces
 
-### BaseProvider Interface
+### BaseProvider
 
 ```typescript
 abstract class BaseProvider {
@@ -166,11 +166,32 @@ interface ProviderConfig {
 }
 ```
 
-## Integration Points
+## Error Types
 
-- **@mandrake/utils**: Uses model information and provider types from the utils package
-- **@mandrake/session**: Provider instances are used by the session package to generate responses
-- **@mandrake/workspace**: Provider configuration comes from workspace settings
-- **External APIs**: Connects to external services (Anthropic API) and local services (Ollama)
+- `ProviderError`: Base error class
+- `ConfigurationError`: Invalid configuration
+- `NetworkError`: API connection issues
+- `AuthenticationError`: Invalid credentials
+- `RateLimitError`: Rate limit exceeded
+- `TokenLimitError`: Token limit exceeded
 
-The Provider package serves as a critical adapter layer in Mandrake's architecture, allowing the application to work with multiple LLM services through a unified interface while handling the complexity of different APIs, streaming protocols, and error conditions.
+## Planned Improvements
+
+The upcoming refactor will address current limitations:
+
+1. **Plugin Architecture**: Make it easier to add new providers without modifying core code
+2. **Unified Streaming**: Standardize streaming behavior across all providers
+3. **Better Configuration**: Simplify provider setup and configuration
+4. **Enhanced Error Handling**: Implement automatic retries with backoff
+5. **Tool Support**: Better integration with tool calling capabilities
+6. **Context Management**: Centralized context window tracking
+7. **Testing**: Improved testability with mock providers
+
+## Current Limitations
+
+- Limited to Anthropic and Ollama providers
+- No automatic retry logic
+- Basic error handling
+- No caching mechanism
+- Simple cost calculation
+- No support for advanced features like function calling

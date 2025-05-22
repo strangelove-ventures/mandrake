@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { ToolsManager } from '../../src/managers/tools';
-import type { ServerConfig, ToolConfig } from '@mandrake/utils/dist/types/workspace';
+import type { ServerConfig, ToolConfig } from '@mandrake/utils';
 
 describe('ToolsManager', () => {
   let tmpDir: string;
