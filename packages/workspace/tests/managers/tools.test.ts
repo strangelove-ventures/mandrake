@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { ToolsManager } from '../../src/managers/tools';
-import type { ServerConfig, ToolConfig } from '../../src/types/workspace/tools';
+import type { ServerConfig, ToolConfig } from '@mandrake/utils/dist/types/workspace';
 
 describe('ToolsManager', () => {
   let tmpDir: string;
@@ -131,10 +131,11 @@ describe('ToolsManager', () => {
   });
 
   describe('defaults', () => {
-    test('provides default ripper server', async () => {
+    test('provides default config set', async () => {
       const config = await manager.getConfigSet('default');
-      expect(config.ripper).toBeDefined();
-      expect(config.ripper.command).toBe('bun');
+      expect(config).toBeDefined();
+      // Since ripper was removed, default config may be empty or have other tools
+      expect(typeof config).toBe('object');
     });
   });
 });
