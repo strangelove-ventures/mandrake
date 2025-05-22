@@ -67,8 +67,8 @@ Mandrake follows a modular architecture with clear component boundaries:
         │                │              │
 ┌───────▼────────┐ ┌─────▼──────┐ ┌─────▼───────┐
 │  File System   │ │MCP Servers │ │LLM Providers│
-│  ~/.mandrake/  │ │  (Ripper)  │ │ (Claude,    │
-│                │ │            │ │  Ollama)    │
+│  ~/.mandrake/  │ │(filesystem,│ │ (Claude,    │
+│                │ │   fetch)   │ │  Ollama)    │
 └────────────────┘ └────────────┘ └─────────────┘
 ```
 

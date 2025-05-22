@@ -175,154 +175,53 @@ export class ToolsManager extends BaseConfigManager<ToolsConfig> {
     });
   }
 
-  /**
-   * Find the ripper server script in the repo
-   */
-  private findRipperScript(): { command: string, scriptPath?: string } {
-    // Try to find the ripper script in the repo structure
-    // Start from the current directory and look up
-    let currentDir = process.cwd();
-    
-    // Try relative paths from the workspace directory
-    const workspaceDir = dirname(dirname(dirname(this.path)));
-    
-    // Utility to check a path and log result
-    const checkPath = (path: string, logPrefix = '') => {
-      if (existsSync(path)) {
-        console.log(`${logPrefix}Found ripper script at: ${path}`);
-        return path;
-      }
-      return null;
-    };
-    
-    // Try paths relative to workspace dir
-    const relPaths = [
-      // Common monorepo paths
-      join(workspaceDir, '../packages/ripper/dist/server.js'),
-      join(workspaceDir, '../../packages/ripper/dist/server.js'),
-      join(workspaceDir, '../../../packages/ripper/dist/server.js'),
-      
-      // Try paths relative to cwd
-      join(currentDir, 'packages/ripper/dist/server.js'),
-      join(currentDir, '../packages/ripper/dist/server.js'),
-      join(currentDir, '../../packages/ripper/dist/server.js'),
-      
-      // Try node_modules paths
-      join(workspaceDir, 'node_modules/@mandrake/ripper/dist/server.js'),
-      join(currentDir, 'node_modules/@mandrake/ripper/dist/server.js')
-    ];
-    
-    // Check all relative paths
-    for (const path of relPaths) {
-      const found = checkPath(path);
-      if (found) return { command: 'bun', scriptPath: found };
-    }
-    
-    // Try walking up directories
-    while (currentDir !== dirname(currentDir)) {
-      const ripperPath = join(currentDir, 'packages/ripper/dist/server.js');
-      const found = checkPath(ripperPath);
-      if (found) return { command: 'bun', scriptPath: found };
-      
-      currentDir = dirname(currentDir);
-    }
-    
-    // If we didn't find the built version, try the source version
-    currentDir = process.cwd();
-    while (currentDir !== dirname(currentDir)) {
-      const ripperPath = join(currentDir, 'packages/ripper/src/server.ts');
-      const found = checkPath(ripperPath);
-      if (found) return { command: 'bun', scriptPath: found };
-      
-      currentDir = dirname(currentDir);
-    }
-    
-    // If we reach here, we couldn't find the script - use ripper-server from PATH
-    return { command: 'ripper-server' };
-  }
-  
+
   protected getDefaults(): ToolsConfig {
     const configDir = dirname(this.path);
     const wsDir = dirname(configDir);
     const workspacePath = dirname(wsDir);
-    
-    // Try to find ripper script in repo first - this works better in dev environments
-    const ripperScript = this.findRipperScript();
-    
-    // If we found a script, use bun to run it, otherwise fall back to ripper-server
-    let ripperConfig: ServerConfig;
-    
-    if (ripperScript.scriptPath) {
-      ripperConfig = {
-        command: 'bun',
-        args: [
-          ripperScript.scriptPath,
-          '--transport=stdio',
-          `--workspaceDir=${workspacePath}`,
-          '--excludePatterns=\\.ws'
-        ]
-      };
-    } else {
-      // Fall back to using ripper-server from PATH
-      ripperConfig = {
-        command: 'ripper-server',
-        args: [
-          '--transport=stdio',
-          `--workspaceDir=${workspacePath}`,
-          '--excludePatterns=\\.ws'
-        ]
-      };
-    }
 
     return {
       active: 'default',
       configs: {
-        // The default tool set is ripper and fetch
-        // we should consider adding search and other tools here
+        // Default tool set uses Docker-based MCP servers
         default: {
-          ripper: ripperConfig
-        },
-        // The system tool set is to make changes to the workspace
-        // We should consider adding other useful system tools
-        system: {
-          workspace: {
-            command: 'bun',
+          filesystem: {
+            command: 'docker',
             args: [
               'run',
-              '../workspace-tools/dist/server.js',
-              '--transport=stdio',
-              `--workspaceDir=${workspacePath}`
+              '--rm',
+              '-i',
+              '--mount',
+              `type=bind,src=${workspacePath},dst=/workspace`,
+              'mcp/filesystem',
+              '/workspace'
+            ]
+          },
+          fetch: {
+            command: 'docker',
+            args: [
+              'run',
+              '--rm',
+              '-i',
+              'mcp/fetch'
+            ]
+          },
+          memory: {
+            command: 'docker',
+            args: [
+              'run',
+              '-i',
+              '-v',
+              'claude-memory:/app/dist',
+              '--rm',
+              'mcp/memory'
             ]
           }
-        }
+        },
+        // TODO: system tooling
+        system: {}
       },
     };
-  }
-
-  // Utility method to create a server config with ripper-server from PATH
-  async createRipperServerConfig(workspacePath: string): Promise<ServerConfig> {
-    // Use the smart detection
-    const ripperScript = this.findRipperScript();
-    
-    if (ripperScript.scriptPath) {
-      return {
-        command: 'bun',
-        args: [
-          ripperScript.scriptPath,
-          '--transport=stdio',
-          `--workspaceDir=${workspacePath}`,
-          '--excludePatterns=\\.ws'
-        ]
-      };
-    } else {
-      return {
-        command: 'ripper-server',
-        args: [
-          '--transport=stdio',
-          `--workspaceDir=${workspacePath}`,
-          '--excludePatterns=\\.ws'
-        ]
-      };
-    }
   }
 }

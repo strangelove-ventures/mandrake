@@ -8,18 +8,18 @@ Transform Mandrake from a web-based AI agent platform to a CLI-first tool focuse
 
 ### 1.1 Components to Remove
 
-- [ ] `/packages/api/` - Complete removal
-- [ ] `/web/` - Complete removal  
-- [ ] `/SYSTEM_PROMPT_API.md` - Remove API-specific prompt
-- [ ] API-related scripts in root `package.json`
-- [ ] Web-related dependencies from all `package.json` files
+- [x] `/packages/api/` - Complete removal
+- [x] `/web/` - Complete removal  
+- [x] `/SYSTEM_PROMPT_API.md` - Remove API-specific prompt
+- [x] API-related scripts in root `package.json`
+- [x] Web-related dependencies from all `package.json` files
 
 ### 1.2 Configuration Updates
 
-- [ ] Update root `package.json` workspaces array
-- [ ] Remove build scripts: `build:api`, `build:web`, `dev:api`, `dev:web`, etc.
-- [ ] Update test scripts to remove api/web tests
-- [ ] Clean up unused dependencies (Next.js, React, Hono, etc.)
+- [x] Update root `package.json` workspaces array
+- [x] Remove build scripts: `build:api`, `build:web`, `dev:api`, `dev:web`, etc.
+- [x] Update test scripts to remove api/web tests
+- [x] Clean up unused dependencies (Next.js, React, Hono, etc.)
 
 ### 1.3 Documentation Before Removal
 

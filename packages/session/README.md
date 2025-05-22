@@ -81,14 +81,16 @@ await workspace.models.updateProvider('anthropic', {
 
 // Start MCP servers
 const mcpManager = new MCPManager();
-await mcpManager.startServer('ripper', {
-  command: 'bun',
+await mcpManager.startServer("filesystem",{
+  command: 'docker',
   args: [
     'run',
-    '../ripper/dist/server.js',
-    '--transport=stdio',
-    `--workspaceDir=${workspace.paths.root}`,
-    '--excludePatterns=\\.ws'
+    '--rm',
+    '-i',
+    '--mount',
+    `type=bind,src=${workspacePath},dst=/workspace`,
+    'mcp/filesystem',
+    '/workspace'
   ]
 });
 
