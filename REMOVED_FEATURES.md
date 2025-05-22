@@ -29,6 +29,13 @@ The Hono-based API server was removed, including:
 ### 3. API System Prompt (`SYSTEM_PROMPT_API.md`)
 The API-specific system prompt was removed as it's no longer relevant for CLI usage.
 
+### 4. Ripper Package (`/packages/ripper`)
+The ripper MCP server for filesystem operations was removed, including:
+- Standalone MCP server implementation
+- Docker containerization
+- Separate process architecture
+- Will be replaced with native TypeScript filesystem tools integrated directly into the CLI
+
 ## Key Learnings from Web/API Implementation
 
 ### 1. Streaming Architecture
@@ -73,7 +80,7 @@ The following packages were kept and will form the foundation of the CLI tool:
 - `/packages/mcp` - MCP server integration
 - `/packages/provider` - LLM provider abstraction
 - `/packages/utils` - Shared utilities
-- `/packages/ripper` - File system operations (to be replaced with native tools)
+
 
 ## Future Considerations
 
